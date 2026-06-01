@@ -1,7 +1,7 @@
 <yang-library xmlns="urn:ietf:params:xml:ns:yang:ietf-yang-library">
   <module-set>
     <name>complete</name>
-    <!-- Main IETF telemetry message and the YANG push augmentation -->
+    <!-- Main IETF telemetry message and the YANG-Push augmentation -->
     <module>
       <name>ietf-telemetry-message</name>
       <revision>2025-10-19</revision>

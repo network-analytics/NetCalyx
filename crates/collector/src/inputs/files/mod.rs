@@ -77,7 +77,7 @@ pub enum InputFileFormat {
     FlowUpserts,
 
     /// JSON-serialized [`crate::yang_push::UpsertPayload`] messages
-    #[strum(to_string = "JSON Yang-Push EnrichmentOperation message")]
+    #[strum(to_string = "JSON YANG-Push EnrichmentOperation message")]
     YangPushUpserts,
 }
 

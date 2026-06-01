@@ -48,7 +48,7 @@ pub enum KafkaMessageFormat {
     FlowEnrichmentOps,
 
     /// JSON-serialized [`crate::yang_push::EnrichmentOperation`] messages
-    #[strum(to_string = "JSON Yang-Push EnrichmentOperation message")]
+    #[strum(to_string = "JSON YANG-Push EnrichmentOperation message")]
     YangPushEnrichmentOps,
 
     /// Swisscom custom SonataDB insert/update/delete messages

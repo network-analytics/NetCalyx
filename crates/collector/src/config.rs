@@ -339,12 +339,12 @@ pub enum PublisherEndpoint {
     /// conversion)
     FlowKafkaAvro(kafka_avro::KafkaConfig<FlowOutputConfig>),
 
-    /// Kafka JSON publisher endpoint (for validated yang-push telemetry
+    /// Kafka JSON publisher endpoint (for validated YANG-Push telemetry
     /// messages)
     TelemetryKafkaJson(kafka_json::KafkaConfig),
 
     /// Kafka YANG publisher endpoint
-    /// (for validated yang-push telemetry messages and YANG schema
+    /// (for validated YANG-Push telemetry messages and YANG schema
     /// registration)
     TelemetryKafkaYang(kafka_yang::KafkaConfig<TelemetryYangConverter>),
 

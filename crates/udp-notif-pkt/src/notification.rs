@@ -219,9 +219,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use strum_macros::Display;
 
-/// Yang-Push Notification Envelope
+/// YANG-Push Notification Envelope
 /// [draft-ietf-netconf-notif-envelope](https://datatracker.ietf.org/doc/draft-ietf-netconf-notif-envelope)
-/// which is an extensible wrapper for Yang-Push notification messages.
+/// which is an extensible wrapper for YANG-Push notification messages.
 ///
 /// Support deserializing -01, -02, -03 versions.
 /// Support serializing content in the -03 version.
@@ -294,7 +294,7 @@ impl NotificationEnvelope {
     }
 }
 
-/// Legacy Yang-Push Notification Wrapper
+/// Legacy YANG-Push Notification Wrapper
 /// This is deprecated: use NotificationEnvelope instead
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NotificationLegacy {

@@ -16,14 +16,14 @@
 //! # Overview
 //!
 //! This module defines the constants and types relevant to the NetCalyx UDP
-//! notification handling system using YANG push subscriptions.
+//! notification handling system using YANG-Push subscriptions.
 //! # Exports and Definitions
 //!
 //! ## Submodules
 //! - [cache]: Expected to define and handle caching mechanisms for the system.
 //! - [model]: Contains the data models or structures used IETF Telemetry
 //!   Message.
-//! - [validation]: Implements validation mechanisms for YANG Push messages.
+//! - [validation]: Implements validation mechanisms for YANG-Push messages.
 //!
 //! ## Type Definitions
 //! - `ContentId`: A `String` type alias representing the identifier for content

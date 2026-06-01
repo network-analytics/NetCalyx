@@ -34,7 +34,7 @@ pub mod supervisor;
 
 pub type ActorId = u32;
 
-/// Type alias to that YANG Push subscription ID as defined in [RFC8641](https://datatracker.ietf.org/doc/html/rfc8641)
+/// Type alias to that YANG-Push subscription ID as defined in [RFC8641](https://datatracker.ietf.org/doc/html/rfc8641)
 pub type SubscriberId = u32;
 
 /// The UDP-Notif packet and the peer [SocketAddr] that sent it.

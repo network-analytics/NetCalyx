@@ -307,7 +307,7 @@ pub struct NetConfSshClient<T> {
     /// Cache peer's YANG Library
     yang_library: Option<Arc<YangLibrary>>,
 
-    /// Cache configured YANG Push filters on the device, this is used to avoid
+    /// Cache configured YANG-Push filters on the device, this is used to avoid
     /// making multiple requests to the device to get the filters when
     /// processing multiple subscriptions
     yang_push_filters: Option<Filters>,
@@ -715,11 +715,11 @@ impl<T: AsyncRead + AsyncWrite + Unpin> NetConfSshClient<T> {
 
     pub async fn get_yang_push_filters(&mut self) -> Result<Filters, NetConfSshClientError> {
         if let Some(filters) = self.yang_push_filters.as_ref() {
-            debug!("[{}] Serving YANG Push Filters from the cache", self.peer);
+            debug!("[{}] Serving YANG-Push filters from the cache", self.peer);
             return Ok(filters.clone());
         }
         debug!(
-            "[{}] Requesting YANG Push Filters from the device",
+            "[{}] Requesting YANG-Push filters from the device",
             self.peer
         );
         let message_id = self
@@ -751,7 +751,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> NetConfSshClient<T> {
         id: SubscriptionId,
     ) -> Result<Subscription, NetConfSshClientError> {
         debug!(
-            "[{}] Requesting YANG Push subscription by id `{id}`",
+            "[{}] Requesting YANG-Push subscription by id `{id}`",
             self.peer
         );
         let message_id = self

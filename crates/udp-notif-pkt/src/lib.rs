@@ -49,7 +49,7 @@
 //!
 //! ### [`notification`] - YANG Data Structures
 //!
-//! Domain model layer containing all YANG Push notification types as defined
+//! Domain model layer containing all YANG-Push notification types as defined
 //! in:
 //! - [RFC 8639 - Subscription to YANG Notifications](https://datatracker.ietf.org/doc/html/rfc8639)
 //! - [RFC 8641 - Subscription to YANG Notifications for Datastore Updates](https://datatracker.ietf.org/doc/html/rfc8641)

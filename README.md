@@ -44,7 +44,7 @@ VMware, Nokia).
   `netcalyx-udp-notif-pkt`](crates/udp-notif-pkt/README.md)
 - Service building block for receiving messages: [`netcalyx-udp-notif-service`](crates/udp-notif-service/README.md)
 
-### YANG Push
+### YANG-Push
 
 - Data models and YANG validation: [`netcalyx-yang-push`](crates/yang-push/README.md)
 
@@ -57,7 +57,7 @@ VMware, Nokia).
 [`netcalyx-collector`](crates/collector/README.md) is a network telemetry collector that ties the protocol libraries
 together into a deployable service.
 
-**Inputs:** IPFIX/NetFlow V9, UDP-Notif, YANG Push, and Kafka for enrichment data, while BMP and BGP are currently
+**Inputs:** IPFIX/NetFlow V9, UDP-Notif, YANG-Push, and Kafka for enrichment data, while BMP and BGP are currently
 work in progress.
 
 **Publishers:** Kafka (Avro, JSON, YANG)

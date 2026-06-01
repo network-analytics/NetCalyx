@@ -20,7 +20,7 @@
 
 A complete Rust implementation
 of [draft-ietf-netconf-udp-notif](https://datatracker.ietf.org/doc/html/draft-ietf-netconf-udp-notif) for UDP-based
-transport of YANG Push streaming telemetry notifications.
+transport of YANG-Push streaming telemetry notifications.
 
 ## Features
 
@@ -31,7 +31,7 @@ transport of YANG Push streaming telemetry notifications.
 - **Dual notification formats**: Standard NETCONF notification (RFC 8639/RFC 8641) and YANG-based notification
   envelope [draft-ietf-netconf-notif-envelope](https://datatracker.ietf.org/doc/html/draft-ietf-netconf-notif-envelope)
 - **Async codec**: Tokio-based UDP framing for stream processing
-- **Type-safe**: Strongly typed YANG Push notification structures from RFC 8639 and RFC 8641
+- **Type-safe**: Strongly typed YANG-Push notification structures from RFC 8639 and RFC 8641
 
 ## Architecture
 
@@ -71,7 +71,7 @@ match decoded.payload() {
 
 ### `notification` - YANG Data Structures
 
-Complete YANG Push notification types (subscriptions, updates, lifecycle events).
+Complete YANG-Push notification types (subscriptions, updates, lifecycle events).
 
 ```rust,ignore
 use udp_notif_pkt::notification::NotificationVariant;
