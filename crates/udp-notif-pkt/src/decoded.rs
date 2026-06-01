@@ -17,7 +17,7 @@
 //!
 //! This module provides types and functionality for decoding [crate::raw]
 //! UDP-Notif packets into structured Rust types. It supports both the current
-//! IETF YANG Push notification envelope format and the legacy notification
+//! IETF YANG-Push notification envelope format and the legacy notification
 //! format.
 //!
 //! # Main Types

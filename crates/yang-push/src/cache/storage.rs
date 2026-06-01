@@ -37,7 +37,7 @@
 //!   containing the content ID, file path, and search directory for YANG
 //!   modules.
 //!
-//! - [`SubscriptionInfo`]: Metadata about a YANG Push subscription, including
+//! - [`SubscriptionInfo`]: Metadata about a YANG-Push subscription, including
 //!   peer address, content ID, Target filter, and associated YANG modules.
 //!
 //! # Storage Layout
@@ -718,9 +718,9 @@ impl YangLibraryReference {
     }
 }
 
-/// Metadata about a YANG Push subscription.
+/// Metadata about a YANG-Push subscription.
 ///
-/// This structure captures the essential information about a YANG Push
+/// This structure captures the essential information about a YANG-Push
 /// subscription, used to uniquely identify and associate subscriptions with
 /// their corresponding YANG library references in the cache.
 ///

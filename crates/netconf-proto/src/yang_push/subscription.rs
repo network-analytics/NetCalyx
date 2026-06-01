@@ -800,7 +800,7 @@ impl<'a> XmlDeserialize<'a, Subscription> for Subscription {
                     DatastoreFilterSpec::xml_deserialize(parser)?,
                 ));
             }
-            // ── yang-push update trigger ────────────────────────────────
+            // ── YANG-Push update trigger ────────────────────────────────
             else if parser.is_tag(Some(YANG_PUSH_NS), "periodic")
                 || parser.is_tag(Some(YANG_PUSH_NS), "on-change")
             {

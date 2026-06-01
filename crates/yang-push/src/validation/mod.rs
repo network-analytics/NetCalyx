@@ -14,7 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! YANG Push Notification Validation Actor
+//! YANG-Push Notification Validation Actor
 //!
 //! This module provides an actor-based validation system for UDP-Notif
 //! packets carrying YANG-modeled data. The actor validates notification
@@ -174,16 +174,16 @@ impl ValidationStats {
         let messages_received = meter
             .u64_counter("netcalyx.collector.yang_push.validation.messages.received")
             .with_description(
-                "Number of Yang Push messages received for validation (before decoding)",
+                "Number of YANG-Push messages received for validation (before decoding)",
             )
             .build();
         let messages_decoding_success = meter
             .u64_counter("netcalyx.collector.yang_push.validation.messages.decode.success")
-            .with_description("Number of Yang Push messages decoded successfully (UDP-Notif payload read successfully)")
+            .with_description("Number of YANG-Push messages decoded successfully (UDP-Notif payload read successfully)")
             .build();
         let messages_decoding_fail = meter
             .u64_counter("netcalyx.collector.yang_push.validation.messages.decode.fail")
-            .with_description("Number of Yang Push messages dropped because of decoding errors (Couldn't read UDP-Notif payload)")
+            .with_description("Number of YANG-Push messages dropped because of decoding errors (Couldn't read UDP-Notif payload)")
             .build();
         let cache_request_by_subscription_info = meter
             .u64_counter("netcalyx.collector.yang_push.validation.messages.cache.requests.by.subscription_info")
@@ -195,15 +195,15 @@ impl ValidationStats {
             .build();
         let buffered_packets = meter
             .u64_gauge("netcalyx.collector.yang_push.validation.buffer.packets")
-            .with_description("Number of Yang Push messages currently buffered waiting for schemas")
+            .with_description("Number of YANG-Push messages currently buffered waiting for schemas")
             .build();
         let buffer_drop = meter
             .u64_counter("netcalyx.collector.yang_push.validation.buffer.drop")
-            .with_description("Number of Yang Push messages dropped because the buffer is full")
+            .with_description("Number of YANG-Push messages dropped because the buffer is full")
             .build();
         let buffer_drain = meter
             .u64_counter("netcalyx.collector.yang_push.validation.buffer.drain")
-            .with_description("Number of Yang Push messages popped out of the buffer and sent to the validation step")
+            .with_description("Number of YANG-Push messages popped out of the buffer and sent to the validation step")
             .build();
         let cache_yang_ctx_created = meter
             .u64_counter("netcalyx.collector.yang_push.validation.cache.yang.ctx.created")
@@ -222,20 +222,20 @@ impl ValidationStats {
         let validation_malformed = meter
             .u64_counter("netcalyx.collector.yang_push.validation.malformed")
             .with_description(
-                "Number of Yang Push messages dropped because they are malformed; e.g., missing subscription info",
+                "Number of YANG-Push messages dropped because they are malformed; e.g., missing subscription info",
             )
             .build();
         let validation_success = meter
             .u64_counter("netcalyx.collector.yang_push.validation.success")
-            .with_description("Number of Yang Push messages successfully validated")
+            .with_description("Number of YANG-Push messages successfully validated")
             .build();
         let validation_invalid = meter
             .u64_counter("netcalyx.collector.yang_push.validation.invalid")
-            .with_description("Number of Yang Push messages dropped because of validation errors")
+            .with_description("Number of YANG-Push messages dropped because of validation errors")
             .build();
         let validation_skip = meter
             .u64_counter("netcalyx.collector.yang_push.validation.skipped")
-            .with_description("Number of Yang Push skipped the validation step because the subscription is not found in the cache")
+            .with_description("Number of YANG-Push skipped the validation step because the subscription is not found in the cache")
             .build();
         let messages_sent = meter
             .u64_counter("netcalyx.collector.yang_push.validation.messages.sent")
@@ -1090,18 +1090,18 @@ impl ValidationActor {
     }
 
     async fn run(mut self) -> Result<String, ValidationActorError> {
-        info!("Starting Yang-Push validation actor");
+        info!("Starting YANG-Push validation actor");
         loop {
             tokio::select! {
                 biased;
                 cmd = self.cmd_rx.recv() => {
                     return match cmd {
                         Some(ValidationActorCommand::Shutdown) => {
-                            info!("Shutting down Yang Push validation actor");
+                            info!("Shutting down YANG-Push validation actor");
                             Ok("Enrichment shutdown successfully".to_string())
                         }
                         None => {
-                            let msg = "Yang Push validation actor terminated due to command channel closing";
+                            let msg = "YANG-Push validation actor terminated due to command channel closing";
                             warn!(msg);
                             Ok(msg.to_string())
                         }
@@ -1111,13 +1111,13 @@ impl ValidationActor {
                     match msg {
                         Ok(response) => {
                             if let Err(err) = self.process_cache_response(response) {
-                                let err_msg = "Yang Push validation actor cache response processing unrecoverable error, shutting down";
+                                let err_msg = "YANG-Push validation actor cache response processing unrecoverable error, shutting down";
                                 warn!(error=%err, err_msg);
                                 return Ok(err_msg.to_string());
                             }
                         }
                         Err(error) => {
-                            let err_msg = "Yang Push validation actor cache receiver channel closed unexpectedly, shutting down";
+                            let err_msg = "YANG-Push validation actor cache receiver channel closed unexpectedly, shutting down";
                             warn!(error=%error, err_msg);
                             return Ok(err_msg.to_string());
                         }
@@ -1125,7 +1125,7 @@ impl ValidationActor {
                 }
                 Some(message) = async { self.pending_packets.pop_front() }, if !self.pending_packets.is_empty() => {
                     if let Err(err) = self.process_udp_notif_msg(message).await {
-                        let err_msg = "Yang Push validation actor cached packet processing unrecoverable error, shutting down";
+                        let err_msg = "YANG-Push validation actor cached packet processing unrecoverable error, shutting down";
                         warn!(error=%err, err_msg);
                         return Ok(err_msg.to_string());
                     }
@@ -1141,13 +1141,13 @@ impl ValidationActor {
                                 ),
                             );
                             if let Err(err) = self.process_udp_notif_msg(msg).await {
-                                let err_msg = "Yang Push validation actor UDP-Notif processing unrecoverable error, shutting down";
+                                let err_msg = "YANG-Push validation actor UDP-Notif processing unrecoverable error, shutting down";
                                 warn!(error=%err, err_msg);
                                 return Ok(err_msg.to_string());
                             }
                         }
                         Err(error) => {
-                            let err_msg = "Yang Push validation actor UDP Notif receiver channel closed unexpectedly, shutting down";
+                            let err_msg = "YANG-Push validation actor UDP Notif receiver channel closed unexpectedly, shutting down";
                             warn!(error=%error, err_msg);
                             return Ok(err_msg.to_string());
                         }

@@ -35,7 +35,7 @@
 //!   and addressing details.
 //!
 //! - **YangPushSubscriptionMetadata**: YANG-Push specific extension for
-//!   subscription details when the session protocol is YANG Push.
+//!   subscription details when the session protocol is YANG-Push.
 //!
 //! - **NetworkOperatorMetadata**: Operator-specific metadata implemented as
 //!   key-value labels that can be used to enrich collected data with custom
@@ -454,7 +454,7 @@ impl From<Target> for FilterSpec {
     }
 }
 
-/// Update Trigger for Yang Push Subscription
+/// Update Trigger for YANG-Push Subscription
 /// (redefined for Telemetry Message)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum UpdateTrigger {

@@ -13,18 +13,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A module for processing Yang Push notifications messages.
+//! A module for processing YANG-Push notifications messages.
 //!
 //! This module provides functionality to:
-//! - Cache and manage subscription metadata from Yang-Push Subscription
+//! - Cache and manage subscription metadata from YANG-Push Subscription
 //!   Started/Modified/Terminated notifications
-//! - Enrich Yang-Push notifications with metadata from cached subscriptions
-//! - Encapsulate Yang-Push notifications into Telemetry Message objects along
+//! - Enrich YANG-Push notifications with metadata from cached subscriptions
+//! - Encapsulate YANG-Push notifications into Telemetry Message objects along
 //!   with the relevant metadata
 //!
 //! The main components are:
 //! - `YangPushEnrichmentActor` - The core actor responsible for processing and
-//!   enriching Yang Push notifications.
+//!   enriching YANG-Push notifications.
 //! - `YangPushEnrichmentActorHandle` - A handle for controlling the enrichment
 //!   actor and subscribing to enriched messages.
 //! - `YangPushEnrichmentStats` - Metrics for tracking the performance and
@@ -69,7 +69,7 @@ pub enum YangPushEnrichmentActorError {
     EnrichmentChannelClosed,
     #[strum(to_string = "error in YangPushEnrichmentActor receive channel")]
     YangPushReceiveError,
-    #[strum(to_string = "received Yang-Push Notification without content")]
+    #[strum(to_string = "received YANG-Push notification without content")]
     NotificationWithoutContent,
     #[strum(to_string = "failed to serialize UDP-Notif payload")]
     PayloadSerializationError,
@@ -93,7 +93,7 @@ impl YangPushEnrichmentStats {
     pub fn new(meter: opentelemetry::metrics::Meter) -> Self {
         let received_messages = meter
             .u64_counter("netcalyx.collector.yang_push.enrichment.received.messages")
-            .with_description("Number of Yang-Push messages received for enrichment")
+            .with_description("Number of YANG-Push messages received for enrichment")
             .build();
         let received_enrichment_ops = meter
             .u64_counter("netcalyx.collector.yang_push.enrichment.received.enrichment.operations")
@@ -113,7 +113,7 @@ impl YangPushEnrichmentStats {
             .build();
         let udpnotif_payload_processing_error = meter
             .u64_counter("netcalyx.collector.yang_push.enrichment.notification.processing.error")
-            .with_description("Number of errors processing Yang Push notifications")
+            .with_description("Number of errors processing YANG-Push notifications")
             .build();
         let peer_subscriptions = meter
             .u64_gauge("netcalyx.collector.yang_push.enrichment.peer.subscriptions")
@@ -149,7 +149,7 @@ impl YangPushEnrichmentStats {
     }
 }
 
-/// Actor responsible for enriching Yang Push notifications.
+/// Actor responsible for enriching YANG-Push notifications.
 /// Sends enriched TelemetryMessage objects.
 struct YangPushEnrichmentActor {
     cmd_rx: mpsc::Receiver<YangPushEnrichmentActorCommand>,
@@ -420,11 +420,11 @@ impl YangPushEnrichmentActor {
                 cmd = self.cmd_rx.recv() => {
                     return match cmd {
                         Some(YangPushEnrichmentActorCommand::Shutdown) => {
-                            info!("Shutting down Yang Push enrichment actor");
+                            info!("Shutting down YANG-Push enrichment actor");
                             Ok("Enrichment shutdown successfully".to_string())
                         }
                         None => {
-                            warn!("Yang Push enrichment actor terminated due to command channel closing");
+                            warn!("YANG-Push enrichment actor terminated due to command channel closing");
                             Ok("Enrichment shutdown successfully".to_string())
                         }
                     }
@@ -507,7 +507,7 @@ impl YangPushEnrichmentActor {
 
 #[derive(Debug, strum_macros::Display)]
 pub enum YangPushEnrichmentActorHandleError {
-    #[strum(to_string = "failed to send to Yang-Push enrichment actor")]
+    #[strum(to_string = "failed to send to YANG-Push enrichment actor")]
     SendError,
 }
 
@@ -576,7 +576,7 @@ impl EnrichmentHandle<EnrichmentOperation> for YangPushEnrichmentActorHandle {
     /// Send an enrichment cache update to the actor.
     ///
     /// Updates are applied asynchronously and will affect subsequent
-    /// Yang-Push enrichment operations. The operation can be either an
+    /// YANG-Push enrichment operations. The operation can be either an
     /// upsert (add/update) or delete.
     fn update_enrichment(
         &self,

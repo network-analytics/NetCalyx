@@ -103,7 +103,7 @@ impl FilesLineHandler<crate::yang_push::EnrichmentOperation> for FlowUpsertsHand
     }
 }
 
-/// **Yang-Push Upserts Handler**
+/// **YANG-Push Upserts Handler**
 ///
 /// Handler for json-line input files with [`crate::yang_push::UpsertPayload`]
 /// format, such as:
@@ -762,7 +762,7 @@ id=2:4200137808:1003 ip=192.168.100.1 out=127"#;
         assert!(errors[1].contains("key must be a string at line"));
     }
 
-    // ** Tests with crate::yang_push::EnrichmentOperation for Yang-Push ** //
+    // ** Tests with crate::yang_push::EnrichmentOperation for YANG-Push ** //
 
     #[tokio::test]
     async fn test_yang_push_first_time_processing() {
