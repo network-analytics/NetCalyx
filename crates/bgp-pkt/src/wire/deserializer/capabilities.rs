@@ -15,11 +15,11 @@
 
 use crate::capabilities::*;
 use crate::iana::{BgpCapabilityCode, UndefinedBgpCapabilityCode};
-use netgauze_iana::address_family::{
+use netcalyx_iana::address_family::{
     AddressFamily, AddressType, InvalidAddressType, SubsequentAddressFamily,
     UndefinedAddressFamily, UndefinedSubsequentAddressFamily,
 };
-use netgauze_parse_utils::{
+use netcalyx_parse_utils::{
     ErrorKindSerdeDeref, ReadablePdu, Span, parse_into_located, parse_till_empty,
     parse_till_empty_into_located,
 };
@@ -35,7 +35,7 @@ use crate::wire::{
     FOUR_OCTET_AS_CAPABILITY_LENGTH, GRACEFUL_RESTART_ADDRESS_FAMILY_LENGTH,
     MULTI_PROTOCOL_EXTENSIONS_CAPABILITY_LENGTH, ROUTE_REFRESH_CAPABILITY_LENGTH,
 };
-use netgauze_serde_macros::LocatedError;
+use netcalyx_serde_macros::LocatedError;
 
 /// BGP Capability Parsing errors
 #[derive(LocatedError, PartialEq, Clone, Debug, Serialize, Deserialize)]

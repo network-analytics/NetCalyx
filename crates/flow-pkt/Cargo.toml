@@ -1,14 +1,14 @@
 lints.workspace = true
 
 [package]
-name = "netgauze-flow-pkt"
+name = "netcalyx-flow-pkt"
 version = "0.12.1"
 edition = "2024"
-authors = ["Ahmed Elhassany <a.hassany@gmail.com>"]
+authors = ["NetCalyx Authors"]
 license = "Apache-2.0"
 readme = "README.md"
-repository = "https://github.com/NetGauze/NetGauze"
-homepage = "https://github.com/NetGauze/NetGauze"
+repository = "https://github.com/network-analytics/NetCalyx"
+homepage = "https://github.com/network-analytics/NetCalyx"
 description = """
 Netflow(v9)/IPFIX(v10) Protocol representation and serde
 """
@@ -26,10 +26,10 @@ include = [
 ]
 
 [dependencies]
-netgauze-locate = { workspace = true, optional = true }
-netgauze-parse-utils = { workspace = true, optional = true }
-netgauze-serde-macros = { workspace = true, optional = true }
-netgauze-iana = { workspace = true }
+netcalyx-locate = { workspace = true, optional = true }
+netcalyx-parse-utils = { workspace = true, optional = true }
+netcalyx-serde-macros = { workspace = true, optional = true }
+netcalyx-iana = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 strum = { workspace = true }
 strum_macros = { workspace = true }
@@ -53,9 +53,9 @@ default = ["serde"]
 serde = [
     "nom",
     "byteorder",
-    "netgauze-locate",
-    "netgauze-parse-utils",
-    "netgauze-serde-macros",
+    "netcalyx-locate",
+    "netcalyx-parse-utils",
+    "netcalyx-serde-macros",
 ]
 codec = ["tracing", "tokio-util", "bytes"]
 bench = ["criterion"]
@@ -64,14 +64,14 @@ iana-upstream-build = ["serde"]
 custom-upstream-build = ["default"]
 
 [dev-dependencies]
-netgauze-pcap-reader = { workspace = true }
-netgauze-parse-utils = { workspace = true, features = ["test-helpers"] }
+netcalyx-pcap-reader = { workspace = true }
+netcalyx-parse-utils = { workspace = true, features = ["test-helpers"] }
 serde_json = { workspace = true }
 rstest = { workspace = true }
 pcap-parser = { workspace = true, features = ["data"] }
 
 [build-dependencies]
-netgauze-ipfix-code-generator = { workspace = true }
+netcalyx-ipfix-code-generator = { workspace = true }
 
 [[bench]]
 name = "serde_benchmark"

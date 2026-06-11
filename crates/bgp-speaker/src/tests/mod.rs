@@ -22,9 +22,9 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use crate::connection::ActiveConnect;
-use netgauze_bgp_pkt::BgpMessage;
-use netgauze_bgp_pkt::codec::BgpCodec;
-use netgauze_parse_utils::WritablePdu;
+use netcalyx_bgp_pkt::BgpMessage;
+use netcalyx_bgp_pkt::codec::BgpCodec;
+use netcalyx_parse_utils::WritablePdu;
 
 mod connection;
 mod peer;

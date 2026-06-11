@@ -12,7 +12,7 @@
 // implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.Get the
-// [netgauze_iana::address_family::AddressType] of a given NLRI
+// [netcalyx_iana::address_family::AddressType] of a given NLRI
 
 //! Deserializer for BGP Path Attributes
 
@@ -29,18 +29,18 @@ use crate::wire::deserializer::path_attribute::{
 };
 use crate::wire::deserializer::{BgpParsingContext, IpAddrParsingError};
 use crate::wire::serializer::nlri::{IPV4_LEN, IPV6_LEN, IPV6_WITH_LINK_LOCAL_LEN};
-use netgauze_iana::address_family::{
+use netcalyx_iana::address_family::{
     AddressFamily, AddressType, SubsequentAddressFamily, UndefinedAddressFamily,
     UndefinedSubsequentAddressFamily,
 };
-use netgauze_parse_utils::{
+use netcalyx_parse_utils::{
     ErrorKindSerdeDeref, LocatedParsingError, ReadablePdu, ReadablePduWithOneInput,
     ReadablePduWithThreeInputs, ReadablePduWithTwoInputs, Span, parse_into_located_one_input,
     parse_into_located_three_inputs, parse_into_located_two_inputs, parse_till_empty,
     parse_till_empty_into_located, parse_till_empty_into_with_one_input_located,
     parse_till_empty_into_with_three_inputs_located,
 };
-use netgauze_serde_macros::LocatedError;
+use netcalyx_serde_macros::LocatedError;
 use nom::IResult;
 use nom::error::ErrorKind;
 use nom::number::complete::{be_u8, be_u16, be_u32, be_u64, be_u128};

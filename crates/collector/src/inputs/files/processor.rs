@@ -170,7 +170,7 @@ mod tests {
     use super::*;
     use crate::flow::enrichment::{DeletePayload, EnrichmentOperation, Scope};
     use crate::inputs::files::handlers::FlowUpsertsHandler;
-    use netgauze_flow_pkt::ie::IE;
+    use netcalyx_flow_pkt::ie::IE;
     use std::net::IpAddr;
     use std::str::FromStr;
     use tempfile::NamedTempFile;

@@ -17,9 +17,9 @@ use std::collections::HashMap;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 use chrono::{TimeZone, Utc};
-use netgauze_iana::tcp::*;
-use netgauze_parse_utils::test_helpers::*;
-use netgauze_parse_utils::{ReadablePduWithOneInput, Span};
+use netcalyx_iana::tcp::*;
+use netcalyx_parse_utils::test_helpers::*;
+use netcalyx_parse_utils::{ReadablePduWithOneInput, Span};
 
 use crate::netflow::*;
 use crate::wire::deserializer::netflow::{

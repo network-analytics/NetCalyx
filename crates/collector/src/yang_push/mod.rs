@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use netgauze_yang_push::model::telemetry::Label;
+use netcalyx_yang_push::model::telemetry::Label;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 

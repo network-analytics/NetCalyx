@@ -15,8 +15,8 @@
 
 #![no_main]
 use libfuzzer_sys::fuzz_target;
-use netgauze_parse_utils::{ReadablePdu, Span};
-use netgauze_udp_notif_pkt::raw::UdpNotifPacket;
+use netcalyx_parse_utils::{ReadablePdu, Span};
+use netcalyx_udp_notif_pkt::raw::UdpNotifPacket;
 
 fuzz_target!(|data: &[u8]| {
     let mut buf = Span::new(data);

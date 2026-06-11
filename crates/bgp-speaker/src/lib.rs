@@ -16,7 +16,7 @@
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
 
-use netgauze_bgp_pkt::codec::BgpCodec;
+use netcalyx_bgp_pkt::codec::BgpCodec;
 
 pub type BgpFramed = Framed<TcpStream, BgpCodec>;
 

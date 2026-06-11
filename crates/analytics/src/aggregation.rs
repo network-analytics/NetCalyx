@@ -35,7 +35,7 @@
 //! Example usage:
 //! ```text
 //! use std::time::Duration;
-//! use netgauze_analytics::aggregation::TimeSeriesData;
+//! use netcalyx_analytics::aggregation::TimeSeriesData;
 //!
 //! let data_stream = get_time_series_data_iterator();
 //! let results = data_stream

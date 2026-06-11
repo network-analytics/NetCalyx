@@ -31,7 +31,7 @@ use crate::wire::serializer::FlowWritingError;
 use crate::wire::serializer::ipfix::IpfixPacketWritingError;
 use crate::wire::serializer::netflow::NetFlowV9WritingError;
 use crate::{FlowInfo, ipfix, netflow};
-use netgauze_parse_utils::{
+use netcalyx_parse_utils::{
     LocatedParsingError, ReadablePduWithOneInput, Span, WritablePduWithOneInput,
 };
 

@@ -20,8 +20,8 @@ mod netflow;
 pub mod pcap_tests;
 
 use chrono::{TimeZone, Timelike, Utc};
-use netgauze_parse_utils::Span;
-use netgauze_parse_utils::test_helpers::*;
+use netcalyx_parse_utils::Span;
+use netcalyx_parse_utils::test_helpers::*;
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
 

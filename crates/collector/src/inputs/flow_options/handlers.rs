@@ -97,7 +97,7 @@ fn upsert_from_rec(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use netgauze_flow_pkt::ie::Field;
+    use netcalyx_flow_pkt::ie::Field;
     use std::net::{IpAddr, Ipv4Addr};
 
     #[test]

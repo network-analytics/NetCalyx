@@ -16,8 +16,8 @@
 use crate::bmp::pmacct_schema::*;
 use apache_avro::{Reader, Writer};
 
-use netgauze_bmp_pkt::BmpMessage;
-use netgauze_bmp_service::{AddrInfo, BmpRequest};
+use netcalyx_bmp_pkt::BmpMessage;
+use netcalyx_bmp_service::{AddrInfo, BmpRequest};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 

@@ -15,7 +15,7 @@
 
 use crate::flow::renormalization::logic::renormalize;
 use either::Either;
-use netgauze_flow_pkt::FlowInfo;
+use netcalyx_flow_pkt::FlowInfo;
 use opentelemetry::metrics::Meter;
 use std::net::SocketAddr;
 use tokio::sync::mpsc;
@@ -37,39 +37,39 @@ pub struct RenormalizationStats {
 impl RenormalizationStats {
     pub fn new(meter: Meter) -> Self {
         let messages_received = meter
-            .u64_counter("netgauze.collector.flows.renormalization.messages.received")
+            .u64_counter("netcalyx.collector.flows.renormalization.messages.received")
             .with_description("Number of IPFIX/NetFlow messages received for renormalization")
             .build();
         let messages_sent = meter
-            .u64_counter("netgauze.collector.flows.renormalization.messages.sent")
+            .u64_counter("netcalyx.collector.flows.renormalization.messages.sent")
             .with_description(
                 "Number of IPFIX/NetFlow successfully sent upstream (renormalized or not)",
             )
             .build();
         let messages_sent_error = meter
-            .u64_counter("netgauze.collector.flows.renormalization.messages.sent.error")
+            .u64_counter("netcalyx.collector.flows.renormalization.messages.sent.error")
             .with_description("Number of IPFIX/NetFlow messages that failed to send upstream after renormalization step")
             .build();
 
         let flows_renormalized = meter
-            .u64_counter("netgauze.collector.flows.renormalization.flows.renormalized")
+            .u64_counter("netcalyx.collector.flows.renormalization.flows.renormalized")
             .with_description("Number of flows successfully renormalized")
             .build();
         let flows_processed = meter
-            .u64_counter("netgauze.collector.flows.renormalization.flows.processed")
+            .u64_counter("netcalyx.collector.flows.renormalization.flows.processed")
             .with_description(
                 "Number of flows processed for renormalization (including non-renormalizable)",
             )
             .build();
         let ie_missing_or_invalid = meter
-            .u64_counter("netgauze.collector.flows.renormalization.ie.missing_invalid")
+            .u64_counter("netcalyx.collector.flows.renormalization.ie.missing_invalid")
             .with_description(
                 "Number of flows with missing or invalid information elements for renormalization",
             )
             .build();
         let sampling_algorithm_inferred = meter
             .u64_counter(
-                "netgauze.collector.flows.renormalization.sampling_algorithm.inferred",
+                "netcalyx.collector.flows.renormalization.sampling_algorithm.inferred",
             )
             .with_description(
                 "Number of flows where selector algorithm field was missing, but algorithm was inferred from other fields",

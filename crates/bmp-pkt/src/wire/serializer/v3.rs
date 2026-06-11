@@ -25,10 +25,10 @@ use crate::v3::{
 };
 use crate::{BmpPeerType, PeerHeader};
 use byteorder::{NetworkEndian, WriteBytesExt};
-use netgauze_bgp_pkt::wire::serializer::BgpMessageWritingError;
-use netgauze_bgp_pkt::wire::serializer::nlri::RouteDistinguisherWritingError;
-use netgauze_parse_utils::WritablePdu;
-use netgauze_serde_macros::WritingError;
+use netcalyx_bgp_pkt::wire::serializer::BgpMessageWritingError;
+use netcalyx_bgp_pkt::wire::serializer::nlri::RouteDistinguisherWritingError;
+use netcalyx_parse_utils::WritablePdu;
+use netcalyx_serde_macros::WritingError;
 use std::io::Write;
 use std::net::IpAddr;
 

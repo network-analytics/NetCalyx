@@ -15,18 +15,18 @@
 
 use super::*;
 use futures_util::SinkExt;
-use netgauze_bmp_pkt::BmpMessage;
-use netgauze_bmp_pkt::codec::BmpCodec;
-use netgauze_bmp_pkt::v3::{InitiationInformation, InitiationMessage};
+use netcalyx_bmp_pkt::BmpMessage;
+use netcalyx_bmp_pkt::codec::BmpCodec;
+use netcalyx_bmp_pkt::v3::{InitiationInformation, InitiationMessage};
 use tokio::net::TcpStream;
 use tokio::time::{Duration, timeout};
 use tokio_util::codec::FramedWrite;
 
 /// Helper to create a valid BMP Initiation Message for testing
 fn create_test_message() -> BmpMessage {
-    BmpMessage::V3(netgauze_bmp_pkt::v3::BmpMessageValue::Initiation(
+    BmpMessage::V3(netcalyx_bmp_pkt::v3::BmpMessageValue::Initiation(
         InitiationMessage::new(vec![InitiationInformation::SystemDescription(
-            "NetGauze Test Actor".to_string(),
+            "NetCalyx Test Actor".to_string(),
         )]),
     ))
 }

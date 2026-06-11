@@ -17,23 +17,23 @@ use chrono::prelude::*;
 use futures::{Sink, Stream, StreamExt};
 use futures_util::{FutureExt, SinkExt};
 
-use netgauze_bgp_pkt::BgpMessage;
-use netgauze_bgp_pkt::capabilities::BgpCapability;
-use netgauze_bgp_pkt::codec::{BgpCodec, BgpCodecDecoderError};
-use netgauze_bgp_pkt::iana::PathAttributeType;
-use netgauze_bgp_pkt::notification::{
+use netcalyx_bgp_pkt::BgpMessage;
+use netcalyx_bgp_pkt::capabilities::BgpCapability;
+use netcalyx_bgp_pkt::codec::{BgpCodec, BgpCodecDecoderError};
+use netcalyx_bgp_pkt::iana::PathAttributeType;
+use netcalyx_bgp_pkt::notification::{
     BgpNotificationMessage, FiniteStateMachineError, HoldTimerExpiredError, OpenMessageError,
     UpdateMessageError,
 };
-use netgauze_bgp_pkt::open::BgpOpenMessage;
-use netgauze_bgp_pkt::path_attribute::{InvalidPathAttribute, PathAttributeValue};
-use netgauze_bgp_pkt::update::BgpUpdateMessage;
-use netgauze_bgp_pkt::wire::deserializer::BgpParsingIgnoredErrors;
-use netgauze_bgp_pkt::wire::deserializer::path_attribute::{
+use netcalyx_bgp_pkt::open::BgpOpenMessage;
+use netcalyx_bgp_pkt::path_attribute::{InvalidPathAttribute, PathAttributeValue};
+use netcalyx_bgp_pkt::update::BgpUpdateMessage;
+use netcalyx_bgp_pkt::wire::deserializer::BgpParsingIgnoredErrors;
+use netcalyx_bgp_pkt::wire::deserializer::path_attribute::{
     MpReachParsingError, MpUnreachParsingError, PathAttributeParsingError,
 };
-use netgauze_bgp_pkt::wire::serializer::BgpMessageWritingError;
-use netgauze_iana::address_family::{AddressFamily, SubsequentAddressFamily};
+use netcalyx_bgp_pkt::wire::serializer::BgpMessageWritingError;
+use netcalyx_iana::address_family::{AddressFamily, SubsequentAddressFamily};
 use pin_project::pin_project;
 use std::fmt::{Debug, Display};
 use std::future::Future;

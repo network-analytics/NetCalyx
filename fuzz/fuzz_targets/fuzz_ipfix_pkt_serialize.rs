@@ -16,8 +16,8 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use netgauze_flow_pkt::ipfix::{IpfixPacket, TemplatesMap};
-use netgauze_parse_utils::WritablePduWithOneInput;
+use netcalyx_flow_pkt::ipfix::{IpfixPacket, TemplatesMap};
+use netcalyx_parse_utils::WritablePduWithOneInput;
 use std::io::Cursor;
 
 fuzz_target!(|data: (IpfixPacket, Option<TemplatesMap>)| {

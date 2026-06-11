@@ -16,9 +16,9 @@
 use super::{decode_buffer, serialize_error, serialize_success};
 use crate::protocol_handler::{DecodeOutcome, ProtocolHandler};
 use bytes::BytesMut;
-use netgauze_bmp_pkt::BmpMessage;
-use netgauze_bmp_pkt::codec::{BmpCodec, BmpCodecDecoderError};
-use netgauze_pcap_reader::TransportProtocol;
+use netcalyx_bmp_pkt::BmpMessage;
+use netcalyx_bmp_pkt::codec::{BmpCodec, BmpCodecDecoderError};
+use netcalyx_pcap_reader::TransportProtocol;
 use std::collections::HashMap;
 use std::io;
 use std::net::IpAddr;
@@ -75,8 +75,8 @@ impl ProtocolHandler<BmpMessage, BmpCodec, BmpCodecDecoderError> for BmpProtocol
 #[cfg(test)]
 mod tests {
     use super::*;
-    use netgauze_bmp_pkt::v3::{BmpMessageValue, InitiationInformation, InitiationMessage};
-    use netgauze_bmp_pkt::wire::deserializer::BmpMessageParsingError;
+    use netcalyx_bmp_pkt::v3::{BmpMessageValue, InitiationInformation, InitiationMessage};
+    use netcalyx_bmp_pkt::wire::deserializer::BmpMessageParsingError;
     use serde_json::json;
     use std::net::Ipv4Addr;
 
@@ -280,7 +280,7 @@ mod tests {
             Some(vec![DecodeOutcome::Error(
                 BmpCodecDecoderError::BmpMessageParsingError(
                     BmpMessageParsingError::UndefinedBmpVersion(
-                        netgauze_bmp_pkt::iana::UndefinedBmpVersion(1)
+                        netcalyx_bmp_pkt::iana::UndefinedBmpVersion(1)
                     )
                 )
             )]),

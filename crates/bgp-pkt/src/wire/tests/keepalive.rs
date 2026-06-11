@@ -17,7 +17,7 @@ use crate::BgpMessage;
 use crate::wire::deserializer::BgpParsingContext;
 use crate::wire::serializer::BgpMessageWritingError;
 use crate::wire::tests::BGP_MARKER;
-use netgauze_parse_utils::test_helpers::{
+use netcalyx_parse_utils::test_helpers::{
     combine, test_parsed_completely_with_one_input, test_write,
 };
 

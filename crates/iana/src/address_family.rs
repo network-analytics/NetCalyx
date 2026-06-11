@@ -18,7 +18,7 @@
 //! construct valid AFI/SAFI combinations
 //!
 //! ```rust
-//! use netgauze_iana::address_family::*;
+//! use netcalyx_iana::address_family::*;
 //!
 //! let ipv4_unicast = AddressType::Ipv4Unicast;
 //! let ipv6_unicast =
@@ -47,7 +47,7 @@ use strum_macros::{Display, FromRepr};
 /// Address families identifiers (AFI) registered at IANA [Address Family Number](https://www.iana.org/assignments/address-family-numbers/address-family-numbers.xhtml)
 ///
 /// ```rust
-/// use netgauze_iana::address_family::{AddressFamily, UndefinedAddressFamily};
+/// use netcalyx_iana::address_family::{AddressFamily, UndefinedAddressFamily};
 ///
 /// let afi = AddressFamily::IPv6;
 /// println!("IPv6 AFI is: {}", afi);
@@ -206,7 +206,7 @@ impl TryFrom<u16> for AddressFamily {
 /// Subsequent Address families identifiers (SAFI) registered at IANA [Subsequent Address Family Identifiers (SAFI) Parameters](https://www.iana.org/assignments/safi-namespace/safi-namespace.xhtml)
 ///
 /// ```rust
-/// use netgauze_iana::address_family::{
+/// use netcalyx_iana::address_family::{
 ///     SubsequentAddressFamily, UndefinedSubsequentAddressFamily,
 /// };
 ///

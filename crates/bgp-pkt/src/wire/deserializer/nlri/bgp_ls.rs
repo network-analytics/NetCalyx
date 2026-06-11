@@ -31,12 +31,12 @@ use crate::wire::deserializer::{
     Ipv4PrefixParsingError, Ipv6PrefixParsingError, read_tlv_header_t16_l16,
 };
 use ipnet::IpNet;
-use netgauze_parse_utils::{
+use netcalyx_parse_utils::{
     ErrorKindSerdeDeref, ReadablePdu, ReadablePduWithOneInput, Span, parse_into_located,
     parse_into_located_one_input, parse_till_empty_into_located,
     parse_till_empty_into_with_one_input_located,
 };
-use netgauze_serde_macros::LocatedError;
+use netcalyx_serde_macros::LocatedError;
 use nom::IResult;
 use nom::error::ErrorKind;
 use nom::number::complete::{be_u8, be_u16, be_u32, be_u64, be_u128};

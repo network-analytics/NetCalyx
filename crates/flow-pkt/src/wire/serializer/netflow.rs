@@ -19,8 +19,8 @@ use crate::wire::deserializer::netflow::NETFLOW_V9_HEADER_LENGTH;
 use crate::wire::serializer::FieldSpecifierWritingError;
 use crate::wire::serializer::ie::FieldWritingError;
 use byteorder::{NetworkEndian, WriteBytesExt};
-use netgauze_parse_utils::{WritablePdu, WritablePduWithOneInput, WritablePduWithTwoInputs};
-use netgauze_serde_macros::WritingError;
+use netcalyx_parse_utils::{WritablePdu, WritablePduWithOneInput, WritablePduWithTwoInputs};
+use netcalyx_serde_macros::WritingError;
 use std::io::Write;
 
 #[derive(WritingError, Eq, PartialEq, Clone, Debug)]

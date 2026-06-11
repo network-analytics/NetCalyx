@@ -46,7 +46,7 @@
 
 use crate::flow::types::FieldRef;
 use indexmap::IndexMap;
-use netgauze_flow_pkt::ie::IE;
+use netcalyx_flow_pkt::ie::IE;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use strum_macros::Display;

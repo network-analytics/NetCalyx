@@ -16,8 +16,8 @@
 #![no_main]
 use libfuzzer_sys::fuzz_target;
 
-use netgauze_bgp_pkt::BgpMessage;
-use netgauze_parse_utils::WritablePdu;
+use netcalyx_bgp_pkt::BgpMessage;
+use netcalyx_parse_utils::WritablePdu;
 use std::io::Cursor;
 
 fuzz_target!(|data: BgpMessage| {

@@ -28,13 +28,13 @@ use ipnet::{Ipv4Net, Ipv6Net};
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-use netgauze_iana::address_family::AddressType;
+use netcalyx_iana::address_family::AddressType;
 use nom::IResult;
 use nom::error::ErrorKind;
 use nom::number::complete::{be_u8, be_u16, be_u32, be_u128};
 use serde::{Deserialize, Serialize};
 
-use netgauze_parse_utils::{
+use netcalyx_parse_utils::{
     ErrorKindSerdeDeref, ReadablePdu, ReadablePduWithOneInput, ReadablePduWithTwoInputs, Span,
     parse_into_located, parse_into_located_one_input,
 };
@@ -50,7 +50,7 @@ use crate::wire::deserializer::path_attribute::PathAttributeParsingError;
 use crate::wire::deserializer::route_refresh::BgpRouteRefreshMessageParsingError;
 use crate::wire::deserializer::update::BgpUpdateMessageParsingError;
 use crate::wire::serializer::nlri::{IPV4_LEN, IPV6_LEN};
-use netgauze_serde_macros::LocatedError;
+use netcalyx_serde_macros::LocatedError;
 
 /// Min message size in BGP is 19 octets. They're counted from
 /// 16-octets synchronization header, 2-octets length, and 1 octet for type.
@@ -597,7 +597,7 @@ impl From<BgpMessageParsingError> for BgpNotificationMessage {
 pub fn read_tlv_header_t16_l16<'a, E, T>(buf: Span<'a>) -> Result<(u16, u16, Span<'a>, Span<'a>), E>
 where
     E: From<nom::Err<T>>,
-    T: nom::error::ParseError<netgauze_locate::BinarySpan<&'a [u8]>>,
+    T: nom::error::ParseError<netcalyx_locate::BinarySpan<&'a [u8]>>,
 {
     let (span, tlv_type) = be_u16(buf)?;
     let (span, tlv_length) = be_u16(span)?;
@@ -610,7 +610,7 @@ where
 pub fn read_tlv_header_t8_l16<'a, E, T>(buf: Span<'a>) -> Result<(u8, u16, Span<'a>, Span<'a>), E>
 where
     E: From<nom::Err<T>>,
-    T: nom::error::ParseError<netgauze_locate::BinarySpan<&'a [u8]>>,
+    T: nom::error::ParseError<netcalyx_locate::BinarySpan<&'a [u8]>>,
 {
     let (span, tlv_type) = be_u8(buf)?;
     let (span, tlv_length) = be_u16(span)?;

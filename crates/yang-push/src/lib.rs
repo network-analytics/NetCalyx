@@ -15,7 +15,7 @@
 
 //! # Overview
 //!
-//! This module defines the constants and types relevant to the NetGauze UDP
+//! This module defines the constants and types relevant to the NetCalyx UDP
 //! notification handling system using YANG push subscriptions.
 //! # Exports and Definitions
 //!
@@ -37,14 +37,14 @@ pub mod validation;
 /// [RFC8525](https://datatracker.ietf.org/doc/html/rfc8525).
 pub type ContentId = String;
 
-pub const OTL_YANG_PUSH_SUBSCRIPTION_ID_KEY: &str = "netgauze.udp.notif.yang.push.subscription.id";
+pub const OTL_YANG_PUSH_SUBSCRIPTION_ID_KEY: &str = "netcalyx.udp.notif.yang.push.subscription.id";
 pub const OTL_YANG_PUSH_SUBSCRIPTION_TARGET_KEY: &str =
-    "netgauze.udp.notif.yang.push.subscription.target";
+    "netcalyx.udp.notif.yang.push.subscription.target";
 pub const OTL_YANG_PUSH_SUBSCRIPTION_ROUTER_CONTENT_ID_KEY: &str =
-    "netgauze.udp.notif.yang.push.subscription.router_content_id";
+    "netcalyx.udp.notif.yang.push.subscription.router_content_id";
 pub const OTL_YANG_PUSH_CACHED_CONTENT_ID_KEY: &str =
-    "netgauze.udp.notif.yang.push.subscription.cached_content_id";
-const OTL_CACHE_DROP_REASON_KEY: &str = "netgauze.udp.notif.yang.push.cache.drop.reason";
+    "netcalyx.udp.notif.yang.push.subscription.cached_content_id";
+const OTL_CACHE_DROP_REASON_KEY: &str = "netcalyx.udp.notif.yang.push.cache.drop.reason";
 const OTL_CACHE_DROP_REASON_SUBSCRIPTION_CACHE_FULL: &str = "subscription cache is full";
 const OTL_CACHE_DROP_REASON_PEER_CACHE_FULL: &str = "peer cache is full";
-const OTL_YANG_PUSH_DECODE_ERROR_ID_KEY: &str = "netgauze.udp.notif.yang.push.decode.error";
+const OTL_YANG_PUSH_DECODE_ERROR_ID_KEY: &str = "netcalyx.udp.notif.yang.push.decode.error";

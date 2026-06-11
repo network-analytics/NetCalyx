@@ -2618,7 +2618,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
 
 [[package]]
-name = "netgauze-analytics"
+name = "netcalyx-analytics"
 version = "0.12.1"
 dependencies = [
  "chrono",
@@ -2632,7 +2632,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "netgauze-bgp-pkt"
+name = "netcalyx-bgp-pkt"
 version = "0.12.1"
 dependencies = [
  "arbitrary",
@@ -2641,11 +2641,11 @@ dependencies = [
  "bytes",
  "criterion",
  "ipnet",
- "netgauze-iana",
- "netgauze-locate",
- "netgauze-parse-utils",
- "netgauze-pcap-reader",
- "netgauze-serde-macros",
+ "netcalyx-iana",
+ "netcalyx-locate",
+ "netcalyx-parse-utils",
+ "netcalyx-pcap-reader",
+ "netcalyx-serde-macros",
  "nom 7.1.3",
  "pcap-parser",
  "rstest",
@@ -2658,7 +2658,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "netgauze-bgp-speaker"
+name = "netcalyx-bgp-speaker"
 version = "0.12.1"
 dependencies = [
  "arbitrary",
@@ -2668,9 +2668,9 @@ dependencies = [
  "futures",
  "futures-core",
  "futures-util",
- "netgauze-bgp-pkt",
- "netgauze-iana",
- "netgauze-parse-utils",
+ "netcalyx-bgp-pkt",
+ "netcalyx-iana",
+ "netcalyx-parse-utils",
  "pin-project",
  "rand 0.10.1",
  "serde",
@@ -2685,7 +2685,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "netgauze-bmp-pkt"
+name = "netcalyx-bmp-pkt"
 version = "0.12.1"
 dependencies = [
  "arbitrary",
@@ -2697,12 +2697,12 @@ dependencies = [
  "criterion",
  "either",
  "ipnet",
- "netgauze-bgp-pkt",
- "netgauze-iana",
- "netgauze-locate",
- "netgauze-parse-utils",
- "netgauze-pcap-reader",
- "netgauze-serde-macros",
+ "netcalyx-bgp-pkt",
+ "netcalyx-iana",
+ "netcalyx-locate",
+ "netcalyx-parse-utils",
+ "netcalyx-pcap-reader",
+ "netcalyx-serde-macros",
  "nom 7.1.3",
  "pcap-parser",
  "rstest",
@@ -2714,7 +2714,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "netgauze-bmp-service"
+name = "netcalyx-bmp-service"
 version = "0.12.1"
 dependencies = [
  "async-channel",
@@ -2724,7 +2724,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "libc",
- "netgauze-bmp-pkt",
+ "netcalyx-bmp-pkt",
  "opentelemetry",
  "pin-project",
  "rand 0.10.1",
@@ -2744,7 +2744,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "netgauze-collector"
+name = "netcalyx-collector"
 version = "0.12.1"
 dependencies = [
  "anyhow",
@@ -2760,18 +2760,18 @@ dependencies = [
  "futures-util",
  "indexmap 2.14.0",
  "ipnet",
- "netgauze-analytics",
- "netgauze-bgp-pkt",
- "netgauze-bmp-pkt",
- "netgauze-bmp-service",
- "netgauze-flow-pkt",
- "netgauze-flow-service",
- "netgauze-iana",
- "netgauze-netconf-proto",
- "netgauze-serde-macros",
- "netgauze-udp-notif-pkt",
- "netgauze-udp-notif-service",
- "netgauze-yang-push",
+ "netcalyx-analytics",
+ "netcalyx-bgp-pkt",
+ "netcalyx-bmp-pkt",
+ "netcalyx-bmp-service",
+ "netcalyx-flow-pkt",
+ "netcalyx-flow-service",
+ "netcalyx-iana",
+ "netcalyx-netconf-proto",
+ "netcalyx-serde-macros",
+ "netcalyx-udp-notif-pkt",
+ "netcalyx-udp-notif-service",
+ "netcalyx-yang-push",
  "notify",
  "opentelemetry",
  "opentelemetry-otlp",
@@ -2803,7 +2803,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "netgauze-flow-pkt"
+name = "netcalyx-flow-pkt"
 version = "0.12.1"
 dependencies = [
  "arbitrary",
@@ -2813,12 +2813,12 @@ dependencies = [
  "chrono",
  "criterion",
  "either",
- "netgauze-iana",
- "netgauze-ipfix-code-generator",
- "netgauze-locate",
- "netgauze-parse-utils",
- "netgauze-pcap-reader",
- "netgauze-serde-macros",
+ "netcalyx-iana",
+ "netcalyx-ipfix-code-generator",
+ "netcalyx-locate",
+ "netcalyx-parse-utils",
+ "netcalyx-pcap-reader",
+ "netcalyx-serde-macros",
  "nom 7.1.3",
  "ordered-float 5.3.0",
  "pcap-parser",
@@ -2832,7 +2832,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "netgauze-flow-service"
+name = "netcalyx-flow-service"
 version = "0.12.1"
 dependencies = [
  "async-channel",
@@ -2842,7 +2842,7 @@ dependencies = [
  "futures",
  "futures-util",
  "libc",
- "netgauze-flow-pkt",
+ "netcalyx-flow-pkt",
  "opentelemetry",
  "serde",
  "serde_json",
@@ -2856,20 +2856,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "netgauze-fuzz"
+name = "netcalyx-fuzz"
 version = "0.12.1"
 dependencies = [
  "bytes",
  "futures-core",
  "libfuzzer-sys",
- "netgauze-bgp-pkt",
- "netgauze-bgp-speaker",
- "netgauze-bmp-pkt",
- "netgauze-flow-pkt",
- "netgauze-iana",
- "netgauze-netconf-proto",
- "netgauze-parse-utils",
- "netgauze-udp-notif-pkt",
+ "netcalyx-bgp-pkt",
+ "netcalyx-bgp-speaker",
+ "netcalyx-bmp-pkt",
+ "netcalyx-flow-pkt",
+ "netcalyx-iana",
+ "netcalyx-netconf-proto",
+ "netcalyx-parse-utils",
+ "netcalyx-udp-notif-pkt",
  "quick-xml",
  "tokio",
  "tokio-stream",
@@ -2878,7 +2878,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "netgauze-iana"
+name = "netcalyx-iana"
 version = "0.12.1"
 dependencies = [
  "arbitrary",
@@ -2889,7 +2889,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "netgauze-ipfix-code-generator"
+name = "netcalyx-ipfix-code-generator"
 version = "0.12.1"
 dependencies = [
  "prettyplease",
@@ -2905,14 +2905,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "netgauze-locate"
+name = "netcalyx-locate"
 version = "0.12.1"
 dependencies = [
  "nom 7.1.3",
 ]
 
 [[package]]
-name = "netgauze-netconf-proto"
+name = "netcalyx-netconf-proto"
 version = "0.12.1"
 dependencies = [
  "anyhow",
@@ -2937,27 +2937,27 @@ dependencies = [
 ]
 
 [[package]]
-name = "netgauze-parse-utils"
+name = "netcalyx-parse-utils"
 version = "0.12.1"
 dependencies = [
- "netgauze-locate",
+ "netcalyx-locate",
  "nom 7.1.3",
  "serde",
 ]
 
 [[package]]
-name = "netgauze-pcap-decoder"
+name = "netcalyx-pcap-decoder"
 version = "0.12.1"
 dependencies = [
  "bytes",
  "chrono",
  "ciborium",
  "clap",
- "netgauze-bgp-pkt",
- "netgauze-bmp-pkt",
- "netgauze-flow-pkt",
- "netgauze-pcap-reader",
- "netgauze-udp-notif-pkt",
+ "netcalyx-bgp-pkt",
+ "netcalyx-bmp-pkt",
+ "netcalyx-flow-pkt",
+ "netcalyx-pcap-reader",
+ "netcalyx-udp-notif-pkt",
  "pcap-parser",
  "serde",
  "serde_json",
@@ -2966,7 +2966,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "netgauze-pcap-reader"
+name = "netcalyx-pcap-reader"
 version = "0.12.1"
 dependencies = [
  "pcap-parser",
@@ -2974,11 +2974,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "netgauze-serde-macros"
+name = "netcalyx-serde-macros"
 version = "0.12.1"
 dependencies = [
- "netgauze-locate",
- "netgauze-parse-utils",
+ "netcalyx-locate",
+ "netcalyx-parse-utils",
  "nom 7.1.3",
  "quote",
  "syn",
@@ -2986,7 +2986,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "netgauze-udp-notif-pkt"
+name = "netcalyx-udp-notif-pkt"
 version = "0.12.1"
 dependencies = [
  "arbitrary",
@@ -2996,11 +2996,11 @@ dependencies = [
  "chrono",
  "ciborium",
  "either",
- "netgauze-locate",
- "netgauze-netconf-proto",
- "netgauze-parse-utils",
- "netgauze-pcap-reader",
- "netgauze-serde-macros",
+ "netcalyx-locate",
+ "netcalyx-netconf-proto",
+ "netcalyx-parse-utils",
+ "netcalyx-pcap-reader",
+ "netcalyx-serde-macros",
  "nom 7.1.3",
  "pcap-parser",
  "rstest",
@@ -3012,7 +3012,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "netgauze-udp-notif-service"
+name = "netcalyx-udp-notif-service"
 version = "0.12.1"
 dependencies = [
  "async-channel",
@@ -3021,8 +3021,8 @@ dependencies = [
  "futures",
  "futures-util",
  "libc",
- "netgauze-parse-utils",
- "netgauze-udp-notif-pkt",
+ "netcalyx-parse-utils",
+ "netcalyx-udp-notif-pkt",
  "opentelemetry",
  "serde",
  "serde_json",
@@ -3036,7 +3036,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "netgauze-yang-push"
+name = "netcalyx-yang-push"
 version = "0.12.1"
 dependencies = [
  "async-channel",
@@ -3044,9 +3044,9 @@ dependencies = [
  "chrono",
  "either",
  "futures-util",
- "netgauze-netconf-proto",
- "netgauze-udp-notif-pkt",
- "netgauze-udp-notif-service",
+ "netcalyx-netconf-proto",
+ "netcalyx-udp-notif-pkt",
+ "netcalyx-udp-notif-service",
  "opentelemetry",
  "quick-xml",
  "rand 0.10.1",

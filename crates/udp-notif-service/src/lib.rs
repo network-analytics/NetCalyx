@@ -23,7 +23,7 @@
 //! See the examples directory for end-to-end wiring of listeners and
 //! subscriber pipelines.
 
-use netgauze_udp_notif_pkt::raw::UdpNotifPacket;
+use netcalyx_udp_notif_pkt::raw::UdpNotifPacket;
 use std::fmt::Display;
 use std::io;
 use std::net::SocketAddr;
@@ -162,4 +162,4 @@ pub fn new_udp_reuse_port(
     udp_sock.try_into()
 }
 
-pub const OTL_UDP_NOTIF_PUBLISHER_ID_KEY: &str = "netgauze.udp.notif.publisher_id";
+pub const OTL_UDP_NOTIF_PUBLISHER_ID_KEY: &str = "netcalyx.udp.notif.publisher_id";

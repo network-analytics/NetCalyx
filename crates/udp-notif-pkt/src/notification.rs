@@ -207,14 +207,14 @@
 //!   additional fields to ensure compatibility with YANG augmentations
 
 use chrono::{DateTime, Utc};
-use netgauze_netconf_proto::yang_push::filters::{
+use netcalyx_netconf_proto::yang_push::filters::{
     DatastoreFilterSpec, StreamFilterSpec, StreamSelectionFilterObjects,
 };
-use netgauze_netconf_proto::yang_push::identities::{Encoding, Transport};
-use netgauze_netconf_proto::yang_push::subscription::{
+use netcalyx_netconf_proto::yang_push::identities::{Encoding, Transport};
+use netcalyx_netconf_proto::yang_push::subscription::{
     DatastoreSelectionFilterObjects, Subscription, UpdateTrigger, YangPushModuleVersion,
 };
-use netgauze_netconf_proto::yang_push::types::SubscriptionId;
+use netcalyx_netconf_proto::yang_push::types::SubscriptionId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use strum_macros::Display;
@@ -569,14 +569,14 @@ pub enum SubscriptionConvertError {
     UnsupportedDatastoreSubtreeFilter(String),
 }
 
-impl TryFrom<netgauze_netconf_proto::yang_push::subscription::Target> for Target {
+impl TryFrom<netcalyx_netconf_proto::yang_push::subscription::Target> for Target {
     type Error = SubscriptionConvertError;
 
     fn try_from(
-        value: netgauze_netconf_proto::yang_push::subscription::Target,
+        value: netcalyx_netconf_proto::yang_push::subscription::Target,
     ) -> Result<Self, Self::Error> {
         let target = match value {
-            netgauze_netconf_proto::yang_push::subscription::Target::Stream(stream_target) => {
+            netcalyx_netconf_proto::yang_push::subscription::Target::Stream(stream_target) => {
                 match stream_target.filter {
                     StreamSelectionFilterObjects::ByReference(name) => {
                         return Err(
@@ -603,7 +603,7 @@ impl TryFrom<netgauze_netconf_proto::yang_push::subscription::Target> for Target
                     },
                 }
             }
-            netgauze_netconf_proto::yang_push::subscription::Target::Datastore(
+            netcalyx_netconf_proto::yang_push::subscription::Target::Datastore(
                 datastore_target,
             ) => match datastore_target.selection {
                 DatastoreSelectionFilterObjects::ByReference(name) => {
@@ -924,13 +924,13 @@ mod tests {
     use super::*;
     use chrono::{TimeZone, Utc};
 
-    use netgauze_netconf_proto::yang_push::filters::{
+    use netcalyx_netconf_proto::yang_push::filters::{
         DatastoreSubtreeFilter, DatastoreXPathFilter,
     };
-    use netgauze_netconf_proto::yang_push::identities::ChangeType;
-    use netgauze_netconf_proto::yang_push::subscription::DatastoreTarget;
-    use netgauze_netconf_proto::yang_push::types::CentiSeconds;
-    use netgauze_netconf_proto::yanglib::DatastoreName;
+    use netcalyx_netconf_proto::yang_push::identities::ChangeType;
+    use netcalyx_netconf_proto::yang_push::subscription::DatastoreTarget;
+    use netcalyx_netconf_proto::yang_push::types::CentiSeconds;
+    use netcalyx_netconf_proto::yanglib::DatastoreName;
     use serde_json;
 
     #[test]
@@ -1476,11 +1476,11 @@ mod tests {
 
     #[test]
     fn test_target_conversion() {
-        let stream_xpath_input = netgauze_netconf_proto::yang_push::subscription::Target::Stream(
-            netgauze_netconf_proto::yang_push::subscription::StreamTarget {
+        let stream_xpath_input = netcalyx_netconf_proto::yang_push::subscription::Target::Stream(
+            netcalyx_netconf_proto::yang_push::subscription::StreamTarget {
                 stream: "example-stream".into(),
                 filter: StreamSelectionFilterObjects::WithInSubscription(StreamFilterSpec::Xpath(
-                    netgauze_netconf_proto::yang_push::filters::StreamXPathFilter {
+                    netcalyx_netconf_proto::yang_push::filters::StreamXPathFilter {
                         namespaces: Box::new([]),
                         path: "/openconfig-platform:components/component/state".into(),
                     },
@@ -1494,12 +1494,12 @@ mod tests {
             None,
             either::Either::Right("/openconfig-platform:components/component/state".into()),
         );
-        let stream_subtree_input = netgauze_netconf_proto::yang_push::subscription::Target::Stream(
-            netgauze_netconf_proto::yang_push::subscription::StreamTarget {
+        let stream_subtree_input = netcalyx_netconf_proto::yang_push::subscription::Target::Stream(
+            netcalyx_netconf_proto::yang_push::subscription::StreamTarget {
                 stream: "example-stream".into(),
                 filter: StreamSelectionFilterObjects::WithInSubscription(
                     StreamFilterSpec::Subtree(
-                        netgauze_netconf_proto::yang_push::filters::StreamSubtreeFilter {
+                        netcalyx_netconf_proto::yang_push::filters::StreamSubtreeFilter {
                             namespaces: Box::new([]),
                             subtree: "<openconfig-platform:components />".into(),
                         },
@@ -1514,7 +1514,7 @@ mod tests {
         );
 
         let datastore_xpath_input =
-            netgauze_netconf_proto::yang_push::subscription::Target::Datastore(DatastoreTarget {
+            netcalyx_netconf_proto::yang_push::subscription::Target::Datastore(DatastoreTarget {
                 datastore: DatastoreName::Operational,
                 selection: DatastoreSelectionFilterObjects::WithInSubscription(
                     DatastoreFilterSpec::Xpath(DatastoreXPathFilter {
@@ -1530,7 +1530,7 @@ mod tests {
         );
 
         let datastore_subtree_input =
-            netgauze_netconf_proto::yang_push::subscription::Target::Datastore(DatastoreTarget {
+            netcalyx_netconf_proto::yang_push::subscription::Target::Datastore(DatastoreTarget {
                 datastore: DatastoreName::Operational,
                 selection: DatastoreSelectionFilterObjects::WithInSubscription(
                     DatastoreFilterSpec::Subtree(DatastoreSubtreeFilter {
@@ -1563,7 +1563,7 @@ mod tests {
     fn test_subscription_conversion() {
         let input = Subscription {
             id: 3,
-            target: netgauze_netconf_proto::yang_push::subscription::Target::Datastore(
+            target: netcalyx_netconf_proto::yang_push::subscription::Target::Datastore(
                 DatastoreTarget {
                     datastore: DatastoreName::Operational,
                     selection: DatastoreSelectionFilterObjects::WithInSubscription(

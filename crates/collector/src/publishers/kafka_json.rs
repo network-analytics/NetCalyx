@@ -54,31 +54,31 @@ pub struct KafkaJsonPublisherStats {
 impl KafkaJsonPublisherStats {
     fn new(meter: opentelemetry::metrics::Meter) -> Self {
         let received = meter
-            .u64_counter("netgauze.collector.kafka.json.received")
+            .u64_counter("netcalyx.collector.kafka.json.received")
             .with_description("Received messages from upstream producer")
             .build();
         let sent = meter
-            .u64_counter("netgauze.collector.kafka.json.sent")
+            .u64_counter("netcalyx.collector.kafka.json.sent")
             .with_description("Number of messages successfully sent to Kafka")
             .build();
         let send_retries = meter
-            .u64_counter("netgauze.collector.kafka.json.send.retries")
+            .u64_counter("netcalyx.collector.kafka.json.send.retries")
             .with_description("Number of send retries to Kafka due to full queue in librdkafka")
             .build();
         let error_decode = meter
-            .u64_counter("netgauze.collector.kafka.json.error_decode")
+            .u64_counter("netcalyx.collector.kafka.json.error_decode")
             .with_description("Error decoding message into JSON")
             .build();
         let error_send = meter
-            .u64_counter("netgauze.collector.kafka.json.error_send")
+            .u64_counter("netcalyx.collector.kafka.json.error_send")
             .with_description("Error sending message to Kafka")
             .build();
         let delivered_messages = meter
-            .u64_counter("netgauze.collector.kafka.json.delivered_messages")
+            .u64_counter("netcalyx.collector.kafka.json.delivered_messages")
             .with_description("Messages confirmed to be delivered to Kafka")
             .build();
         let failed_delivery_messages = meter
-            .u64_counter("netgauze.collector.kafka.json.failed_delivery_messages")
+            .u64_counter("netcalyx.collector.kafka.json.failed_delivery_messages")
             .with_description("Messages failed delivery to Kafka")
             .build();
         Self {
@@ -206,7 +206,7 @@ impl<
                 self.stats.error_decode.add(
                     1,
                     &[opentelemetry::KeyValue::new(
-                        "netgauze.json.decode.error.msg",
+                        "netcalyx.json.decode.error.msg",
                         err.to_string(),
                     )],
                 );
@@ -220,7 +220,7 @@ impl<
                 self.stats.error_decode.add(
                     1,
                     &[opentelemetry::KeyValue::new(
-                        "netgauze.json.decode.error.msg",
+                        "netcalyx.json.decode.error.msg",
                         err.to_string(),
                     )],
                 );
@@ -235,7 +235,7 @@ impl<
                     self.stats.error_decode.add(
                         1,
                         &[opentelemetry::KeyValue::new(
-                            "netgauze.json.decode.error.msg",
+                            "netcalyx.json.decode.error.msg",
                             err.to_string(),
                         )],
                     );
@@ -266,7 +266,7 @@ impl<
                             self.stats.error_send.add(
                                 1,
                                 &[opentelemetry::KeyValue::new(
-                                    "netgauze.kafka.sent.error.msg",
+                                    "netcalyx.kafka.sent.error.msg",
                                     err.to_string(),
                                 )],
                             );
@@ -284,7 +284,7 @@ impl<
                         self.stats.error_send.add(
                             1,
                             &[opentelemetry::KeyValue::new(
-                                "netgauze.kafka.sent.error.msg",
+                                "netcalyx.kafka.sent.error.msg",
                                 err.to_string(),
                             )],
                         );

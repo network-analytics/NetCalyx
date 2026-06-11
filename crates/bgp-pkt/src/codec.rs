@@ -21,7 +21,7 @@ use crate::wire::deserializer::{
 use crate::wire::serializer::BgpMessageWritingError;
 use byteorder::{ByteOrder, NetworkEndian};
 use bytes::{Buf, BufMut, BytesMut};
-use netgauze_parse_utils::{LocatedParsingError, ReadablePduWithOneInput, Span, WritablePdu};
+use netcalyx_parse_utils::{LocatedParsingError, ReadablePduWithOneInput, Span, WritablePdu};
 use nom::Needed;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

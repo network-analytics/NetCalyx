@@ -15,14 +15,14 @@
 
 use crate::flow::aggregation::aggregator::*;
 use chrono::{TimeZone, Utc};
-use netgauze_analytics::aggregation::Aggregator;
-use netgauze_flow_pkt::ie::{Field, IE, protocolIdentifier};
-use netgauze_flow_pkt::ipfix::{DataRecord, IpfixPacket, Set};
-use netgauze_flow_pkt::netflow::{
+use netcalyx_analytics::aggregation::Aggregator;
+use netcalyx_flow_pkt::ie::{Field, IE, protocolIdentifier};
+use netcalyx_flow_pkt::ipfix::{DataRecord, IpfixPacket, Set};
+use netcalyx_flow_pkt::netflow::{
     DataRecord as NetFlowV9DataRecord, NetFlowV9Packet, Set as NetFlowV9Set,
 };
-use netgauze_flow_pkt::{DataSetId, FlowInfo, FlowInfoType};
-use netgauze_iana::tcp::TCPHeaderFlags;
+use netcalyx_flow_pkt::{DataSetId, FlowInfo, FlowInfoType};
+use netcalyx_iana::tcp::TCPHeaderFlags;
 use rustc_hash::FxHashMap;
 use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -389,12 +389,12 @@ fn test_ipfix_into_flowinfo_with_extra_fields() {
 
     // Extra fields to add
     let extra_fields = vec![
-        Field::NetGauze(netgauze::Field::windowStart(
+        Field::NetCalyx(netcalyx::Field::windowStart(
             DateTime::parse_from_rfc3339("2025-07-02T10:00:00Z")
                 .unwrap()
                 .to_utc(),
         )),
-        Field::NetGauze(netgauze::Field::windowEnd(
+        Field::NetCalyx(netcalyx::Field::windowEnd(
             DateTime::parse_from_rfc3339("2025-07-02T10:01:00Z")
                 .unwrap()
                 .to_utc(),
@@ -420,16 +420,16 @@ fn test_ipfix_into_flowinfo_with_extra_fields() {
     ]);
     expected_fields.extend(extra_fields);
     expected_fields.extend([
-        Field::NetGauze(netgauze::Field::originalExporterTransportPort(9995)),
-        Field::NetGauze(netgauze::Field::originalExporterTransportPort(9996)),
+        Field::NetCalyx(netcalyx::Field::originalExporterTransportPort(9995)),
+        Field::NetCalyx(netcalyx::Field::originalExporterTransportPort(9996)),
     ]);
     expected_fields.extend([
         Field::originalObservationDomainId(1),
         Field::originalObservationDomainId(2),
     ]);
     expected_fields.extend([
-        Field::NetGauze(netgauze::Field::originalTemplateId(256)),
-        Field::NetGauze(netgauze::Field::originalTemplateId(257)),
+        Field::NetCalyx(netcalyx::Field::originalTemplateId(256)),
+        Field::NetCalyx(netcalyx::Field::originalTemplateId(257)),
     ]);
 
     // Compare expected with result
@@ -512,12 +512,12 @@ fn test_netflowv9_into_flowinfo_with_extra_fields() {
 
     // Extra fields to add
     let extra_fields = vec![
-        Field::NetGauze(netgauze::Field::windowStart(
+        Field::NetCalyx(netcalyx::Field::windowStart(
             DateTime::parse_from_rfc3339("2025-07-02T10:00:00Z")
                 .unwrap()
                 .to_utc(),
         )),
-        Field::NetGauze(netgauze::Field::windowEnd(
+        Field::NetCalyx(netcalyx::Field::windowEnd(
             DateTime::parse_from_rfc3339("2025-07-02T10:01:00Z")
                 .unwrap()
                 .to_utc(),
@@ -543,16 +543,16 @@ fn test_netflowv9_into_flowinfo_with_extra_fields() {
     ]);
     expected_fields.extend(extra_fields);
     expected_fields.extend([
-        Field::NetGauze(netgauze::Field::originalExporterTransportPort(9995)),
-        Field::NetGauze(netgauze::Field::originalExporterTransportPort(9996)),
+        Field::NetCalyx(netcalyx::Field::originalExporterTransportPort(9995)),
+        Field::NetCalyx(netcalyx::Field::originalExporterTransportPort(9996)),
     ]);
     expected_fields.extend([
         Field::originalObservationDomainId(1),
         Field::originalObservationDomainId(2),
     ]);
     expected_fields.extend([
-        Field::NetGauze(netgauze::Field::originalTemplateId(256)),
-        Field::NetGauze(netgauze::Field::originalTemplateId(257)),
+        Field::NetCalyx(netcalyx::Field::originalTemplateId(256)),
+        Field::NetCalyx(netcalyx::Field::originalTemplateId(257)),
     ]);
 
     // Compare expected with result - should be NetFlowV9

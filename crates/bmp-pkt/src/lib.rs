@@ -20,7 +20,7 @@ use std::hash::{Hash, Hasher};
 use std::net::{IpAddr, Ipv4Addr};
 use std::ops::Deref;
 
-use netgauze_bgp_pkt::nlri::RouteDistinguisher;
+use netcalyx_bgp_pkt::nlri::RouteDistinguisher;
 
 use crate::iana::{BmpMessageType, BmpPeerTypeCode, BmpVersion};
 

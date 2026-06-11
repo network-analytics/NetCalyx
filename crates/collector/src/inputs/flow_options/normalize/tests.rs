@@ -14,8 +14,8 @@
 // limitations under the License.
 
 use crate::inputs::flow_options::normalize::*;
-use netgauze_flow_pkt::ie::Field;
-use netgauze_flow_pkt::netflow::{Cache, Interface, LineCard, System, Template};
+use netcalyx_flow_pkt::ie::Field;
+use netcalyx_flow_pkt::netflow::{Cache, Interface, LineCard, System, Template};
 
 #[test]
 fn test_options_data_record_try_from_valid_scope_fields() {
@@ -240,10 +240,10 @@ fn test_normalize_interface_type_matching_interfaces() {
     // Expected ingress record
     let expected_ingress_scope = vec![Field::ingressInterface(1), Field::selectorId(42)];
     let expected_ingress_fields = vec![
-        Field::NetGauze(netgauze::Field::ingressInterfaceName(
+        Field::NetCalyx(netcalyx::Field::ingressInterfaceName(
             "eth0".to_string().into(),
         )),
-        Field::NetGauze(netgauze::Field::ingressInterfaceDescription(
+        Field::NetCalyx(netcalyx::Field::ingressInterfaceDescription(
             "MGMT Interface".to_string().into(),
         )),
     ];
@@ -255,10 +255,10 @@ fn test_normalize_interface_type_matching_interfaces() {
     // Expected egress record
     let expected_egress_scope = vec![Field::egressInterface(1), Field::selectorId(42)];
     let expected_egress_fields = vec![
-        Field::NetGauze(netgauze::Field::egressInterfaceName(
+        Field::NetCalyx(netcalyx::Field::egressInterfaceName(
             "eth0".to_string().into(),
         )),
-        Field::NetGauze(netgauze::Field::egressInterfaceDescription(
+        Field::NetCalyx(netcalyx::Field::egressInterfaceDescription(
             "MGMT Interface".to_string().into(),
         )),
     ];
@@ -291,10 +291,10 @@ fn test_normalize_interface_type_ingress_only() {
 
     let expected_scope = vec![Field::ingressInterface(1), Field::selectorId(42)];
     let expected_fields = vec![
-        Field::NetGauze(netgauze::Field::ingressInterfaceName(
+        Field::NetCalyx(netcalyx::Field::ingressInterfaceName(
             "eth1".to_string().into(),
         )),
-        Field::NetGauze(netgauze::Field::ingressInterfaceDescription(
+        Field::NetCalyx(netcalyx::Field::ingressInterfaceDescription(
             "Ingress Interface".to_string().into(),
         )),
     ];
@@ -315,7 +315,7 @@ fn test_normalize_interface_type_egress_only() {
     let mut expected = Vec::new();
 
     let expected_scope = vec![Field::egressInterface(2), Field::observationPointId(100)];
-    let expected_fields = vec![Field::NetGauze(netgauze::Field::egressInterfaceName(
+    let expected_fields = vec![Field::NetCalyx(netcalyx::Field::egressInterfaceName(
         "eth2".to_string().into(),
     ))];
     expected.push(IndexedDataRecord::new(&expected_scope, &expected_fields));
@@ -407,10 +407,10 @@ fn test_normalize_vrf_type_matching_vrfs() {
     // Expected ingress record
     let expected_ingress_scope = vec![Field::ingressVRFID(100), Field::observationPointId(42)];
     let expected_ingress_fields = vec![
-        Field::NetGauze(netgauze::Field::ingressVRFname(
+        Field::NetCalyx(netcalyx::Field::ingressVRFname(
             "customer_a".to_string().into(),
         )),
-        Field::NetGauze(netgauze::Field::ingressMplsVpnRouteDistinguisher(Box::new(
+        Field::NetCalyx(netcalyx::Field::ingressMplsVpnRouteDistinguisher(Box::new(
             [1, 2, 3, 4, 5, 6, 7, 8],
         ))),
     ];
@@ -422,10 +422,10 @@ fn test_normalize_vrf_type_matching_vrfs() {
     // Expected egress record
     let expected_egress_scope = vec![Field::egressVRFID(100), Field::observationPointId(42)];
     let expected_egress_fields = vec![
-        Field::NetGauze(netgauze::Field::egressVRFname(
+        Field::NetCalyx(netcalyx::Field::egressVRFname(
             "customer_a".to_string().into(),
         )),
-        Field::NetGauze(netgauze::Field::egressMplsVpnRouteDistinguisher(Box::new(
+        Field::NetCalyx(netcalyx::Field::egressMplsVpnRouteDistinguisher(Box::new(
             [1, 2, 3, 4, 5, 6, 7, 8],
         ))),
     ];
@@ -453,10 +453,10 @@ fn test_normalize_vrf_type_ingress_only() {
 
     let expected_scope = vec![Field::ingressVRFID(100), Field::observationPointId(42)];
     let expected_fields = vec![
-        Field::NetGauze(netgauze::Field::ingressVRFname(
+        Field::NetCalyx(netcalyx::Field::ingressVRFname(
             "VRF 100".to_string().into(),
         )),
-        Field::NetGauze(netgauze::Field::ingressMplsVpnRouteDistinguisher(Box::new(
+        Field::NetCalyx(netcalyx::Field::ingressMplsVpnRouteDistinguisher(Box::new(
             [1, 0, 0, 4, 3, 4, 3, 3],
         ))),
     ];
@@ -477,7 +477,7 @@ fn test_normalize_vrf_type_egress_only() {
     let mut expected = Vec::new();
 
     let expected_scope = vec![Field::egressVRFID(200)];
-    let expected_fields = vec![Field::NetGauze(netgauze::Field::egressVRFname(
+    let expected_fields = vec![Field::NetCalyx(netcalyx::Field::egressVRFname(
         "VRF 200".to_string().into(),
     ))];
     expected.push(IndexedDataRecord::new(&expected_scope, &expected_fields));

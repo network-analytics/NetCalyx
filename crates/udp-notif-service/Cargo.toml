@@ -1,14 +1,14 @@
 lints.workspace = true
 
 [package]
-name = "netgauze-udp-notif-service"
+name = "netcalyx-udp-notif-service"
 version = "0.12.1"
 edition = "2024"
-authors = ["Ahmed Elhassany <a.hassany@gmail.com>"]
+authors = ["NetCalyx Authors"]
 license = "Apache-2.0"
 readme = "README.md"
-repository = "https://github.com/NetGauze/NetGauze"
-homepage = "https://github.com/NetGauze/NetGauze"
+repository = "https://github.com/network-analytics/NetCalyx"
+homepage = "https://github.com/network-analytics/NetCalyx"
 description = """
 UDP-Notif service
 """
@@ -21,8 +21,8 @@ bytes = { workspace = true }
 futures = { workspace = true }
 futures-util = { workspace = true }
 libc = { workspace = true }
-netgauze-parse-utils = { workspace = true }
-netgauze-udp-notif-pkt = { workspace = true, features = ["codec"] }
+netcalyx-parse-utils = { workspace = true }
+netcalyx-udp-notif-pkt = { workspace = true, features = ["codec"] }
 serde = { workspace = true, features = ["derive"] }
 socket2 = { workspace = true }
 strum_macros = { workspace = true }

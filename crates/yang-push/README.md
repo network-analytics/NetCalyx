@@ -1,24 +1,24 @@
-# NetGauze YANG-Push crate
+# NetCalyx YANG-Push crate
 
 [![Crates.io][crates-badge]][crates-url]
 [![Documentation][docs-badge]][docs-url]
 [![Apache licensed][apache-badge]][apache-url]
 
 
-[crates-badge]: https://img.shields.io/crates/v/netgauze-yang-push.svg
+[crates-badge]: https://img.shields.io/crates/v/netcalyx-yang-push.svg
 
-[crates-url]: https://crates.io/crates/netgauze-yang-push
+[crates-url]: https://crates.io/crates/netcalyx-yang-push
 
 [apache-badge]: https://img.shields.io/badge/license-Apache-blue.svg
 
-[apache-url]: https://github.com/NetGauze/NetGauze/blob/main/LICENSE
+[apache-url]: https://github.com/network-analytics/NetCalyx/blob/main/LICENSE
 
-[docs-badge]: https://docs.rs/netgauze-yang-push/badge.svg
+[docs-badge]: https://docs.rs/netcalyx-yang-push/badge.svg
 
-[docs-url]: https://docs.rs/netgauze-yang-push
+[docs-url]: https://docs.rs/netcalyx-yang-push
 
 
-YANG-Push support for the NetGauze ecosystem,
+YANG-Push support for the NetCalyx ecosystem,
 including [IETF Telemetry Message](https://datatracker.ietf.org/doc/html/draft-netana-nmop-message-broker-telemetry-message)
 model, a persistent YANG library cache, and actor-based validation for
 UDP-Notif packets.

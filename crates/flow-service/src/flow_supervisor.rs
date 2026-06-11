@@ -65,7 +65,7 @@ use crate::flow_actor::{
     FlowCollectorActorStats, PeerTemplateIds,
 };
 use crate::{ActorId, FlowReceiver, FlowSender, SubscriberId, Subscription, create_flow_channel};
-use netgauze_flow_pkt::{ipfix, netflow};
+use netcalyx_flow_pkt::{ipfix, netflow};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -591,9 +591,9 @@ mod test {
     use super::*;
     use bytes::{Buf, BytesMut};
     use chrono::{TimeZone, Utc};
-    use netgauze_flow_pkt::codec::FlowInfoCodec;
-    use netgauze_flow_pkt::ipfix::*;
-    use netgauze_flow_pkt::{FieldSpecifier, FlowInfo, ie};
+    use netcalyx_flow_pkt::codec::FlowInfoCodec;
+    use netcalyx_flow_pkt::ipfix::*;
+    use netcalyx_flow_pkt::{FieldSpecifier, FlowInfo, ie};
     use tokio::net::UdpSocket;
     use tokio::time::{Duration, timeout};
     use tokio_util::codec::Encoder;

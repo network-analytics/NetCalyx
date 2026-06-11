@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use netgauze_bmp_pkt::BmpMessage;
-use netgauze_bmp_pkt::codec::BmpCodec;
+use netcalyx_bmp_pkt::BmpMessage;
+use netcalyx_bmp_pkt::codec::BmpCodec;
 use std::fmt::Debug;
 use std::io;
 use std::net::SocketAddr;
@@ -179,7 +179,7 @@ mod tests {
 
     use super::*;
     use futures_util::SinkExt;
-    use netgauze_bmp_pkt::v3::{BmpMessageValue, InitiationMessage};
+    use netcalyx_bmp_pkt::v3::{BmpMessageValue, InitiationMessage};
     use rand::RngExt;
     use tokio::task::JoinHandle;
     use tower::{ServiceBuilder, service_fn};

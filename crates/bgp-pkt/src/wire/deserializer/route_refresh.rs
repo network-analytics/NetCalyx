@@ -17,20 +17,20 @@
 
 use crate::BgpRouteRefreshMessage;
 use crate::iana::{RouteRefreshSubcode, UndefinedRouteRefreshSubcode};
-use netgauze_iana::address_family::{
+use netcalyx_iana::address_family::{
     AddressFamily, AddressType, InvalidAddressType, SubsequentAddressFamily,
     UndefinedAddressFamily, UndefinedSubsequentAddressFamily,
 };
-use netgauze_parse_utils::{ReadablePdu, Span};
+use netcalyx_parse_utils::{ReadablePdu, Span};
 use nom::IResult;
 use nom::error::ErrorKind;
 use nom::number::complete::{be_u8, be_u16};
 use serde::{Deserialize, Serialize};
 
-use netgauze_serde_macros::LocatedError;
+use netcalyx_serde_macros::LocatedError;
 
 use crate::notification::RouteRefreshError;
-use netgauze_parse_utils::ErrorKindSerdeDeref;
+use netcalyx_parse_utils::ErrorKindSerdeDeref;
 
 /// BGP Route Refresh Message Parsing errors
 #[derive(LocatedError, PartialEq, Clone, Debug, Serialize, Deserialize)]

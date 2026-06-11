@@ -16,7 +16,7 @@
 //! Flattened pmacct-compatible Avro schema for BMP messages.
 //!
 //! This module defines the data structures and conversion logic required to
-//! transform hierarchical NetGauze [`BmpRequest`] objects into flat,
+//! transform hierarchical NetCalyx [`BmpRequest`] objects into flat,
 //! serialization-ready structures that match the schema used by the
 //! [pmacct](https://github.com/pmacct/pmacct) project.
 //!
@@ -25,22 +25,22 @@
 use apache_avro::types::Value;
 use apache_avro::{AvroSchema, Schema};
 use chrono::{DateTime, Utc};
-use netgauze_bgp_pkt::BgpMessage;
-use netgauze_bgp_pkt::nlri::{MplsLabel, RouteDistinguisher};
-use netgauze_bgp_pkt::path_attribute::{
+use netcalyx_bgp_pkt::BgpMessage;
+use netcalyx_bgp_pkt::nlri::{MplsLabel, RouteDistinguisher};
+use netcalyx_bgp_pkt::path_attribute::{
     Aigp, As4Path, AsPath, AsPathSegmentType, BgpSidAttribute, Communities, ExtendedCommunities,
     LargeCommunities, MpReach, MpUnreach, Origin, PathAttributeValue,
 };
-use netgauze_bmp_pkt::{BmpMessage, BmpPeerType, PeerHeader, v3, v4};
-use netgauze_bmp_service::{AddrInfo, BmpRequest};
-use netgauze_iana::address_family::AddressType;
+use netcalyx_bmp_pkt::{BmpMessage, BmpPeerType, PeerHeader, v3, v4};
+use netcalyx_bmp_service::{AddrInfo, BmpRequest};
+use netcalyx_iana::address_family::AddressType;
 use serde::de::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Represents a single flattened BMP message
 ///
-/// Use [`PmacctBmpMessage::try_from_bmp_request`] to convert a raw NetGauze
+/// Use [`PmacctBmpMessage::try_from_bmp_request`] to convert a raw NetCalyx
 /// [`BmpRequest`] into one or more of these messages.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 #[serde(untagged)]
@@ -376,7 +376,7 @@ pub struct PmacctTerminationMessage {
     Debug,
     PartialEq,
     Clone,
-    netgauze_serde_macros::StringBackedEnum,
+    netcalyx_serde_macros::StringBackedEnum,
 )]
 #[strum(serialize_all = "kebab-case")]
 pub enum LogType {
@@ -394,7 +394,7 @@ pub enum LogType {
     Debug,
     PartialEq,
     Clone,
-    netgauze_serde_macros::StringBackedEnum,
+    netcalyx_serde_macros::StringBackedEnum,
 )]
 #[strum(serialize_all = "snake_case")]
 pub enum EventType {
@@ -413,7 +413,7 @@ pub enum EventType {
     Debug,
     PartialEq,
     Clone,
-    netgauze_serde_macros::StringBackedEnum,
+    netcalyx_serde_macros::StringBackedEnum,
 )]
 pub enum BgpOrigin {
     #[strum(to_string = "i")]
@@ -431,7 +431,7 @@ pub enum BgpOrigin {
     Debug,
     PartialEq,
     Clone,
-    netgauze_serde_macros::StringBackedEnum,
+    netcalyx_serde_macros::StringBackedEnum,
 )]
 #[strum(serialize_all = "lowercase")]
 pub enum RdOrigin {
@@ -449,7 +449,7 @@ pub enum RdOrigin {
     Debug,
     PartialEq,
     Clone,
-    netgauze_serde_macros::StringBackedEnum,
+    netcalyx_serde_macros::StringBackedEnum,
 )]
 #[strum(serialize_all = "snake_case")]
 pub enum BmpMsgType {
@@ -469,7 +469,7 @@ pub enum BmpMsgType {
     Debug,
     PartialEq,
     Clone,
-    netgauze_serde_macros::StringBackedEnum,
+    netcalyx_serde_macros::StringBackedEnum,
 )]
 pub enum BmpRibType {
     #[strum(to_string = "Unknown")]

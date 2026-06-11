@@ -1,21 +1,21 @@
-# NetGauze IANA package
+# NetCalyx IANA package
 
 [![Crates.io][crates-badge]][crates-url]
 [![Documentation][docs-badge]][docs-url]
 [![Apache licensed][apache-badge]][apache-url]
 
 
-[crates-badge]: https://img.shields.io/crates/v/netgauze-iana.svg
+[crates-badge]: https://img.shields.io/crates/v/netcalyx-iana.svg
 
-[crates-url]: https://crates.io/crates/netgauze-iana
+[crates-url]: https://crates.io/crates/netcalyx-iana
 
 [apache-badge]: https://img.shields.io/badge/license-Apache-blue.svg
 
-[apache-url]: https://github.com/NetGauze/NetGauze/blob/main/LICENSE
+[apache-url]: https://github.com/network-analytics/NetCalyx/blob/main/LICENSE
 
-[docs-badge]: https://docs.rs/netgauze-iana/badge.svg
+[docs-badge]: https://docs.rs/netcalyx-iana/badge.svg
 
-[docs-url]: https://docs.rs/netgauze-iana
+[docs-url]: https://docs.rs/netcalyx-iana
 
 
 Collection of generic IANA definitions that are not specific to a single protocol.

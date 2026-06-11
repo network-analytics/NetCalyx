@@ -17,8 +17,8 @@ use crate::raw::{MediaType, UdpNotifOption, UdpNotifOptionCode, UdpNotifPacket};
 use crate::wire::deserialize::{LocatedUdpNotifPacketParsingError, UdpNotifPacketParsingError};
 use crate::wire::serialize::UdpNotifPacketWritingError;
 use bytes::Bytes;
-use netgauze_parse_utils::Span;
-use netgauze_parse_utils::test_helpers::{
+use netcalyx_parse_utils::Span;
+use netcalyx_parse_utils::test_helpers::{
     test_parse_error, test_parsed, test_parsed_completely, test_write,
 };
 use nom::AsBytes;

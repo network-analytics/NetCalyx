@@ -25,11 +25,11 @@ use crate::path_attribute::{
 use crate::wire::deserializer::nlri::MplsLabelParsingError;
 use crate::wire::deserializer::read_tlv_header_t16_l16;
 use crate::wire::serializer::nlri::{IPV4_LEN, IPV6_LEN};
-use netgauze_parse_utils::{
+use netcalyx_parse_utils::{
     ErrorKindSerdeDeref, ReadablePdu, ReadablePduWithOneInput, Span, parse_into_located,
     parse_into_located_one_input, parse_till_empty_into_located,
 };
-use netgauze_serde_macros::LocatedError;
+use netcalyx_serde_macros::LocatedError;
 use nom::IResult;
 use nom::error::{ErrorKind, FromExternalError};
 use nom::number::complete::{be_f32, be_u8, be_u16, be_u32, be_u64, be_u128};

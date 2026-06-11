@@ -20,8 +20,8 @@ static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 use anyhow::anyhow;
 use clap::Parser;
 use futures::Future;
-use netgauze_collector::config::{CollectorConfig, TelemetryConfig};
-use netgauze_collector::{init_bmp_collection, init_flow_collection, init_udp_notif_collection};
+use netcalyx_collector::config::{CollectorConfig, TelemetryConfig};
+use netcalyx_collector::{init_bmp_collection, init_flow_collection, init_udp_notif_collection};
 use opentelemetry::global;
 use serde_yaml::from_reader;
 use shadow_rs::shadow;
@@ -45,11 +45,11 @@ fn init_tracing(level: &'_ str, use_ansi: bool) {
     let rust_log = env::var("RUST_LOG").unwrap_or_default();
     let env_filter = if !rust_log.is_empty() {
         EnvFilter::builder().parse(&rust_log).expect(
-            "Invalid RUST_LOG environment variable. Use valid filter directives like 'debug' or 'netgauze_collector=trace'",
+            "Invalid RUST_LOG environment variable. Use valid filter directives like 'debug' or 'netcalyx_collector=trace'",
         )
     } else {
         EnvFilter::builder().parse(level).expect(
-            "Invalid log level in config file. Expected: trace, debug, info, warn, error, or filter directives like 'netgauze_collector=debug'",
+            "Invalid log level in config file. Expected: trace, debug, info, warn, error, or filter directives like 'netcalyx_collector=debug'",
         )
     };
 
@@ -104,7 +104,7 @@ struct CollectorMetrics {
 impl CollectorMetrics {
     fn new(meter: &opentelemetry::metrics::Meter, process_start: Instant) -> Self {
         let health = meter
-            .u64_observable_gauge("netgauze.collector.health")
+            .u64_observable_gauge("netcalyx.collector.health")
             .with_description("1 if the collector is healthy, 0 if degraded.")
             .with_callback(move |observer| {
                 // TODO: implement actual health checks of the actors
@@ -124,7 +124,7 @@ impl CollectorMetrics {
             .build();
 
         let info = meter
-            .u64_observable_gauge("netgauze.collector.info")
+            .u64_observable_gauge("netcalyx.collector.info")
             .with_description(
                 "Always emits 1 while the collector is running. \
                  Carries version and build metadata as attributes.",
@@ -191,7 +191,7 @@ fn init_open_telemetry(
         .build();
 
     let resource = Resource::builder()
-        .with_service_name("NetGauze")
+        .with_service_name("NetCalyx")
         .with_attributes([opentelemetry::KeyValue::new("id", config.id.clone())])
         .build();
 
@@ -204,15 +204,15 @@ fn init_open_telemetry(
     Ok(())
 }
 
-/// NetGauze network metrics collector CLI arguments
+/// NetCalyx network metrics collector CLI arguments
 #[derive(clap::Parser, Debug)]
 #[command(
-    about = "NetGauze network telemetry collector",
+    about = "NetCalyx network telemetry collector",
     long_about = "\
-NetGauze network telemetry collector.
+NetCalyx network telemetry collector.
 
 Log level can also be overridden via the RUST_LOG environment variable:
-  RUST_LOG=netgauze_collector=trace netgauze-collector config.yaml"
+  RUST_LOG=netcalyx_collector=trace netcalyx-collector config.yaml"
 )]
 struct Args {
     /// Path to the YAML config file
@@ -227,7 +227,7 @@ struct Args {
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     if args.version {
-        println!("NetGauze Collector");
+        println!("NetCalyx Collector");
         println!("  Version:     {}", build::PKG_VERSION);
         println!(
             "  Commit:      {} ({})",
@@ -271,7 +271,7 @@ fn main() -> anyhow::Result<()> {
 
     runtime.block_on(async move {
         init_open_telemetry(&config.telemetry).map_err(|err| anyhow!(err))?;
-        let meter = global::meter_provider().meter("netgauze");
+        let meter = global::meter_provider().meter("netcalyx");
         // Keep the metrics alive for the entire process lifetime.
         let _collector_metrics = CollectorMetrics::new(&meter, process_start);
 

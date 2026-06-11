@@ -100,27 +100,27 @@ pub struct KafkaConsumerStats {
 impl KafkaConsumerStats {
     pub fn new(meter: opentelemetry::metrics::Meter) -> Self {
         let received = meter
-            .u64_counter("netgauze.collector.flows.enrichment.input.kafka.received")
+            .u64_counter("netcalyx.collector.flows.enrichment.input.kafka.received")
             .with_description("Number of received messages from Kafka topic")
             .build();
         let empty_payload = meter
-            .u64_counter("netgauze.collector.flows.enrichment.input.kafka.empty_payload")
+            .u64_counter("netcalyx.collector.flows.enrichment.input.kafka.empty_payload")
             .with_description("Number of messages received with empty payload")
             .build();
         let message_handling_error = meter
-            .u64_counter("netgauze.collector.flows.enrichment.input.kafka.message_handling_error")
+            .u64_counter("netcalyx.collector.flows.enrichment.input.kafka.message_handling_error")
             .with_description("Number of input messages handling error")
             .build();
         let operations_generated = meter
-            .u64_counter("netgauze.collector.flows.enrichment.input.kafka.operations_generated")
+            .u64_counter("netcalyx.collector.flows.enrichment.input.kafka.operations_generated")
             .with_description("Number of enrichment operations generated from messages")
             .build();
         let send_error = meter
-            .u64_counter("netgauze.collector.flows.enrichment.input.kafka.send_error")
+            .u64_counter("netcalyx.collector.flows.enrichment.input.kafka.send_error")
             .with_description("Error sending the EnrichmentOperation to the enrichment actor")
             .build();
         let kafka_reconnect_attempts = meter
-            .u64_counter("netgauze.collector.flows.enrichment.input.kafka.reconnect_attempts")
+            .u64_counter("netcalyx.collector.flows.enrichment.input.kafka.reconnect_attempts")
             .with_description("Number of attempts to reconnect to the Kafka brokers")
             .build();
         Self {

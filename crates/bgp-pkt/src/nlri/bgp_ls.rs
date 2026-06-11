@@ -19,7 +19,7 @@ use crate::iana::{
 };
 use crate::nlri::RouteDistinguisher;
 use ipnet::IpNet;
-use netgauze_parse_utils::WritablePdu;
+use netcalyx_parse_utils::WritablePdu;
 use serde::{Deserialize, Serialize};
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::ops::BitAnd;

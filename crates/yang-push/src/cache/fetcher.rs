@@ -26,14 +26,14 @@
 //! - [`FetcherResult`]: Type alias for fetch operation results
 
 use crate::cache::storage::{SubscriptionInfo, YangLibraryCacheError};
-use netgauze_netconf_proto::capabilities::{Capability, NetconfVersion};
-use netgauze_netconf_proto::client::{NetconfSshConnectConfig, SshAuth, SshHandler, connect};
-use netgauze_netconf_proto::yang_push::filters::StreamSelectionFilterObjects;
-use netgauze_netconf_proto::yang_push::subscription::{
+use netcalyx_netconf_proto::capabilities::{Capability, NetconfVersion};
+use netcalyx_netconf_proto::client::{NetconfSshConnectConfig, SshAuth, SshHandler, connect};
+use netcalyx_netconf_proto::yang_push::filters::StreamSelectionFilterObjects;
+use netcalyx_netconf_proto::yang_push::subscription::{
     DatastoreSelectionFilterObjects, Target, YangPushModuleVersion,
 };
-use netgauze_netconf_proto::yang_push::types::SubscriptionId;
-use netgauze_netconf_proto::yanglib::{DatastoreName, PermissiveVersionChecker, YangLibrary};
+use netcalyx_netconf_proto::yang_push::types::SubscriptionId;
+use netcalyx_netconf_proto::yanglib::{DatastoreName, PermissiveVersionChecker, YangLibrary};
 use rand::RngExt;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
@@ -641,7 +641,7 @@ pub(crate) mod tests {
 #[cfg(test)]
 mod retry_tests {
     use super::*;
-    use netgauze_netconf_proto::yanglib::YangLibrary;
+    use netcalyx_netconf_proto::yanglib::YangLibrary;
     use std::sync::atomic::{AtomicU32, Ordering};
 
     fn retry_cfg(max_retries: u32) -> RetryConfig {

@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! NetGauze YANG-based Kafka Publisher
+//! NetCalyx YANG-based Kafka Publisher
 //!
 //! This module provides functionality for publishing JSON messages to Apache
 //! Kafka with support for YANG schema registration to Confluent Schema
@@ -31,13 +31,13 @@
 //!   actor
 use crate::publishers::LoggingProducerContext;
 use ipnet::IpNet;
-use netgauze_netconf_proto::yanglib::{
+use netcalyx_netconf_proto::yanglib::{
     DependencyError, PermissiveVersionChecker, SchemaConstructionError, SchemaLoadingError,
     YangLibrary,
 };
-use netgauze_yang_push::ContentId;
-use netgauze_yang_push::cache::actor::CacheLookupCommand;
-use netgauze_yang_push::cache::storage::{
+use netcalyx_yang_push::ContentId;
+use netcalyx_yang_push::cache::actor::CacheLookupCommand;
+use netcalyx_yang_push::cache::storage::{
     SubscriptionInfo, YangLibraryCacheError, YangLibraryReference,
 };
 use rdkafka::config::{ClientConfig, FromClientConfigAndContext};
@@ -129,31 +129,31 @@ pub struct KafkaYangPublisherStats {
 impl KafkaYangPublisherStats {
     fn new(meter: opentelemetry::metrics::Meter) -> Self {
         let received = meter
-            .u64_counter("netgauze.collector.kafka.yang.received")
+            .u64_counter("netcalyx.collector.kafka.yang.received")
             .with_description("Received messages from upstream producer")
             .build();
         let sent = meter
-            .u64_counter("netgauze.collector.kafka.yang.sent")
+            .u64_counter("netcalyx.collector.kafka.yang.sent")
             .with_description("Number of messages successfully sent to Kafka")
             .build();
         let send_retries = meter
-            .u64_counter("netgauze.collector.kafka.yang.send.retries")
+            .u64_counter("netcalyx.collector.kafka.yang.send.retries")
             .with_description("Number of send retries to Kafka due to full queue in librdkafka")
             .build();
         let error_decode = meter
-            .u64_counter("netgauze.collector.kafka.yang.error_decode")
+            .u64_counter("netcalyx.collector.kafka.yang.error_decode")
             .with_description("Error decoding message into YANG")
             .build();
         let error_send = meter
-            .u64_counter("netgauze.collector.kafka.yang.error_send")
+            .u64_counter("netcalyx.collector.kafka.yang.error_send")
             .with_description("Error sending message to Kafka")
             .build();
         let delivered_messages = meter
-            .u64_counter("netgauze.collector.kafka.yang.delivered_messages")
+            .u64_counter("netcalyx.collector.kafka.yang.delivered_messages")
             .with_description("Messages confirmed to be delivered to Kafka")
             .build();
         let failed_delivery_messages = meter
-            .u64_counter("netgauze.collector.kafka.yang.failed_delivery_messages")
+            .u64_counter("netcalyx.collector.kafka.yang.failed_delivery_messages")
             .with_description("Messages failed delivery to Kafka")
             .build();
         Self {
@@ -601,7 +601,7 @@ where
                 self.stats.error_decode.add(
                     1,
                     &[opentelemetry::KeyValue::new(
-                        "netgauze.json.serialize.error.msg",
+                        "netcalyx.json.serialize.error.msg",
                         err.to_string(),
                     )],
                 );
@@ -617,7 +617,7 @@ where
                     self.stats.error_decode.add(
                         1,
                         &[opentelemetry::KeyValue::new(
-                            "netgauze.json.encode.error.msg",
+                            "netcalyx.json.encode.error.msg",
                             err.to_string(),
                         )],
                     );
@@ -672,7 +672,7 @@ where
                             self.stats.error_send.add(
                                 1,
                                 &[opentelemetry::KeyValue::new(
-                                    "netgauze.kafka.sent.error.msg",
+                                    "netcalyx.kafka.sent.error.msg",
                                     err.to_string(),
                                 )],
                             );
@@ -690,7 +690,7 @@ where
                         self.stats.error_send.add(
                             1,
                             &[opentelemetry::KeyValue::new(
-                                "netgauze.kafka.sent.error.msg",
+                                "netcalyx.kafka.sent.error.msg",
                                 err.to_string(),
                             )],
                         );

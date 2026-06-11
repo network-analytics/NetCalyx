@@ -17,7 +17,7 @@ use crate::inputs::files::LineChangeType;
 use crate::inputs::files::formats::pmacct_maps::{
     PmacctMapEntry, PmacctMapEntryScope, PmacctMapError,
 };
-use netgauze_flow_pkt::ie::{Field, HasIE, IE, netgauze};
+use netcalyx_flow_pkt::ie::{Field, HasIE, IE, netcalyx};
 use std::net::IpAddr;
 use std::path::Path;
 
@@ -292,7 +292,7 @@ impl PmacctMapEntry {
         let operations = match self.into_scope() {
             Some(PmacctMapEntryScope::In(in_iface)) => {
                 let ingress_field = if let Field::mplsVpnRouteDistinguisher(rd) = id_field {
-                    Field::NetGauze(netgauze::Field::ingressMplsVpnRouteDistinguisher(rd))
+                    Field::NetCalyx(netcalyx::Field::ingressMplsVpnRouteDistinguisher(rd))
                 } else {
                     id_field
                 };
@@ -310,7 +310,7 @@ impl PmacctMapEntry {
             }
             Some(PmacctMapEntryScope::Out(out_iface)) => {
                 let egress_field = if let Field::mplsVpnRouteDistinguisher(rd) = id_field {
-                    Field::NetGauze(netgauze::Field::egressMplsVpnRouteDistinguisher(rd))
+                    Field::NetCalyx(netcalyx::Field::egressMplsVpnRouteDistinguisher(rd))
                 } else {
                     id_field
                 };
@@ -330,10 +330,10 @@ impl PmacctMapEntry {
                 let (ingress_field, egress_field) =
                     if let Field::mplsVpnRouteDistinguisher(rd) = id_field {
                         (
-                            Field::NetGauze(netgauze::Field::ingressMplsVpnRouteDistinguisher(
+                            Field::NetCalyx(netcalyx::Field::ingressMplsVpnRouteDistinguisher(
                                 rd.clone(),
                             )),
-                            Field::NetGauze(netgauze::Field::egressMplsVpnRouteDistinguisher(rd)),
+                            Field::NetCalyx(netcalyx::Field::egressMplsVpnRouteDistinguisher(rd)),
                         )
                     } else {
                         (id_field.clone(), id_field)
@@ -383,8 +383,8 @@ mod tests {
         FlowUpsertsHandler, PmacctMapsHandler, YangPushUpsertsHandler,
     };
     use crate::inputs::files::processor::{FileProcessor, FileProcessorCallback};
-    use netgauze_flow_pkt::ie::{Field, IE, netgauze};
-    use netgauze_yang_push::model::telemetry::{Label, LabelValue};
+    use netcalyx_flow_pkt::ie::{Field, IE, netcalyx};
+    use netcalyx_yang_push::model::telemetry::{Label, LabelValue};
     use std::cell::RefCell;
     use tempfile::NamedTempFile;
     use tokio::fs;
@@ -518,8 +518,8 @@ id=2:4200137808:1003 ip=192.168.100.1 out=127"#;
                         Some(vec![Field::ingressInterface(537)]),
                     ),
                     weight: 32,
-                    fields: vec![Field::NetGauze(
-                        netgauze::Field::ingressMplsVpnRouteDistinguisher(
+                    fields: vec![Field::NetCalyx(
+                        netcalyx::Field::ingressMplsVpnRouteDistinguisher(
                             [0, 0, 26, 181, 0, 0, 4, 30].into(),
                         ),
                     )],
@@ -533,8 +533,8 @@ id=2:4200137808:1003 ip=192.168.100.1 out=127"#;
                         Some(vec![Field::egressInterface(127)]),
                     ),
                     weight: 32,
-                    fields: vec![Field::NetGauze(
-                        netgauze::Field::egressMplsVpnRouteDistinguisher(
+                    fields: vec![Field::NetCalyx(
+                        netcalyx::Field::egressMplsVpnRouteDistinguisher(
                             [0, 2, 250, 89, 4, 80, 3, 235].into(),
                         ),
                     )],
@@ -574,8 +574,8 @@ id=2:4200137808:1003 ip=192.168.100.1 out=127"#;
                         Some(vec![Field::ingressVRFID(18)]),
                     ),
                     weight: 32,
-                    fields: vec![Field::NetGauze(
-                        netgauze::Field::ingressMplsVpnRouteDistinguisher(
+                    fields: vec![Field::NetCalyx(
+                        netcalyx::Field::ingressMplsVpnRouteDistinguisher(
                             [0, 0, 26, 181, 0, 0, 4, 30].into(),
                         ),
                     )],
@@ -589,8 +589,8 @@ id=2:4200137808:1003 ip=192.168.100.1 out=127"#;
                         Some(vec![Field::egressVRFID(18)]),
                     ),
                     weight: 32,
-                    fields: vec![Field::NetGauze(
-                        netgauze::Field::egressMplsVpnRouteDistinguisher(
+                    fields: vec![Field::NetCalyx(
+                        netcalyx::Field::egressMplsVpnRouteDistinguisher(
                             [0, 0, 26, 181, 0, 0, 4, 30].into(),
                         ),
                     )],

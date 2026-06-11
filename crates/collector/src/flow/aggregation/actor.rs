@@ -33,9 +33,9 @@ use crate::flow::aggregation::config::*;
 use chrono::Utc;
 use either::Either;
 use futures::stream::{self, StreamExt};
-use netgauze_analytics::aggregation::{AggregationWindowStreamExt, Aggregator, TimeSeriesData};
-use netgauze_flow_pkt::FlowInfo;
-use netgauze_flow_pkt::ie::{Field, netgauze};
+use netcalyx_analytics::aggregation::{AggregationWindowStreamExt, Aggregator, TimeSeriesData};
+use netcalyx_flow_pkt::FlowInfo;
+use netcalyx_flow_pkt::ie::{Field, netcalyx};
 use opentelemetry::metrics::{Counter, Meter};
 use pin_utils::pin_mut;
 use std::net::{IpAddr, SocketAddr};
@@ -60,33 +60,33 @@ pub struct AggregationStats {
 impl AggregationStats {
     pub fn new(meter: Meter) -> Self {
         let received_messages = meter
-            .u64_counter("netgauze.collector.flows.aggregation.received.messages")
+            .u64_counter("netcalyx.collector.flows.aggregation.received.messages")
             .with_description("Number of flow messages received for aggregation")
             .build();
         let late_messages = meter
-            .u64_counter("netgauze.collector.flows.aggregation.late.messages")
+            .u64_counter("netcalyx.collector.flows.aggregation.late.messages")
             .with_description("Number of late flow messages discarded")
             .build();
         let exploded_records = meter
-            .u64_counter("netgauze.collector.flows.aggregation.exploded.records")
+            .u64_counter("netcalyx.collector.flows.aggregation.exploded.records")
             .with_description("Number of flat flow records exploded")
             .build();
         let aggregated_records = meter
-            .u64_counter("netgauze.collector.flows.aggregation.aggregated.records")
+            .u64_counter("netcalyx.collector.flows.aggregation.aggregated.records")
             .with_description("Number of flat flow records aggregated")
             .build();
         let sent = meter
-            .u64_counter("netgauze.collector.flows.aggregation.sent")
+            .u64_counter("netcalyx.collector.flows.aggregation.sent")
             .with_description("Number of aggregated records successfully sent upstream")
             .build();
         let send_timeout = meter
-            .u64_counter("netgauze.collector.flows.aggregation.send.timeout")
+            .u64_counter("netcalyx.collector.flows.aggregation.send.timeout")
             .with_description(
                 "Number of aggregated records timed out and dropped while sending to upstream",
             )
             .build();
         let send_error = meter
-            .u64_counter("netgauze.collector.flows.aggregation.send.error")
+            .u64_counter("netcalyx.collector.flows.aggregation.send.error")
             .with_description("Number of aggregated records sent upstream error")
             .build();
         Self {
@@ -223,8 +223,8 @@ impl AggregationActor {
                                 IpAddr::V4(ipv4) => Field::originalExporterIPv4Address(ipv4),
                                 IpAddr::V6(ipv6) => Field::originalExporterIPv6Address(ipv6),
                             };
-                            let window_start = Field::NetGauze(netgauze::Field::windowStart(start));
-                            let window_end = Field::NetGauze(netgauze::Field::windowEnd(end));
+                            let window_start = Field::NetCalyx(netcalyx::Field::windowStart(start));
+                            let window_end = Field::NetCalyx(netcalyx::Field::windowEnd(end));
 
                             tokio::spawn(async move {
                                 for entry in cache.into_iter().map(AggFlowInfo::from) {

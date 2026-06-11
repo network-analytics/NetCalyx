@@ -19,9 +19,9 @@ use std::net::Ipv4Addr;
 
 use chrono::{TimeZone, Utc};
 
-use netgauze_flow_pkt::netflow::*;
-use netgauze_flow_pkt::{DataSetId, FieldSpecifier, ie};
-use netgauze_parse_utils::{ReadablePduWithOneInput, Span, WritablePduWithOneInput};
+use netcalyx_flow_pkt::netflow::*;
+use netcalyx_flow_pkt::{DataSetId, FieldSpecifier, ie};
+use netcalyx_parse_utils::{ReadablePduWithOneInput, Span, WritablePduWithOneInput};
 
 fn main() {
     // Cache to share the templates for decoding data packets

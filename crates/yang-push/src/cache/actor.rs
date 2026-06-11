@@ -222,7 +222,7 @@ use crate::{
 };
 use futures_util::StreamExt;
 use futures_util::stream::FuturesUnordered;
-use netgauze_netconf_proto::yang_push::types::SubscriptionId;
+use netcalyx_netconf_proto::yang_push::types::SubscriptionId;
 use rustc_hash::FxHashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -232,7 +232,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::{JoinError, JoinHandle};
 use tracing::{debug, info, warn};
 
-const OTL_CACHE_REQUEST_TYPE: &str = "netgauze.udp.notif.yang.push.cache.request.type";
+const OTL_CACHE_REQUEST_TYPE: &str = "netcalyx.udp.notif.yang.push.cache.request.type";
 
 #[derive(Debug, Clone)]
 pub struct CachingStats {
@@ -249,37 +249,37 @@ pub struct CachingStats {
 impl CachingStats {
     pub fn new(meter: opentelemetry::metrics::Meter) -> Self {
         let requests_received = meter
-            .u64_counter("netgauze.collector.yang_push.caching.requests.received")
+            .u64_counter("netcalyx.collector.yang_push.caching.requests.received")
             .with_description("Number of requests received by the YANG library cache actor")
             .build();
         let pending_cache_requests = meter
-            .u64_gauge("netgauze.collector.yang_push.caching.requests.pending")
+            .u64_gauge("netcalyx.collector.yang_push.caching.requests.pending")
             .with_description("Number of pending cache requests in the YANG library cache actor that are waiting for fetch to complete")
             .build();
         let cache_hits = meter
-            .u64_counter("netgauze.collector.yang_push.caching.requests.cache.hits")
+            .u64_counter("netcalyx.collector.yang_push.caching.requests.cache.hits")
             .with_description("Number of cache hits in the YANG library cache actor")
             .build();
         let cache_misses = meter
-            .u64_counter("netgauze.collector.yang_push.caching.requests.cache.misses")
+            .u64_counter("netcalyx.collector.yang_push.caching.requests.cache.misses")
             .with_description("Number of cache misses in the YANG library cache actor")
             .build();
         let device_fetch_request = meter
-            .u64_counter("netgauze.collector.yang_push.caching.device.fetch.requests")
+            .u64_counter("netcalyx.collector.yang_push.caching.device.fetch.requests")
             .with_description(
                 "Number of device fetch requests initiated by the YANG library cache actor",
             )
             .build();
         let device_fetch_queue = meter
-            .u64_gauge("netgauze.collector.yang_push.caching.device.fetch.pending")
+            .u64_gauge("netcalyx.collector.yang_push.caching.device.fetch.pending")
             .with_description("Number of device fetch requests that are currently queued in the YANG library cache actor")
             .build();
         let device_fetch_succeeded = meter
-            .u64_counter("netgauze.collector.yang_push.caching.device.fetch.response.succeeded")
+            .u64_counter("netcalyx.collector.yang_push.caching.device.fetch.response.succeeded")
             .with_description("Number of device fetch requests initiated by the YANG library cache actor and succeeded")
             .build();
         let device_fetch_failed = meter
-            .u64_counter("netgauze.collector.yang_push.caching.device.fetch.response.failed")
+            .u64_counter("netcalyx.collector.yang_push.caching.device.fetch.response.failed")
             .with_description("Number of device fetch requests initiated by the YANG library cache actor and failed")
             .build();
         Self {
@@ -1285,9 +1285,9 @@ pub(crate) mod tests {
     use super::*;
     use crate::cache::fetcher::tests::TestYangLibFetcher;
     use futures_util::stream::FuturesOrdered;
-    use netgauze_netconf_proto::yang_push::identities::{Encoding, Transport};
-    use netgauze_netconf_proto::yang_push::subscription::{UpdateTrigger, YangPushModuleVersion};
-    use netgauze_udp_notif_pkt::notification::Target;
+    use netcalyx_netconf_proto::yang_push::identities::{Encoding, Transport};
+    use netcalyx_netconf_proto::yang_push::subscription::{UpdateTrigger, YangPushModuleVersion};
+    use netcalyx_udp_notif_pkt::notification::Target;
     use std::collections::HashMap;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::path::Path;

@@ -5,17 +5,17 @@
 [![Apache licensed][apache-badge]][apache-url]
 
 
-[crates-badge]: https://img.shields.io/crates/v/netgauze-bmp-pkt.svg
+[crates-badge]: https://img.shields.io/crates/v/netcalyx-bmp-pkt.svg
 
-[crates-url]: https://crates.io/crates/netgauze-bmp-pkt
+[crates-url]: https://crates.io/crates/netcalyx-bmp-pkt
 
 [apache-badge]: https://img.shields.io/badge/license-Apache-blue.svg
 
-[apache-url]: https://github.com/NetGauze/NetGauze/blob/main/LICENSE
+[apache-url]: https://github.com/network-analytics/NetCalyx/blob/main/LICENSE
 
-[docs-badge]: https://docs.rs/netgauze-bmp-pkt/badge.svg
+[docs-badge]: https://docs.rs/netcalyx-bmp-pkt/badge.svg
 
-[docs-url]: https://docs.rs/netgauze-bmp-pkt
+[docs-url]: https://docs.rs/netcalyx-bmp-pkt
 
 
 BMP-4 Protocol representation and wire format serialization/deserialization (serde)
@@ -26,12 +26,12 @@ To run example: `cargo run --example bmp`
 
 ```rust
 use chrono::{DateTime, Utc};
-use netgauze_bgp_pkt::BgpMessage;
-use netgauze_bmp_pkt::{
+use netcalyx_bgp_pkt::BgpMessage;
+use netcalyx_bmp_pkt::{
     iana::RouteMirroringInformation, BmpMessage, BmpMessageValue, BmpPeerType, PeerHeader,
     RouteMirroringMessage, RouteMirroringValue,
 };
-use netgauze_parse_utils::{ReadablePDU, Span, WritablePDU};
+use netcalyx_parse_utils::{ReadablePDU, Span, WritablePDU};
 use std::{
     io::Cursor,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
@@ -94,7 +94,7 @@ fn main() {
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use netgauze_bmp_pkt::BmpMessage;
+use netcalyx_bmp_pkt::BmpMessage;
 
 fuzz_target!(|data: BmpMessage| {
     // Some fuzzing target that accepts BmpMessage as input and need to be fuzzed

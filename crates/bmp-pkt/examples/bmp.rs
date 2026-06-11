@@ -7,13 +7,13 @@ use std::str::FromStr;
 
 use chrono::{TimeZone, Utc};
 
-use netgauze_bgp_pkt::BgpMessage;
-use netgauze_bmp_pkt::iana::RouteMirroringInformation;
-use netgauze_bmp_pkt::v3::{
+use netcalyx_bgp_pkt::BgpMessage;
+use netcalyx_bmp_pkt::iana::RouteMirroringInformation;
+use netcalyx_bmp_pkt::v3::{
     BmpMessageValue, MirroredBgpMessage, RouteMirroringMessage, RouteMirroringValue,
 };
-use netgauze_bmp_pkt::{BmpMessage, BmpPeerType, PeerHeader};
-use netgauze_parse_utils::{ReadablePduWithOneInput, Span, WritablePdu};
+use netcalyx_bmp_pkt::{BmpMessage, BmpPeerType, PeerHeader};
+use netcalyx_parse_utils::{ReadablePduWithOneInput, Span, WritablePdu};
 
 fn main() {
     let bmp_msg = BmpMessage::V3(BmpMessageValue::RouteMirroring(RouteMirroringMessage::new(

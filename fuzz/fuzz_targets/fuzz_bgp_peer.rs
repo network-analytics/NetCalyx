@@ -18,7 +18,7 @@
 use libfuzzer_sys::fuzz_target;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 
-use netgauze_bgp_speaker::peer::{
+use netcalyx_bgp_speaker::peer::{
     EchoCapabilitiesPolicy, Peer, PeerAdminEvents, PeerConfig, PeerProperties,
 };
 
@@ -28,10 +28,10 @@ use tokio::time::{self, Duration, Instant, Sleep};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use futures_core::{Stream, ready};
-use netgauze_bgp_pkt::codec::BgpCodec;
-use netgauze_bgp_speaker::connection::ActiveConnect;
-use netgauze_bgp_speaker::events::BgpEvent;
-use netgauze_bgp_speaker::fsm::FsmState;
+use netcalyx_bgp_pkt::codec::BgpCodec;
+use netcalyx_bgp_speaker::connection::ActiveConnect;
+use netcalyx_bgp_speaker::events::BgpEvent;
+use netcalyx_bgp_speaker::fsm::FsmState;
 use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;

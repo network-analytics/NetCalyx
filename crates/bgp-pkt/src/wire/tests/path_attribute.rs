@@ -25,12 +25,12 @@ use crate::wire::deserializer::nlri::{
     Ipv6UnicastParsingError,
 };
 use ipnet::{Ipv4Net, Ipv6Net};
-use netgauze_iana::address_family::{
+use netcalyx_iana::address_family::{
     AddressFamily, AddressType, SubsequentAddressFamily, UndefinedAddressFamily,
     UndefinedSubsequentAddressFamily,
 };
-use netgauze_parse_utils::Span;
-use netgauze_parse_utils::test_helpers::*;
+use netcalyx_parse_utils::Span;
+use netcalyx_parse_utils::test_helpers::*;
 
 use crate::community::*;
 use crate::iana::{BgpSidAttributeTypeError, IanaValueError, UndefinedRouteDistinguisherTypeCode};

@@ -15,7 +15,7 @@
 
 #![no_main]
 use libfuzzer_sys::fuzz_target;
-use netgauze_flow_pkt::codec::FlowInfoCodec;
+use netcalyx_flow_pkt::codec::FlowInfoCodec;
 use tokio_util::bytes::BytesMut;
 use tokio_util::codec::{Decoder, Encoder};
 

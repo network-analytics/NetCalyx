@@ -15,7 +15,7 @@
 
 use crate::connection::{Connection, ConnectionConfigBuilder, ConnectionState, ConnectionType};
 use futures::StreamExt;
-use netgauze_bgp_pkt::notification::{
+use netcalyx_bgp_pkt::notification::{
     BgpNotificationMessage, HoldTimerExpiredError, MessageHeaderError,
 };
 use tokio_test::io::Mock;
@@ -25,7 +25,7 @@ use crate::connection::ConnectionConfig;
 use crate::events::ConnectionEvent;
 use crate::fsm::FsmStateError;
 use crate::tests::*;
-use netgauze_bgp_pkt::open::BgpOpenMessage;
+use netcalyx_bgp_pkt::open::BgpOpenMessage;
 
 async fn get_connection(
     io: Mock,

@@ -30,11 +30,11 @@ use crate::wire::serializer::BgpMessageWritingError;
 use crate::wire::serializer::nlri::Ipv4UnicastAddressWritingError;
 use crate::{BgpMessage, BgpUpdateMessage};
 use ipnet::Ipv4Net;
-use netgauze_parse_utils::test_helpers::{
+use netcalyx_parse_utils::test_helpers::{
     test_parse_error_with_one_input, test_parsed_completely, test_parsed_completely_with_one_input,
     test_write,
 };
-use netgauze_parse_utils::{ReadablePduWithOneInput, Span};
+use netcalyx_parse_utils::{ReadablePduWithOneInput, Span};
 use nom::error::ErrorKind;
 use std::collections::HashMap;
 use std::net::Ipv4Addr;

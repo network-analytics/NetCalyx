@@ -57,7 +57,7 @@
 //! id=0:6837:1054 ip=138.187.21.71 mpls_vpn_id=18
 //! ```
 //!
-use netgauze_flow_pkt::ie::{Field, IE};
+use netcalyx_flow_pkt::ie::{Field, IE};
 use std::net::{IpAddr, Ipv4Addr};
 use std::str::FromStr;
 
@@ -315,7 +315,7 @@ impl PmacctMapEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use netgauze_flow_pkt::ie::IE;
+    use netcalyx_flow_pkt::ie::IE;
     use std::net::IpAddr;
     use std::str::FromStr;
 

@@ -19,9 +19,9 @@ use crate::wire::deserializer::route_refresh::{
     BgpRouteRefreshMessageParsingError, LocatedBgpRouteRefreshMessageParsingError,
 };
 use crate::wire::serializer::route_refresh::BgpRouteRefreshMessageWritingError;
-use netgauze_iana::address_family::AddressType;
-use netgauze_parse_utils::Span;
-use netgauze_parse_utils::test_helpers::{test_parse_error, test_parsed_completely, test_write};
+use netcalyx_iana::address_family::AddressType;
+use netcalyx_parse_utils::Span;
+use netcalyx_parse_utils::test_helpers::{test_parse_error, test_parsed_completely, test_write};
 use nom::error::ErrorKind;
 
 #[test]

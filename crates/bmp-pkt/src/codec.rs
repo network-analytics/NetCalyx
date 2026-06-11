@@ -21,13 +21,13 @@ use crate::wire::serializer::BmpMessageWritingError;
 use crate::{BmpMessage, BmpPeerType, PeerKey, v3, v4};
 use byteorder::{ByteOrder, NetworkEndian};
 use bytes::{Buf, BufMut, BytesMut};
-use netgauze_bgp_pkt::BgpMessage;
-use netgauze_bgp_pkt::capabilities::BgpCapability;
+use netcalyx_bgp_pkt::BgpMessage;
+use netcalyx_bgp_pkt::capabilities::BgpCapability;
 use std::collections::HashSet;
 
 use crate::wire::deserializer::BmpParsingContext;
-use netgauze_bgp_pkt::capabilities::{AddPathCapability, MultipleLabel};
-use netgauze_parse_utils::{LocatedParsingError, ReadablePduWithOneInput, Span, WritablePdu};
+use netcalyx_bgp_pkt::capabilities::{AddPathCapability, MultipleLabel};
+use netcalyx_parse_utils::{LocatedParsingError, ReadablePduWithOneInput, Span, WritablePdu};
 use nom::Needed;
 use serde::{Deserialize, Serialize};
 use tokio_util::codec::{Decoder, Encoder};
@@ -309,12 +309,12 @@ mod tests {
     use crate::v3::{InitiationInformation, PeerDownNotificationReason, TerminationInformation};
     use crate::*;
     use chrono::TimeZone;
-    use netgauze_bgp_pkt::capabilities::{
+    use netcalyx_bgp_pkt::capabilities::{
         ExtendedNextHopEncoding, ExtendedNextHopEncodingCapability, FourOctetAsCapability,
         MultiProtocolExtensionsCapability,
     };
-    use netgauze_bgp_pkt::open::{BgpOpenMessage, BgpOpenMessageParameter};
-    use netgauze_iana::address_family::{AddressFamily, AddressType};
+    use netcalyx_bgp_pkt::open::{BgpOpenMessage, BgpOpenMessageParameter};
+    use netcalyx_iana::address_family::{AddressFamily, AddressType};
     use std::collections::HashMap;
     use std::net::Ipv6Addr;
     use std::str::FromStr;

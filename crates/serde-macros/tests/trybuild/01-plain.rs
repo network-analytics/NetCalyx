@@ -1,9 +1,9 @@
 #[allow(unused_imports)]
 #[allow(unused_variables)]
 
-use netgauze_serde_macros::LocatedError;
-use netgauze_parse_utils::Span;
-use netgauze_parse_utils::LocatedParsingError;
+use netcalyx_serde_macros::LocatedError;
+use netcalyx_parse_utils::Span;
+use netcalyx_parse_utils::LocatedParsingError;
 
 
 #[derive(LocatedError, Eq, PartialEq, Debug, Clone)]

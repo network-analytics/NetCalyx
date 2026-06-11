@@ -1,27 +1,27 @@
-# NetGauze BGP Packet Library
+# NetCalyx BGP Packet Library
 
 [![Crates.io][crates-badge]][crates-url]
 [![Documentation][docs-badge]][docs-url]
 [![Apache licensed][apache-badge]][apache-url]
 
 
-[crates-badge]: https://img.shields.io/crates/v/netgauze-bgp-pkt.svg
+[crates-badge]: https://img.shields.io/crates/v/netcalyx-bgp-pkt.svg
 
-[crates-url]: https://crates.io/crates/netgauze-bgp-pkt
+[crates-url]: https://crates.io/crates/netcalyx-bgp-pkt
 
 [apache-badge]: https://img.shields.io/badge/license-Apache-blue.svg
 
-[apache-url]: https://github.com/NetGauze/NetGauze/blob/main/LICENSE
+[apache-url]: https://github.com/network-analytics/NetCalyx/blob/main/LICENSE
 
-[docs-badge]: https://docs.rs/netgauze-bgp-pkt/badge.svg
+[docs-badge]: https://docs.rs/netcalyx-bgp-pkt/badge.svg
 
-[docs-url]: https://docs.rs/netgauze-bgp-pkt
+[docs-url]: https://docs.rs/netcalyx-bgp-pkt
 
 BGP-4 Protocol representation and wire format serialization/deserialization (serde)
 
 ## Overview
 
-NetGauze BGP Pkt is library to represent BGP-4 Packets. It aims to achieve 4 goals
+NetCalyx BGP Pkt is library to represent BGP-4 Packets. It aims to achieve 4 goals
 
 1. Extensive support for the various BGP related RFCs.
    See [Supported BGP-4 Protocol features](#Supported-BGP-Protocol-features).
@@ -40,11 +40,11 @@ To run example: `cargo run --example bgp`
 use std::io::Cursor;
 use std::net::Ipv4Addr;
 
-use netgauze_bgp_pkt::capabilities::*;
-use netgauze_bgp_pkt::open::*;
-use netgauze_bgp_pkt::*;
-use netgauze_iana::address_family::*;
-use netgauze_parse_utils::{ReadablePDUWithOneInput, Span, WritablePDU};
+use netcalyx_bgp_pkt::capabilities::*;
+use netcalyx_bgp_pkt::open::*;
+use netcalyx_bgp_pkt::*;
+use netcalyx_iana::address_family::*;
+use netcalyx_parse_utils::{ReadablePDUWithOneInput, Span, WritablePDU};
 
 pub fn main() {
     // Construct a new BGP message
@@ -255,7 +255,7 @@ pub fn main() {
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use netgauze_bgp_pkt::BgpMessage;
+use netcalyx_bgp_pkt::BgpMessage;
 
 fuzz_target!(|data: BgpMessage| {
     // Some fuzzing target that accepts BgpMessage as input and need to be fuzzed

@@ -43,7 +43,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::post;
 use axum::{Json, Router};
-use netgauze_bmp_service::actor::BmpActorHandle;
+use netcalyx_bmp_service::actor::BmpActorHandle;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::time::Duration;

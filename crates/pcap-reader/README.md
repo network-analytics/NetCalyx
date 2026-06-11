@@ -5,17 +5,17 @@
 [![Apache licensed][apache-badge]][apache-url]
 
 
-[crates-badge]: https://img.shields.io/crates/v/netgauze-pcap-reader.svg
+[crates-badge]: https://img.shields.io/crates/v/netcalyx-pcap-reader.svg
 
-[crates-url]: https://crates.io/crates/netgauze-pcap-reader
+[crates-url]: https://crates.io/crates/netcalyx-pcap-reader
 
 [apache-badge]: https://img.shields.io/badge/license-Apache-blue.svg
 
-[apache-url]: https://github.com/NetGauze/NetGauze/blob/main/LICENSE
+[apache-url]: https://github.com/network-analytics/NetCalyx/blob/main/LICENSE
 
-[docs-badge]: https://docs.rs/netgauze-pcap-reader/badge.svg
+[docs-badge]: https://docs.rs/netcalyx-pcap-reader/badge.svg
 
-[docs-url]: https://docs.rs/netgauze-pcap-reader
+[docs-url]: https://docs.rs/netcalyx-pcap-reader
 
 
 Helper Reading pcap and pcap files for testing only
@@ -27,8 +27,8 @@ See [parse](examples/parse.rs) for a simple code to parse BMP packets from a pca
 use std::{collections::HashMap, fs::File};
 
 use bytes::BytesMut;
-use netgauze_bmp_pkt::codec::BmpCodec;
-use netgauze_pcap_reader::{PcapIter, TransportProtocol};
+use netcalyx_bmp_pkt::codec::BmpCodec;
+use netcalyx_pcap_reader::{PcapIter, TransportProtocol};
 use pcap_parser::PcapNGReader;
 use tokio_util::codec::Decoder;
 

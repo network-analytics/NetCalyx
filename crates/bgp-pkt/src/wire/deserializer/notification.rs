@@ -28,8 +28,8 @@ use crate::notification::{
     CeaseError, FiniteStateMachineError, HoldTimerExpiredError, MessageHeaderError,
     OpenMessageError, RouteRefreshError, UpdateMessageError,
 };
-use netgauze_parse_utils::{ErrorKindSerdeDeref, ReadablePdu, Span, parse_into_located};
-use netgauze_serde_macros::LocatedError;
+use netcalyx_parse_utils::{ErrorKindSerdeDeref, ReadablePdu, Span, parse_into_located};
+use netcalyx_serde_macros::LocatedError;
 use nom::IResult;
 use nom::error::ErrorKind;
 use nom::number::complete::be_u8;

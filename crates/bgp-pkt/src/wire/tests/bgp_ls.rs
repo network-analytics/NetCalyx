@@ -23,7 +23,7 @@ use crate::path_attribute::{
     BgpLsAttribute, BgpLsAttributeValue, BgpLsPeerSid, MpReach, MpUnreach, PathAttribute,
     PathAttributeValue,
 };
-use netgauze_parse_utils::test_helpers::{
+use netcalyx_parse_utils::test_helpers::{
     test_parsed_completely_with_one_input, test_parsed_completely_with_three_inputs, test_write,
     test_write_with_one_input,
 };
@@ -32,7 +32,7 @@ use std::collections::HashMap;
 use crate::nlri::MplsLabel;
 use crate::wire::deserializer::BgpParsingContext;
 use crate::wire::serializer::path_attribute::PathAttributeWritingError;
-use netgauze_iana::address_family::AddressType;
+use netcalyx_iana::address_family::AddressType;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
 

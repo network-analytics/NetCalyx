@@ -15,7 +15,7 @@
 
 use crate::connection::ConnectionState;
 use crate::events::BgpEvent;
-use netgauze_bgp_pkt::wire::serializer::BgpMessageWritingError;
+use netcalyx_bgp_pkt::wire::serializer::BgpMessageWritingError;
 use std::fmt::{Debug, Display, Formatter};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]

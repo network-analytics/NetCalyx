@@ -3,9 +3,9 @@ use std::io::Cursor;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 
-use netgauze_flow_pkt::ipfix;
-use netgauze_flow_pkt::ipfix::IpfixPacket;
-use netgauze_parse_utils::{ReadablePduWithOneInput, Span, WritablePduWithOneInput};
+use netcalyx_flow_pkt::ipfix;
+use netcalyx_flow_pkt::ipfix::IpfixPacket;
+use netcalyx_parse_utils::{ReadablePduWithOneInput, Span, WritablePduWithOneInput};
 
 const IPFIX_PKT_TEMPLATE_RAW: &[u8] = &[
     0x00, 0x0a, // Version

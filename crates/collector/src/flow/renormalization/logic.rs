@@ -14,8 +14,8 @@
 // limitations under the License.
 
 use crate::flow::renormalization::actor::RenormalizationStats;
-use netgauze_flow_pkt::ie::{Field, netgauze, selectorAlgorithm};
-use netgauze_flow_pkt::{FlowInfo, ipfix, netflow};
+use netcalyx_flow_pkt::ie::{Field, netcalyx, selectorAlgorithm};
+use netcalyx_flow_pkt::{FlowInfo, ipfix, netflow};
 use opentelemetry::KeyValue;
 use std::net::SocketAddr;
 use tracing::{trace, warn};
@@ -369,7 +369,7 @@ fn renormalize_fields(
             }
         }
         if is_something_renormalized {
-            fields.push(Field::NetGauze(netgauze::Field::isRenormalized(true)));
+            fields.push(Field::NetCalyx(netcalyx::Field::isRenormalized(true)));
             stats.flows_renormalized.add(1, stats_tags);
         }
         return fields.into_boxed_slice();

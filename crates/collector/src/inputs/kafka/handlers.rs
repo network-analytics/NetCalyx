@@ -15,7 +15,7 @@
 use crate::inputs::InputProcessingError;
 use crate::inputs::kafka::SonataConfig;
 use crate::inputs::kafka::formats::sonata::{SonataData, SonataOperation};
-use netgauze_flow_pkt::ie::{Field, IE};
+use netcalyx_flow_pkt::ie::{Field, IE};
 use std::collections::HashMap;
 use std::net::IpAddr;
 
@@ -249,8 +249,8 @@ impl KafkaMessageHandler<crate::flow::enrichment::EnrichmentOperation> for Sonat
                                 scope: crate::flow::enrichment::Scope::new(0, None),
                                 weight: self.config().weight,
                                 ies: vec![
-                                    IE::NetGauze(netgauze_flow_pkt::ie::netgauze::IE::nodeId),
-                                    IE::NetGauze(netgauze_flow_pkt::ie::netgauze::IE::platformId),
+                                    IE::NetCalyx(netcalyx_flow_pkt::ie::netcalyx::IE::nodeId),
+                                    IE::NetCalyx(netcalyx_flow_pkt::ie::netcalyx::IE::platformId),
                                 ],
                             },
                         ));
@@ -260,11 +260,11 @@ impl KafkaMessageHandler<crate::flow::enrichment::EnrichmentOperation> for Sonat
                     self.id_cache_mut().insert(sonata_id_node, loopback);
 
                     // Create Upsert Operation
-                    let node_id = Field::NetGauze(netgauze_flow_pkt::ie::netgauze::Field::nodeId(
+                    let node_id = Field::NetCalyx(netcalyx_flow_pkt::ie::netcalyx::Field::nodeId(
                         node.hostname.into(),
                     ));
                     let platform_id =
-                        Field::NetGauze(netgauze_flow_pkt::ie::netgauze::Field::platformId(
+                        Field::NetCalyx(netcalyx_flow_pkt::ie::netcalyx::Field::platformId(
                             node.platform.name.into(),
                         ));
 
@@ -296,8 +296,8 @@ impl KafkaMessageHandler<crate::flow::enrichment::EnrichmentOperation> for Sonat
                             scope: crate::flow::enrichment::Scope::new(0, None),
                             weight: self.config().weight,
                             ies: vec![
-                                IE::NetGauze(netgauze_flow_pkt::ie::netgauze::IE::nodeId),
-                                IE::NetGauze(netgauze_flow_pkt::ie::netgauze::IE::platformId),
+                                IE::NetCalyx(netcalyx_flow_pkt::ie::netcalyx::IE::nodeId),
+                                IE::NetCalyx(netcalyx_flow_pkt::ie::netcalyx::IE::platformId),
                             ],
                         },
                     ));
@@ -349,15 +349,15 @@ impl KafkaMessageHandler<crate::yang_push::EnrichmentOperation> for SonataHandle
                     self.id_cache_mut().insert(sonata_id_node, loopback);
 
                     // Create Upsert Operation with labels
-                    let node_id_label = netgauze_yang_push::model::telemetry::Label::new(
+                    let node_id_label = netcalyx_yang_push::model::telemetry::Label::new(
                         "node_id".to_string(),
-                        netgauze_yang_push::model::telemetry::LabelValue::StringValue {
+                        netcalyx_yang_push::model::telemetry::LabelValue::StringValue {
                             string_value: node.hostname,
                         },
                     );
-                    let platform_id_label = netgauze_yang_push::model::telemetry::Label::new(
+                    let platform_id_label = netcalyx_yang_push::model::telemetry::Label::new(
                         "platform_id".to_string(),
-                        netgauze_yang_push::model::telemetry::LabelValue::StringValue {
+                        netcalyx_yang_push::model::telemetry::LabelValue::StringValue {
                             string_value: node.platform.name,
                         },
                     );
@@ -407,7 +407,7 @@ mod tests {
     use crate::inputs::InputProcessingError;
     use crate::inputs::kafka::SonataConfig;
     use crate::inputs::kafka::handlers::{KafkaMessageHandler, SonataHandler};
-    use netgauze_yang_push::model::telemetry::{Label, LabelValue};
+    use netcalyx_yang_push::model::telemetry::{Label, LabelValue};
 
     // ** Tests with crate::flow::enrichment::EnrichmentOperation for Flow ** //
 
@@ -428,10 +428,10 @@ mod tests {
                 scope: crate::flow::enrichment::Scope::new(0, None),
                 weight: 10,
                 fields: vec![
-                    Field::NetGauze(netgauze_flow_pkt::ie::netgauze::Field::nodeId(
+                    Field::NetCalyx(netcalyx_flow_pkt::ie::netcalyx::Field::nodeId(
                         "test-node".into(),
                     )),
-                    Field::NetGauze(netgauze_flow_pkt::ie::netgauze::Field::platformId(
+                    Field::NetCalyx(netcalyx_flow_pkt::ie::netcalyx::Field::platformId(
                         "test-platform".into(),
                     )),
                 ],
@@ -466,8 +466,8 @@ mod tests {
                     scope: crate::flow::enrichment::Scope::new(0, None),
                     weight: 10,
                     ies: vec![
-                        IE::NetGauze(netgauze_flow_pkt::ie::netgauze::IE::nodeId),
-                        IE::NetGauze(netgauze_flow_pkt::ie::netgauze::IE::platformId),
+                        IE::NetCalyx(netcalyx_flow_pkt::ie::netcalyx::IE::nodeId),
+                        IE::NetCalyx(netcalyx_flow_pkt::ie::netcalyx::IE::platformId),
                     ],
                 },
             ),
@@ -478,10 +478,10 @@ mod tests {
                     scope: crate::flow::enrichment::Scope::new(0, None),
                     weight: 10,
                     fields: vec![
-                        Field::NetGauze(netgauze_flow_pkt::ie::netgauze::Field::nodeId(
+                        Field::NetCalyx(netcalyx_flow_pkt::ie::netcalyx::Field::nodeId(
                             "updated-node".into(),
                         )),
-                        Field::NetGauze(netgauze_flow_pkt::ie::netgauze::Field::platformId(
+                        Field::NetCalyx(netcalyx_flow_pkt::ie::netcalyx::Field::platformId(
                             "updated-platform".into(),
                         )),
                     ],
@@ -517,10 +517,10 @@ mod tests {
                     scope: crate::flow::enrichment::Scope::new(0, None),
                     weight: 10,
                     fields: vec![
-                        Field::NetGauze(netgauze_flow_pkt::ie::netgauze::Field::nodeId(
+                        Field::NetCalyx(netcalyx_flow_pkt::ie::netcalyx::Field::nodeId(
                             "updated-node".into(),
                         )),
-                        Field::NetGauze(netgauze_flow_pkt::ie::netgauze::Field::platformId(
+                        Field::NetCalyx(netcalyx_flow_pkt::ie::netcalyx::Field::platformId(
                             "updated-platform".into(),
                         )),
                     ],
@@ -554,8 +554,8 @@ mod tests {
                 scope: crate::flow::enrichment::Scope::new(0, None),
                 weight: 10,
                 ies: vec![
-                    IE::NetGauze(netgauze_flow_pkt::ie::netgauze::IE::nodeId),
-                    IE::NetGauze(netgauze_flow_pkt::ie::netgauze::IE::platformId),
+                    IE::NetCalyx(netcalyx_flow_pkt::ie::netcalyx::IE::nodeId),
+                    IE::NetCalyx(netcalyx_flow_pkt::ie::netcalyx::IE::platformId),
                 ],
             },
         )];
@@ -668,7 +668,7 @@ mod tests {
     fn test_flow_enrichment_handler_valid_delete() {
         let mut handler = FlowEnrichmentOperationHandler::new();
 
-        let delete_json = r#"{"Delete":{"ip":"10.0.0.1","scope":{"obs_domain_id":100,"scope_fields":null},"weight":50,"ies":[{"NetGauze":"nodeId"}]}}"#;
+        let delete_json = r#"{"Delete":{"ip":"10.0.0.1","scope":{"obs_domain_id":100,"scope_fields":null},"weight":50,"ies":[{"NetCalyx":"nodeId"}]}}"#;
 
         let operations: Vec<crate::flow::enrichment::EnrichmentOperation> = handler
             .handle_message(delete_json.as_bytes(), 0, 0)
@@ -679,7 +679,7 @@ mod tests {
                 ip: "10.0.0.1".parse().unwrap(),
                 scope: crate::flow::enrichment::Scope::new(100, None),
                 weight: 50,
-                ies: vec![IE::NetGauze(netgauze_flow_pkt::ie::netgauze::IE::nodeId)],
+                ies: vec![IE::NetCalyx(netcalyx_flow_pkt::ie::netcalyx::IE::nodeId)],
             },
         )];
 

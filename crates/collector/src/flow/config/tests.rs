@@ -16,8 +16,8 @@
 use crate::flow::config::*;
 use apache_avro::types::ValueKind as AvroValueKind;
 use chrono::{TimeZone, Utc};
-use netgauze_flow_pkt::ie::{Field, IE};
-use netgauze_iana::tcp::TCPHeaderFlags;
+use netcalyx_flow_pkt::ie::{Field, IE};
+use netcalyx_iana::tcp::TCPHeaderFlags;
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use std::net::Ipv4Addr;
 

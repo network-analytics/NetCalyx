@@ -16,8 +16,8 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use netgauze_parse_utils::WritablePdu;
-use netgauze_udp_notif_pkt::raw::UdpNotifPacket;
+use netcalyx_parse_utils::WritablePdu;
+use netcalyx_udp_notif_pkt::raw::UdpNotifPacket;
 use std::io::Cursor;
 
 fuzz_target!(|pkt: UdpNotifPacket| {

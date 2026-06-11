@@ -50,7 +50,7 @@ use crate::flow::enrichment::{
     DeleteAllPayload, DeletePayload, EnrichmentOperation, Scope, UpsertPayload, Weight,
 };
 use crate::flow::types::FieldRef;
-use netgauze_flow_pkt::ie::{Field, HasIE, IE};
+use netcalyx_flow_pkt::ie::{Field, HasIE, IE};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, btree_map, hash_map};

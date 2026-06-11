@@ -16,7 +16,7 @@
 //! Representation for `RouteRefresh` BGP message.
 
 use crate::iana::RouteRefreshSubcode;
-use netgauze_iana::address_family::AddressType;
+use netcalyx_iana::address_family::AddressType;
 use serde::{Deserialize, Serialize};
 
 /// Route Refresh message as defined in

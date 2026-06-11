@@ -641,7 +641,7 @@ fn generate_ie_field_enum_for_ie(
     let iana_variants = iana_ies.iter().map(|ie| {
         let name = Ident::new(&ie.name, Span::call_site());
         if ie.name == "tcpControlBits" {
-            quote! { #name(netgauze_iana::tcp::TCPHeaderFlags) }
+            quote! { #name(netcalyx_iana::tcp::TCPHeaderFlags) }
         } else {
             let rust_type = get_rust_type(&ie.data_type, &ie.name);
             let field_type = if ie.subregistry.is_some() {
@@ -1413,7 +1413,7 @@ fn generate_u8_deserializer(ie_name: &String, enum_subreg: bool) -> TokenStream 
             (buf, Field::#ident(enum_val))
         }
     } else if ie_name == "tcpControlBits" {
-        quote! { (buf, Field::#ident(netgauze_iana::tcp::TCPHeaderFlags::from(value))) }
+        quote! { (buf, Field::#ident(netcalyx_iana::tcp::TCPHeaderFlags::from(value))) }
     } else {
         quote! { (buf, Field::#ident(value)) }
     };
@@ -1437,7 +1437,7 @@ fn generate_u16_deserializer(ie_name: &String, enum_subreg: bool) -> TokenStream
             (buf, Field::#ident(enum_val))
         }
     } else if ie_name == "tcpControlBits" {
-        quote! { (buf, Field::#ident(netgauze_iana::tcp::TCPHeaderFlags::from(value))) }
+        quote! { (buf, Field::#ident(netcalyx_iana::tcp::TCPHeaderFlags::from(value))) }
     } else {
         quote! { (buf, Field::#ident(value)) }
     };
@@ -1690,14 +1690,14 @@ fn generate_string_deserializer(ie_name: &str) -> TokenStream {
                 } else {
                     (buf, short_length as u32)
                 };
-                let (buf, value) = nom::combinator::map_res(nom::bytes::complete::take(variable_length), |str_buf: netgauze_parse_utils::Span<'_>| {
+                let (buf, value) = nom::combinator::map_res(nom::bytes::complete::take(variable_length), |str_buf: netcalyx_parse_utils::Span<'_>| {
                     let result = ::std::str::from_utf8(&str_buf);
                     result.map(|x| x.into())
                 })(buf)?;
                 (buf,  Field::#ident(value))
             } else {
                 let (buf, value) =
-                nom::combinator::map_res(nom::bytes::complete::take(length), |str_buf: netgauze_parse_utils::Span<'_>| {
+                nom::combinator::map_res(nom::bytes::complete::take(length), |str_buf: netcalyx_parse_utils::Span<'_>| {
                     let nul_range_end = str_buf
                         .iter()
                         .position(|&c| c == b'\0')
@@ -2400,7 +2400,7 @@ pub(crate) fn generate_pkg_ie_serializers(
         use crate::ie::#vendor_ident::*;
 
         #[allow(non_camel_case_types)]
-        #[derive(netgauze_serde_macros::WritingError, Eq, PartialEq, Clone, Debug)]
+        #[derive(netcalyx_serde_macros::WritingError, Eq, PartialEq, Clone, Debug)]
         pub enum FieldWritingError {
             StdIOError(#[from_std_io_error] String),
             InvalidLength{ie_name: String, length: u16},
@@ -2417,7 +2417,7 @@ pub(crate) fn generate_pkg_ie_serializers(
 
         impl std::error::Error for FieldWritingError {}
 
-        impl netgauze_parse_utils::WritablePduWithOneInput<Option<u16>, FieldWritingError> for Field {
+        impl netcalyx_parse_utils::WritablePduWithOneInput<Option<u16>, FieldWritingError> for Field {
             const BASE_LENGTH: usize = 0;
             fn len(&self, length: Option<u16>) -> usize {
                 match self {
@@ -2476,7 +2476,7 @@ pub(crate) fn generate_fields_enum(ies: &[InformationElement]) -> TokenStream {
     let ie_fields = ies.iter().map(|ie| {
         let name = Ident::new(&ie.name, Span::call_site());
         if ie.name == "tcpControlBits" {
-            quote! { #name(netgauze_iana::tcp::TCPHeaderFlags) }
+            quote! { #name(netcalyx_iana::tcp::TCPHeaderFlags) }
         } else {
             let rust_type = get_rust_type(&ie.data_type, &ie.name);
             let field_type = if ie.subregistry.is_some() {
@@ -2879,7 +2879,7 @@ pub(crate) fn generate_ie_values(
             tokens.extend(code);
         } else if ie.name == "tcpControlBits" {
             let code = quote! {
-                impl HasIE for netgauze_iana::tcp::TCPHeaderFlags {
+                impl HasIE for netcalyx_iana::tcp::TCPHeaderFlags {
                     fn ie(&self) -> IE {
                         IE::tcpControlBits
                     }
@@ -2905,9 +2905,9 @@ fn generate_ie_values_deserializers(ies: &[InformationElement]) -> TokenStream {
     });
     quote! {
         #[allow(non_camel_case_types)]
-        #[derive(netgauze_serde_macros::LocatedError, Eq, PartialEq, Clone, Debug, serde::Serialize, serde::Deserialize)]
+        #[derive(netcalyx_serde_macros::LocatedError, Eq, PartialEq, Clone, Debug, serde::Serialize, serde::Deserialize)]
         pub enum FieldParsingError {
-            #[serde(with = "netgauze_parse_utils::ErrorKindSerdeDeref")]
+            #[serde(with = "netcalyx_parse_utils::ErrorKindSerdeDeref")]
             NomError(#[from_nom] nom::error::ErrorKind),
             InvalidLength{ie_name: String, length: u16},
             InvalidTimestamp{ie_name: String, seconds: u32},
@@ -2916,9 +2916,9 @@ fn generate_ie_values_deserializers(ies: &[InformationElement]) -> TokenStream {
             Utf8Error(String),
         }
 
-        impl<'a> nom::error::FromExternalError<netgauze_parse_utils::Span<'a>, std::str::Utf8Error> for LocatedFieldParsingError<'a>
+        impl<'a> nom::error::FromExternalError<netcalyx_parse_utils::Span<'a>, std::str::Utf8Error> for LocatedFieldParsingError<'a>
         {
-            fn from_external_error(input: netgauze_parse_utils::Span<'a>, _kind: nom::error::ErrorKind, error: std::str::Utf8Error) -> Self {
+            fn from_external_error(input: netcalyx_parse_utils::Span<'a>, _kind: nom::error::ErrorKind, error: std::str::Utf8Error) -> Self {
                 LocatedFieldParsingError::new(
                     input,
                     FieldParsingError::Utf8Error(error.to_string()),
@@ -2942,13 +2942,13 @@ fn generate_ie_values_deserializers(ies: &[InformationElement]) -> TokenStream {
         impl std::error::Error for FieldParsingError {}
 
 
-        impl<'a> netgauze_parse_utils::ReadablePduWithTwoInputs<'a, &IE, u16, LocatedFieldParsingError<'a>> for Field {
+        impl<'a> netcalyx_parse_utils::ReadablePduWithTwoInputs<'a, &IE, u16, LocatedFieldParsingError<'a>> for Field {
             #[inline]
             fn from_wire(
-                buf: netgauze_parse_utils::Span<'a>,
+                buf: netcalyx_parse_utils::Span<'a>,
                 ie: &IE,
                 length: u16,
-            ) -> nom::IResult<netgauze_parse_utils::Span<'a>, Self, LocatedFieldParsingError<'a>> {
+            ) -> nom::IResult<netcalyx_parse_utils::Span<'a>, Self, LocatedFieldParsingError<'a>> {
                 let (buf, value) = match ie {
                     IE::Unknown {id } => {
                         let (buf, len) = if length == u16::MAX {
@@ -3004,7 +3004,7 @@ pub(crate) fn generate_ie_deser_main(
         let ident = Ident::new(name, Span::call_site());
         quote! {
             IE::#ident(value_ie) => {
-                let (buf, value) = netgauze_parse_utils::parse_into_located_two_inputs(buf, value_ie, length)?;
+                let (buf, value) = netcalyx_parse_utils::parse_into_located_two_inputs(buf, value_ie, length)?;
                 (buf, crate::ie::Field::#ident(value))
             }
         }
@@ -3025,9 +3025,9 @@ pub(crate) fn generate_ie_deser_main(
         use chrono::TimeZone;
 
         #[allow(non_camel_case_types)]
-        #[derive(netgauze_serde_macros::LocatedError, Eq, PartialEq, Clone, Debug, serde::Serialize, serde::Deserialize)]
+        #[derive(netcalyx_serde_macros::LocatedError, Eq, PartialEq, Clone, Debug, serde::Serialize, serde::Deserialize)]
         pub enum FieldParsingError {
-            #[serde(with = "netgauze_parse_utils::ErrorKindSerdeDeref")]
+            #[serde(with = "netcalyx_parse_utils::ErrorKindSerdeDeref")]
             NomError(#[from_nom] nom::error::ErrorKind),
             UnknownInformationElement(IE),
             #(#vendor_errors,)*
@@ -3038,8 +3038,8 @@ pub(crate) fn generate_ie_deser_main(
             Utf8Error(String),
         }
 
-        impl<'a> nom::error::FromExternalError<netgauze_parse_utils::Span<'a>, std::str::Utf8Error> for LocatedFieldParsingError<'a> {
-            fn from_external_error(input: netgauze_parse_utils::Span<'a>, _kind: nom::error::ErrorKind, error: std::str::Utf8Error) -> Self {
+        impl<'a> nom::error::FromExternalError<netcalyx_parse_utils::Span<'a>, std::str::Utf8Error> for LocatedFieldParsingError<'a> {
+            fn from_external_error(input: netcalyx_parse_utils::Span<'a>, _kind: nom::error::ErrorKind, error: std::str::Utf8Error) -> Self {
                 LocatedFieldParsingError::new(input, FieldParsingError::Utf8Error(error.to_string()))
             }
         }
@@ -3061,14 +3061,14 @@ pub(crate) fn generate_ie_deser_main(
 
         impl std::error::Error for FieldParsingError {}
 
-        impl<'a> netgauze_parse_utils::ReadablePduWithTwoInputs<'a, &IE, u16, LocatedFieldParsingError<'a>>
+        impl<'a> netcalyx_parse_utils::ReadablePduWithTwoInputs<'a, &IE, u16, LocatedFieldParsingError<'a>>
         for Field {
             #[inline]
             fn from_wire(
-                buf: netgauze_parse_utils::Span<'a>,
+                buf: netcalyx_parse_utils::Span<'a>,
                 ie: &IE,
                 length: u16,
-            ) -> nom::IResult<netgauze_parse_utils::Span<'a>, Self, LocatedFieldParsingError<'a>> {
+            ) -> nom::IResult<netcalyx_parse_utils::Span<'a>, Self, LocatedFieldParsingError<'a>> {
                 let (buf, value) = match ie {
                     #(#vendor_parsers,)*
                     #(#iana_parsers,)*
@@ -3597,7 +3597,7 @@ pub(crate) fn generate_ie_ser_main(
         use byteorder::WriteBytesExt;
 
         #[allow(non_camel_case_types)]
-        #[derive(netgauze_serde_macros::WritingError, Eq, PartialEq, Clone, Debug)]
+        #[derive(netcalyx_serde_macros::WritingError, Eq, PartialEq, Clone, Debug)]
         pub enum FieldWritingError {
             StdIOError(#[from_std_io_error] String),
             #(#vendor_errors,)*
@@ -3616,7 +3616,7 @@ pub(crate) fn generate_ie_ser_main(
 
         impl std::error::Error for FieldWritingError {}
 
-        impl netgauze_parse_utils::WritablePduWithOneInput<Option<u16>, FieldWritingError> for Field {
+        impl netcalyx_parse_utils::WritablePduWithOneInput<Option<u16>, FieldWritingError> for Field {
             const BASE_LENGTH: usize = 0;
             fn len(&self, length: Option<u16>) -> usize {
                 match self {

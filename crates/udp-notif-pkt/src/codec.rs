@@ -18,7 +18,7 @@ use crate::wire::deserialize::{LocatedUdpNotifPacketParsingError, UdpNotifPacket
 use crate::wire::serialize::UdpNotifPacketWritingError;
 use byteorder::{ByteOrder, NetworkEndian};
 use bytes::{Buf, BufMut, BytesMut};
-use netgauze_parse_utils::{LocatedParsingError, ReadablePdu, Span, WritablePdu};
+use netcalyx_parse_utils::{LocatedParsingError, ReadablePdu, Span, WritablePdu};
 use nom::error::ErrorKind;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};

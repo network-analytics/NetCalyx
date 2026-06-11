@@ -68,8 +68,8 @@ use crate::{
     new_tcp_reuse_port,
 };
 use futures_util::StreamExt;
-use netgauze_bmp_pkt::BmpMessage;
-use netgauze_bmp_pkt::codec::{BmpCodec, BmpCodecDecoderError};
+use netcalyx_bmp_pkt::BmpMessage;
+use netcalyx_bmp_pkt::codec::{BmpCodec, BmpCodecDecoderError};
 use opentelemetry::KeyValue;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -141,39 +141,39 @@ impl BmpActorStats {
     pub fn new(meter: opentelemetry::metrics::Meter) -> Self {
         Self {
             received_messages: meter
-                .u64_counter("netgauze.bmp.decoder.received.messages")
+                .u64_counter("netcalyx.bmp.decoder.received.messages")
                 .with_description("Total number of BMP messages received")
                 .build(),
             active_connections: meter
-                .u64_gauge("netgauze.bmp.active.connections")
+                .u64_gauge("netcalyx.bmp.active.connections")
                 .with_description("Number of active BMP connections")
                 .build(),
             connections_accepted: meter
-                .u64_counter("netgauze.bmp.connections.accepted")
+                .u64_counter("netcalyx.bmp.connections.accepted")
                 .with_description("Total number of accepted BMP connections")
                 .build(),
             connections_closed: meter
-                .u64_counter("netgauze.bmp.connections.closed")
+                .u64_counter("netcalyx.bmp.connections.closed")
                 .with_description("Total number of closed BMP connections")
                 .build(),
             decoder_errors: meter
-                .u64_counter("netgauze.bmp.decoder.errors")
+                .u64_counter("netcalyx.bmp.decoder.errors")
                 .with_description("Total number of decoder errors")
                 .build(),
             subscribers: meter
-                .u64_gauge("netgauze.bmp.subscribers")
+                .u64_gauge("netcalyx.bmp.subscribers")
                 .with_description("Number of active subscribers")
                 .build(),
             subscriber_sent: meter
-                .u64_counter("netgauze.bmp.subscriber.sent")
+                .u64_counter("netcalyx.bmp.subscriber.sent")
                 .with_description("Total number of messages sent to subscribers")
                 .build(),
             subscriber_dropped: meter
-                .u64_counter("netgauze.bmp.subscriber.dropped")
+                .u64_counter("netcalyx.bmp.subscriber.dropped")
                 .with_description("Total number of messages dropped due to channel full or error")
                 .build(),
             connection_closed_notification_dropped: meter
-                .u64_counter("netgauze.bmp.connections.closed.notification.dropped")
+                .u64_counter("netcalyx.bmp.connections.closed.notification.dropped")
                 .with_description(
                     "Total number of dropped connection closed notifications due to full channel",
                 )

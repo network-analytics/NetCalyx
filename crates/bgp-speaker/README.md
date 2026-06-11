@@ -5,17 +5,17 @@
 [![Apache licensed][apache-badge]][apache-url]
 
 
-[crates-badge]: https://img.shields.io/crates/v/netgauze-bgp-speaker.svg
+[crates-badge]: https://img.shields.io/crates/v/netcalyx-bgp-speaker.svg
 
-[crates-url]: https://crates.io/crates/netgauze-bgp-speaker
+[crates-url]: https://crates.io/crates/netcalyx-bgp-speaker
 
 [apache-badge]: https://img.shields.io/badge/license-Apache-blue.svg
 
-[apache-url]: https://github.com/NetGauze/NetGauze/blob/main/LICENSE
+[apache-url]: https://github.com/network-analytics/NetCalyx/blob/main/LICENSE
 
-[docs-badge]: https://docs.rs/netgauze-bgp-speaker/badge.svg
+[docs-badge]: https://docs.rs/netcalyx-bgp-speaker/badge.svg
 
-[docs-url]: https://docs.rs/netgauze-bgp-speaker
+[docs-url]: https://docs.rs/netcalyx-bgp-speaker
 
 
 Handle BGP connection and FSM machine and generate a stream of (FSM state, BGP Event).

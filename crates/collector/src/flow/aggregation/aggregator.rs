@@ -49,9 +49,9 @@
 use crate::flow::aggregation::config::*;
 use crate::flow::types::FieldRef;
 use chrono::{DateTime, Utc};
-use netgauze_analytics::aggregation::*;
-use netgauze_flow_pkt::ie::{Field, *};
-use netgauze_flow_pkt::{DataSetId, FlowInfo, FlowInfoType, ipfix, netflow};
+use netcalyx_analytics::aggregation::*;
+use netcalyx_flow_pkt::ie::{Field, *};
+use netcalyx_flow_pkt::{DataSetId, FlowInfo, FlowInfoType, ipfix, netflow};
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use std::collections::HashSet;
@@ -229,7 +229,7 @@ impl AggFlowInfo {
                 ])
                 .chain(extra_fields)
                 .chain(peer_ports.into_iter().map(|port| {
-                    Field::NetGauze(netgauze::Field::originalExporterTransportPort(port))
+                    Field::NetCalyx(netcalyx::Field::originalExporterTransportPort(port))
                 }))
                 .chain(
                     observation_domain_ids
@@ -237,7 +237,7 @@ impl AggFlowInfo {
                         .map(Field::originalObservationDomainId),
                 )
                 .chain(template_ids.into_iter().map(|template_id| {
-                    Field::NetGauze(netgauze::Field::originalTemplateId(template_id.id()))
+                    Field::NetCalyx(netcalyx::Field::originalTemplateId(template_id.id()))
                 }))
                 .collect();
 

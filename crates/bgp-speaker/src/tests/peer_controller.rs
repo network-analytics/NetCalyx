@@ -21,14 +21,14 @@ use crate::tests::{
     BgpIoMockBuilder, HOLD_TIME, MY_AS, MY_BGP_ID, MockActiveConnect, PEER_ADDR, PEER_AS,
     PEER_BGP_ID, PEER_KEY, POLICY, PROPERTIES,
 };
-use netgauze_bgp_pkt::BgpMessage;
-use netgauze_bgp_pkt::capabilities::{
+use netcalyx_bgp_pkt::BgpMessage;
+use netcalyx_bgp_pkt::capabilities::{
     BgpCapability, FourOctetAsCapability, MultiProtocolExtensionsCapability,
 };
-use netgauze_bgp_pkt::iana::AS_TRANS;
-use netgauze_bgp_pkt::notification::{BgpNotificationMessage, CeaseError};
-use netgauze_bgp_pkt::open::{BgpOpenMessage, BgpOpenMessageParameter};
-use netgauze_iana::address_family::AddressType;
+use netcalyx_bgp_pkt::iana::AS_TRANS;
+use netcalyx_bgp_pkt::notification::{BgpNotificationMessage, CeaseError};
+use netcalyx_bgp_pkt::open::{BgpOpenMessage, BgpOpenMessageParameter};
+use netcalyx_iana::address_family::AddressType;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::sync::mpsc;

@@ -19,8 +19,8 @@ use nom::number::complete::{be_u16, be_u32};
 use serde::{Deserialize, Serialize};
 
 use crate::{FieldSpecifier, FieldSpecifierError};
-use netgauze_parse_utils::{ErrorKindSerdeDeref, ReadablePdu, Span};
-use netgauze_serde_macros::LocatedError;
+use netcalyx_parse_utils::{ErrorKindSerdeDeref, ReadablePdu, Span};
+use netcalyx_serde_macros::LocatedError;
 
 use crate::ie::{IE, IEError};
 

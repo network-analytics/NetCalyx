@@ -1,14 +1,14 @@
 lints.workspace = true
 
 [package]
-name = "netgauze-collector"
+name = "netcalyx-collector"
 version = "0.12.1"
 edition = "2024"
-authors = ["Ahmed Elhassany <a.hassany@gmail.com>"]
+authors = ["NetCalyx Authors"]
 license = "Apache-2.0"
 readme = "README.md"
-repository = "https://github.com/NetGauze/NetGauze"
-homepage = "https://github.com/NetGauze/NetGauze"
+repository = "https://github.com/network-analytics/NetCalyx"
+homepage = "https://github.com/network-analytics/NetCalyx"
 description = """
 Network metrics collector
 """
@@ -18,37 +18,37 @@ build = "build.rs"
 
 [package.metadata.generate-rpm]
 assets = [
-  { source = "crates/collector/LICENSE", dest = "/usr/share/doc/netgauze-collector/LICENSE", mode = "644", doc = true },
-  { source = "crates/collector/README.md", dest = "/usr/share/doc/netgauze-collector/README.md", mode = "644", doc = true },
-  { source = "target/release/netgauze-collector", dest = "/usr/bin/netgauze-collector", mode = "755", caps = "cap_net_raw+ep" },
+  { source = "crates/collector/LICENSE", dest = "/usr/share/doc/netcalyx-collector/LICENSE", mode = "644", doc = true },
+  { source = "crates/collector/README.md", dest = "/usr/share/doc/netcalyx-collector/README.md", mode = "644", doc = true },
+  { source = "target/release/netcalyx-collector", dest = "/usr/bin/netcalyx-collector", mode = "755", caps = "cap_net_raw+ep" },
 ]
 
 [package.metadata.deb]
-maintainer = "Ahmed Elhassany <a.hassany@gmail.com>"
-copyright = "2026, NetGauze Authors"
+maintainer = "NetCalyx Authors"
+copyright = "NetCalyx Authors"
 license-file = ["LICENSE", "0"]
 section = "net"
 priority = "optional"
 depends = "$auto"
 assets = [
-  ["target/release/netgauze-collector", "usr/bin/netgauze-collector", "755"],
-  ["LICENSE", "usr/share/doc/netgauze-collector/LICENSE", "644"],
-  ["README.md", "usr/share/doc/netgauze-collector/README.md", "644"],
+  ["target/release/netcalyx-collector", "usr/bin/netcalyx-collector", "755"],
+  ["LICENSE", "usr/share/doc/netcalyx-collector/LICENSE", "644"],
+  ["README.md", "usr/share/doc/netcalyx-collector/README.md", "644"],
 ]
 
 [dependencies]
-netgauze-analytics = { workspace = true }
-netgauze-flow-service = { workspace = true }
-netgauze-flow-pkt = { workspace = true, features = ["codec"] }
-netgauze-bmp-service = { workspace = true }
-netgauze-bmp-pkt = { workspace = true }
-netgauze-bgp-pkt = { workspace = true }
-netgauze-udp-notif-service = { workspace = true }
-netgauze-udp-notif-pkt = { workspace = true }
-netgauze-yang-push = { workspace = true }
-netgauze-serde-macros = { workspace = true }
-netgauze-iana = { workspace = true }
-netgauze-netconf-proto = { workspace = true }
+netcalyx-analytics = { workspace = true }
+netcalyx-flow-service = { workspace = true }
+netcalyx-flow-pkt = { workspace = true, features = ["codec"] }
+netcalyx-bmp-service = { workspace = true }
+netcalyx-bmp-pkt = { workspace = true }
+netcalyx-bgp-pkt = { workspace = true }
+netcalyx-udp-notif-service = { workspace = true }
+netcalyx-udp-notif-pkt = { workspace = true }
+netcalyx-yang-push = { workspace = true }
+netcalyx-serde-macros = { workspace = true }
+netcalyx-iana = { workspace = true }
+netcalyx-netconf-proto = { workspace = true }
 tokio = { workspace = true, default-features = false, features = ["net", "io-util", "sync", "time", "rt-multi-thread", "macros", "tracing"] }
 serde = { workspace = true, features = ["derive"] }
 tracing = { workspace = true }

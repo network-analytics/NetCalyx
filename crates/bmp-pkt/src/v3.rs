@@ -19,9 +19,9 @@ use crate::iana::{
     TerminationInformationTlvType,
 };
 use crate::{CounterU32, GaugeU64, PeerHeader};
-use netgauze_bgp_pkt::BgpMessage;
-use netgauze_bgp_pkt::iana::BgpMessageType;
-use netgauze_iana::address_family::AddressType;
+use netcalyx_bgp_pkt::BgpMessage;
+use netcalyx_bgp_pkt::iana::BgpMessageType;
+use netcalyx_iana::address_family::AddressType;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 

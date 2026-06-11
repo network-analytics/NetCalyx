@@ -242,27 +242,27 @@ impl LocatedError {
             #[derive(PartialEq, Clone, Debug)]
             #[automatically_derived]
             pub struct #located_struct_name<'a> {
-                span: netgauze_parse_utils::Span<'a>,
+                span: netcalyx_parse_utils::Span<'a>,
                 error: #ident,
             }
 
             #[automatically_derived]
             impl<'a> #located_struct_name<'a> {
-                pub const fn new(span: netgauze_parse_utils::Span<'a>, error: #ident) -> Self {
+                pub const fn new(span: netcalyx_parse_utils::Span<'a>, error: #ident) -> Self {
                     Self { span, error }
                 }
             }
 
             #[automatically_derived]
-            impl<'a> From<#located_struct_name<'a>> for (netgauze_parse_utils::Span<'a>, #ident) {
+            impl<'a> From<#located_struct_name<'a>> for (netcalyx_parse_utils::Span<'a>, #ident) {
                 fn from(input: #located_struct_name<'a>) -> Self {
                     (input.span, input.error)
                 }
             }
 
             #[automatically_derived]
-            impl<'a> netgauze_parse_utils::LocatedParsingError for #located_struct_name<'a> {
-                type Span = netgauze_parse_utils::Span<'a>;
+            impl<'a> netcalyx_parse_utils::LocatedParsingError for #located_struct_name<'a> {
+                type Span = netcalyx_parse_utils::Span<'a>;
                 type Error = #ident;
 
                 fn span(&self) -> &Self::Span {
@@ -275,16 +275,16 @@ impl LocatedError {
             }
 
             #[automatically_derived]
-            impl<'a> nom::error::FromExternalError<netgauze_parse_utils::Span<'a>, #ident> for #located_struct_name<'a> {
-                fn from_external_error(input: netgauze_parse_utils::Span<'a>, _kind: nom::error::ErrorKind, error:  #ident) -> Self {
+            impl<'a> nom::error::FromExternalError<netcalyx_parse_utils::Span<'a>, #ident> for #located_struct_name<'a> {
+                fn from_external_error(input: netcalyx_parse_utils::Span<'a>, _kind: nom::error::ErrorKind, error:  #ident) -> Self {
                     #located_struct_name::new(input, error)
                 }
             }
 
             #(
                 #[automatically_derived]
-                impl<'a> nom::error::FromExternalError<netgauze_parse_utils::Span<'a>, #from_external_ident> for #located_struct_name<'a> {
-                    fn from_external_error(input: netgauze_parse_utils::Span<'a>, _kind: nom::error::ErrorKind, error:  #from_external_ident) -> Self {
+                impl<'a> nom::error::FromExternalError<netcalyx_parse_utils::Span<'a>, #from_external_ident> for #located_struct_name<'a> {
+                    fn from_external_error(input: netcalyx_parse_utils::Span<'a>, _kind: nom::error::ErrorKind, error:  #from_external_ident) -> Self {
                         #located_struct_name::new(input, #ident::#from_external_variants(error))
                     }
                 }
@@ -292,12 +292,12 @@ impl LocatedError {
 
             #(
                 #[automatically_derived]
-                impl<'a> nom::error::ParseError<netgauze_parse_utils::Span<'a>> for #located_struct_name<'a> {
-                    fn from_error_kind(input: netgauze_parse_utils::Span<'a>, kind: nom::error::ErrorKind) -> Self {
+                impl<'a> nom::error::ParseError<netcalyx_parse_utils::Span<'a>> for #located_struct_name<'a> {
+                    fn from_error_kind(input: netcalyx_parse_utils::Span<'a>, kind: nom::error::ErrorKind) -> Self {
                         #located_struct_name::new(input, #ident::#from_nom_variants(kind))
                     }
 
-                    fn append(_input: netgauze_parse_utils::Span<'a>, _kind: nom::error::ErrorKind, other: Self) -> Self {
+                    fn append(_input: netcalyx_parse_utils::Span<'a>, _kind: nom::error::ErrorKind, other: Self) -> Self {
                         other
                     }
                 }
@@ -327,7 +327,7 @@ impl LocatedError {
 ///
 /// Example:
 /// ```no_compile
-/// use netgauze_serde_macros::LocatedError;
+/// use netcalyx_serde_macros::LocatedError;
 ///
 /// #[derive(LocatedError, PartialEq, Clone, Debug)]
 /// pub enum ExtendedCommunityParsingError {
@@ -406,7 +406,7 @@ impl WritingError {
 ///
 /// Example:
 /// ```no_compile
-/// use netgauze_serde_macros::WritingError;
+/// use netcalyx_serde_macros::WritingError;
 ///
 /// #[derive(WritingError, PartialEq, Clone, Debug)]
 /// pub enum BgpOpenMessageWritingError {
@@ -462,7 +462,7 @@ pub fn writing_error(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
 ///     Debug,
 ///     PartialEq,
 ///     Clone,
-///     netgauze_serde_macros::StringBackedEnum,
+///     netcalyx_serde_macros::StringBackedEnum,
 /// )]
 /// pub enum BgpOrigin {
 ///     #[strum(to_string = "i")]

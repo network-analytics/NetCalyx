@@ -24,21 +24,21 @@ use crate::*;
 #[cfg(not(feature = "fuzz"))]
 use chrono::TimeZone;
 use ipnet::Ipv4Net;
-use netgauze_bgp_pkt::BgpMessage;
-use netgauze_bgp_pkt::capabilities::{AddPathAddressFamily, AddPathCapability, BgpCapability};
-use netgauze_bgp_pkt::nlri::{Ipv4Unicast, Ipv4UnicastAddress};
-use netgauze_bgp_pkt::path_attribute::{
+use netcalyx_bgp_pkt::BgpMessage;
+use netcalyx_bgp_pkt::capabilities::{AddPathAddressFamily, AddPathCapability, BgpCapability};
+use netcalyx_bgp_pkt::nlri::{Ipv4Unicast, Ipv4UnicastAddress};
+use netcalyx_bgp_pkt::path_attribute::{
     As4PathSegment, AsPath, AsPathSegmentType, MultiExitDiscriminator, NextHop, Origin,
     PathAttribute, PathAttributeValue,
 };
-use netgauze_bgp_pkt::update::BgpUpdateMessage;
-use netgauze_bgp_pkt::wire::deserializer::update::BgpUpdateMessageParsingError;
-use netgauze_bgp_pkt::wire::deserializer::{
+use netcalyx_bgp_pkt::update::BgpUpdateMessage;
+use netcalyx_bgp_pkt::wire::deserializer::update::BgpUpdateMessageParsingError;
+use netcalyx_bgp_pkt::wire::deserializer::{
     BgpMessageParsingError, BgpParsingContext, Ipv4PrefixParsingError,
 };
-use netgauze_iana::address_family::AddressType;
-use netgauze_parse_utils::Span;
-use netgauze_parse_utils::test_helpers::{
+use netcalyx_iana::address_family::AddressType;
+use netcalyx_parse_utils::Span;
+use netcalyx_parse_utils::test_helpers::{
     test_parse_error_with_one_input, test_parsed_completely_with_one_input, test_write,
 };
 use nom::error::ErrorKind;

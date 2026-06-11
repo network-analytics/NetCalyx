@@ -14,11 +14,11 @@
 // limitations under the License.
 
 use clap::Parser;
-use netgauze_bgp_speaker::connection::TcpActiveConnect;
-use netgauze_bgp_speaker::listener::BgpListener;
-use netgauze_bgp_speaker::peer::{EchoCapabilitiesPolicy, PeerConfigBuilder, PeerProperties};
-use netgauze_bgp_speaker::peer_controller::PeerHandle;
-use netgauze_bgp_speaker::supervisor::PeersSupervisor;
+use netcalyx_bgp_speaker::connection::TcpActiveConnect;
+use netcalyx_bgp_speaker::listener::BgpListener;
+use netcalyx_bgp_speaker::peer::{EchoCapabilitiesPolicy, PeerConfigBuilder, PeerProperties};
+use netcalyx_bgp_speaker::peer_controller::PeerHandle;
+use netcalyx_bgp_speaker::supervisor::PeersSupervisor;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::vec;
 use tokio::net::TcpStream;

@@ -17,8 +17,8 @@ use crate::nlri::*;
 use crate::wire::deserializer::nlri::*;
 use crate::wire::serializer::nlri::*;
 use ipnet::{Ipv4Net, Ipv6Net};
-use netgauze_parse_utils::Span;
-use netgauze_parse_utils::test_helpers::{
+use netcalyx_parse_utils::Span;
+use netcalyx_parse_utils::test_helpers::{
     test_parse_error, test_parsed_completely, test_parsed_completely_with_one_input,
     test_parsed_completely_with_three_inputs, test_write,
 };

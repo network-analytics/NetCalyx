@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use netgauze_ipfix_code_generator::{
+use netcalyx_ipfix_code_generator::{
     Config, ExternalSubRegistrySource, RegistrySource, RegistryType, SourceConfig, SubRegistryType,
     generate,
 };
@@ -166,18 +166,18 @@ fn get_huawei_config(registry_path: &Path) -> SourceConfig {
     )
 }
 
-fn get_netgauze_config(registry_path: &Path) -> SourceConfig {
-    let netgauze_path = registry_path
-        .join("netgauze.xml")
+fn get_netcalyx_config(registry_path: &Path) -> SourceConfig {
+    let netcalyx_path = registry_path
+        .join("netcalyx.xml")
         .into_os_string()
         .into_string()
-        .expect("Couldn't load netgauze registry file");
+        .expect("Couldn't load NetCalyx registry file");
     SourceConfig::new(
-        RegistrySource::File(netgauze_path),
+        RegistrySource::File(netcalyx_path),
         RegistryType::IanaXML,
         3746, // Swisscom AG
-        "netgauze".to_string(),
-        "NetGauze".to_string(),
+        "netcalyx".to_string(),
+        "NetCalyx".to_string(),
         None,
     )
 }
@@ -268,17 +268,17 @@ fn main() {
     );
     let nokia_source = get_nokia_config(&registry_path);
     let huawei_source = get_huawei_config(&registry_path);
-    let netgauze_source = get_netgauze_config(&registry_path);
+    let netcalyx_source = get_netcalyx_config(&registry_path);
     let vmware_source = get_vmware_config(
         cfg!(feature = "iana-upstream-build"),
         &registry_path,
         &sub_registry_path,
     );
 
-    let mut vendors = vec![nokia_source, huawei_source, netgauze_source, vmware_source];
+    let mut vendors = vec![nokia_source, huawei_source, netcalyx_source, vmware_source];
 
     if cfg!(feature = "custom-upstream-build") {
-        let paths_and_pens = env::var("NETGAUZE_CUSTOM_XML_PATHS").expect("custom-upstream-build feature is enabled but couldn't find NETGAUZE_CUSTOM_XML_PATHS in OS env variables");
+        let paths_and_pens = env::var("NETCALYX_CUSTOM_XML_PATHS").expect("custom-upstream-build feature is enabled but couldn't find NETCALYX_CUSTOM_XML_PATHS in OS env variables");
         let mut custom_vendors = vec![];
 
         for entry in paths_and_pens.split(',') {
@@ -294,7 +294,7 @@ fn main() {
                 custom_vendors.push(get_custom_config(path, pen));
             } else {
                 panic!(
-                    "Format error in NETGAUZE_CUSTOM_XML_PATHS. Expected: 'path=pen', 'path=pen,path2=pen2' or more. "
+                    "Format error in NETCALYX_CUSTOM_XML_PATHS. Expected: 'path=pen', 'path=pen,path2=pen2' or more. "
                 );
             }
         }

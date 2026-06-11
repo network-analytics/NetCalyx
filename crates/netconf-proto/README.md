@@ -1,21 +1,21 @@
-# netgauze-netconf-proto
+# netcalyx-netconf-proto
 
 [![Crates.io][crates-badge]][crates-url]
 [![Documentation][docs-badge]][docs-url]
 [![Apache licensed][apache-badge]][apache-url]
 
 
-[crates-badge]: https://img.shields.io/crates/v/netgauze-netconf-proto.svg
+[crates-badge]: https://img.shields.io/crates/v/netcalyx-netconf-proto.svg
 
-[crates-url]: https://crates.io/crates/netgauze-netconf-proto
+[crates-url]: https://crates.io/crates/netcalyx-netconf-proto
 
 [apache-badge]: https://img.shields.io/badge/license-Apache-blue.svg
 
-[apache-url]: https://github.com/NetGauze/NetGauze/blob/main/LICENSE
+[apache-url]: https://github.com/network-analytics/NetCalyx/blob/main/LICENSE
 
-[docs-badge]: https://docs.rs/netgauze-netconf-proto/badge.svg
+[docs-badge]: https://docs.rs/netcalyx-netconf-proto/badge.svg
 
-[docs-url]: https://docs.rs/netgauze-netconf-proto
+[docs-url]: https://docs.rs/netcalyx-netconf-proto
 
 
 Low-level NETCONF protocol implementation with XML serialization and
@@ -44,8 +44,8 @@ NETCONF message handling, YANG library utilities, and schema dependency tools.
 Parse a NETCONF `<hello>` message:
 
 ```rust,ignore
-use netgauze_netconf_proto::protocol::{NetConfMessage, Hello};
-use netgauze_netconf_proto::xml_utils::{XmlParser, XmlDeserialize};
+use netcalyx_netconf_proto::protocol::{NetConfMessage, Hello};
+use netcalyx_netconf_proto::xml_utils::{XmlParser, XmlDeserialize};
 use quick_xml::NsReader;
 
 let xml = r#"
@@ -63,8 +63,8 @@ let hello = Hello::xml_deserialize(&mut parser)?;
 Connect to a NETCONF server and load YANG dependencies:
 
 ```rust,ignore
-use netgauze_netconf_proto::client::{NetconfSshConnectConfig, SshAuth, SshHandler, connect};
-use netgauze_netconf_proto::yanglib::PermissiveVersionChecker;
+use netcalyx_netconf_proto::client::{NetconfSshConnectConfig, SshAuth, SshHandler, connect};
+use netcalyx_netconf_proto::yanglib::PermissiveVersionChecker;
 use std::sync::Arc;
 
 let auth = SshAuth::Password { user, password };

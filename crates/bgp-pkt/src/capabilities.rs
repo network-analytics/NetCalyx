@@ -17,7 +17,7 @@
 //! See [RFC5492 Capabilities Advertisement with BGP-4](https://datatracker.ietf.org/doc/html/rfc5492)
 
 use crate::iana::{BgpCapabilityCode, BgpRoleValue};
-use netgauze_iana::address_family::{AddressFamily, AddressType};
+use netcalyx_iana::address_family::{AddressFamily, AddressType};
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, FromRepr};
 

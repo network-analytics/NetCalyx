@@ -19,12 +19,12 @@ use nom::number::complete::{be_u8, be_u16, be_u32};
 use nom::{IResult, InputIter, InputLength, Slice};
 use serde::{Deserialize, Serialize};
 
-use netgauze_parse_utils::{
+use netcalyx_parse_utils::{
     ErrorKindSerdeDeref, ReadablePdu, ReadablePduWithOneInput, ReadablePduWithTwoInputs, Span,
     parse_into_located, parse_into_located_one_input, parse_into_located_two_inputs,
     parse_till_empty_into_located,
 };
-use netgauze_serde_macros::LocatedError;
+use netcalyx_serde_macros::LocatedError;
 
 use crate::ie::InformationElementTemplate;
 use crate::netflow::*;

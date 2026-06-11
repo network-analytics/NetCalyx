@@ -24,10 +24,10 @@ use crate::wire::serializer::v3::{
     StatisticsReportMessageWritingError, TerminationMessageWritingError,
 };
 use byteorder::{NetworkEndian, WriteBytesExt};
-use netgauze_bgp_pkt::wire::serializer::capabilities::BGPCapabilityWritingError;
-use netgauze_bgp_pkt::wire::serializer::{BgpMessageWritingError, write_tlv_header_t16_l16};
-use netgauze_parse_utils::WritablePdu;
-use netgauze_serde_macros::WritingError;
+use netcalyx_bgp_pkt::wire::serializer::capabilities::BGPCapabilityWritingError;
+use netcalyx_bgp_pkt::wire::serializer::{BgpMessageWritingError, write_tlv_header_t16_l16};
+use netcalyx_parse_utils::WritablePdu;
+use netcalyx_serde_macros::WritingError;
 use std::convert::identity;
 use std::io::Write;
 

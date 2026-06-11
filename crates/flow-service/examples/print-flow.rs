@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use futures_util::StreamExt;
 use futures_util::stream::SplitSink;
-use netgauze_flow_pkt::codec::FlowInfoCodec;
+use netcalyx_flow_pkt::codec::FlowInfoCodec;
 use std::collections::HashMap;
 use tokio::net::UdpSocket;
 use tokio_util::codec::{BytesCodec, Decoder};

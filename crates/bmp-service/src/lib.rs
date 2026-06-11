@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use netgauze_bmp_pkt::BmpMessage;
-use netgauze_bmp_pkt::codec::BmpCodecDecoderError;
+use netcalyx_bmp_pkt::BmpMessage;
+use netcalyx_bmp_pkt::codec::BmpCodecDecoderError;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use std::io;

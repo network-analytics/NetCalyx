@@ -16,10 +16,10 @@
 use crate::connection::ActiveConnect;
 use crate::peer::*;
 use crate::peer_controller::*;
-use netgauze_bgp_pkt::BgpMessage;
-use netgauze_bgp_pkt::codec::{BgpCodecDecoderError, BgpCodecInitializer};
-use netgauze_bgp_pkt::wire::deserializer::BgpParsingIgnoredErrors;
-use netgauze_bgp_pkt::wire::serializer::BgpMessageWritingError;
+use netcalyx_bgp_pkt::BgpMessage;
+use netcalyx_bgp_pkt::codec::{BgpCodecDecoderError, BgpCodecInitializer};
+use netcalyx_bgp_pkt::wire::deserializer::BgpParsingIgnoredErrors;
+use netcalyx_bgp_pkt::wire::serializer::BgpMessageWritingError;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;

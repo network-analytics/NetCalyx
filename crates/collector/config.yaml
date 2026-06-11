@@ -1,5 +1,5 @@
 runtime:
-  # Total number of OS threads used allocated for NetGauze.
+  # Total number of OS threads used allocated for NetCalyx.
   # If not specified, the number of threads will equal the number of CPU cores.
   threads: 4
 
@@ -8,7 +8,7 @@ logging:
 
 telemetry:
   url: http://localhost:4317/v1/metrics
-  id: netgauze-sample-instance
+  id: netcalyx-sample-instance
   exporter_timeout: 3000
   reader_interval: 60000
   reader_timeout: 3000
@@ -17,7 +17,7 @@ flow:
   subscriber_timeout: 100
   template_cache_purge_timeout: 360
   listeners:
-    # NetGauze can listen to multiple addresses/interfaces at the same time
+    # NetCalyx can listen to multiple addresses/interfaces at the same time
     - address: 0.0.0.0:9991
       # Optionally Bind to an interface/VRF
       #     interface: eth0
@@ -90,7 +90,7 @@ flow:
 udp_notif:
   subscriber_timeout: 100
   listeners:
-    # NetGauze can listen to multiple addresses/interfaces at the same time
+    # NetCalyx can listen to multiple addresses/interfaces at the same time
     - address: 0.0.0.0:10000
       # Optionally Bind to an interface/VRF
       #     interface: eth0

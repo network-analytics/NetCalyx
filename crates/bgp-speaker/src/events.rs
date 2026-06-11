@@ -16,18 +16,18 @@
 use std::cmp::Ordering;
 use tokio::sync::mpsc;
 
-use netgauze_bgp_pkt::BgpMessage;
-use netgauze_bgp_pkt::notification::{
+use netcalyx_bgp_pkt::BgpMessage;
+use netcalyx_bgp_pkt::notification::{
     BgpNotificationMessage, MessageHeaderError, OpenMessageError, RouteRefreshError,
     UpdateMessageError,
 };
-use netgauze_bgp_pkt::open::BgpOpenMessage;
-use netgauze_bgp_pkt::route_refresh::BgpRouteRefreshMessage;
-use netgauze_bgp_pkt::update::BgpUpdateMessage;
-use netgauze_bgp_pkt::wire::deserializer::BgpMessageParsingError;
-use netgauze_bgp_pkt::wire::deserializer::notification::BgpNotificationMessageParsingError;
+use netcalyx_bgp_pkt::open::BgpOpenMessage;
+use netcalyx_bgp_pkt::route_refresh::BgpRouteRefreshMessage;
+use netcalyx_bgp_pkt::update::BgpUpdateMessage;
+use netcalyx_bgp_pkt::wire::deserializer::BgpMessageParsingError;
+use netcalyx_bgp_pkt::wire::deserializer::notification::BgpNotificationMessageParsingError;
 
-use netgauze_bgp_pkt::codec::BgpCodecDecoderError;
+use netcalyx_bgp_pkt::codec::BgpCodecDecoderError;
 
 pub type BgpMsgReceiver = mpsc::Receiver<BgpMessage>;
 pub type BgpMsgSender = mpsc::Sender<BgpMessage>;

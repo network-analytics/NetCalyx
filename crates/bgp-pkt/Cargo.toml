@@ -1,14 +1,14 @@
 lints.workspace = true
 
 [package]
-name = "netgauze-bgp-pkt"
+name = "netcalyx-bgp-pkt"
 version = "0.12.1"
 edition = "2024"
-authors = ["Ahmed Elhassany <a.hassany@gmail.com>"]
+authors = ["NetCalyx Authors"]
 license = "Apache-2.0"
 readme = "README.md"
-repository = "https://github.com/NetGauze/NetGauze"
-homepage = "https://github.com/NetGauze/NetGauze"
+repository = "https://github.com/network-analytics/NetCalyx"
+homepage = "https://github.com/network-analytics/NetCalyx"
 description = """
 BGP-4 Protocol representation and serde.
 """
@@ -16,10 +16,10 @@ keywords = ["bgp", "parser", "protocol"]
 categories = ["network-programming", "parsing"]
 
 [dependencies]
-netgauze-iana = { workspace = true }
-netgauze-locate = { workspace = true, optional = true }
-netgauze-parse-utils = { workspace = true, optional = true }
-netgauze-serde-macros = { workspace = true, optional = true }
+netcalyx-iana = { workspace = true }
+netcalyx-locate = { workspace = true, optional = true }
+netcalyx-parse-utils = { workspace = true, optional = true }
+netcalyx-serde-macros = { workspace = true, optional = true }
 ipnet = { workspace = true, features = ["serde"] }
 strum_macros = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
@@ -38,18 +38,18 @@ default = ["serde"]
 serde = [
     "nom",
     "byteorder",
-    "netgauze-locate",
-    "netgauze-parse-utils",
-    "netgauze-serde-macros",
+    "netcalyx-locate",
+    "netcalyx-parse-utils",
+    "netcalyx-serde-macros",
 ]
 codec = ["tracing", "tokio-util", "bytes"]
 bench = ["criterion", "codec"]
 fuzz = ["arbitrary", "arbitrary_ext"]
-json-schema = ["schemars", "netgauze-iana/json-schema", "ipnet/schemars1"]
+json-schema = ["schemars", "netcalyx-iana/json-schema", "ipnet/schemars1"]
 
 [dev-dependencies]
-netgauze-pcap-reader = { workspace = true }
-netgauze-parse-utils = { workspace = true, features = ["test-helpers"] }
+netcalyx-pcap-reader = { workspace = true }
+netcalyx-parse-utils = { workspace = true, features = ["test-helpers"] }
 serde_json = { workspace = true }
 rstest = { workspace = true }
 pcap-parser = { workspace = true, features = ["data"] }

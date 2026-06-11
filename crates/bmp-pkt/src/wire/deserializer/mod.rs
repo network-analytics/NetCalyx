@@ -20,11 +20,11 @@ pub mod v4;
 
 use crate::iana::{BmpVersion, UndefinedBmpVersion};
 use crate::{BmpMessage, PeerKey};
-use netgauze_bgp_pkt::wire::deserializer::BgpParsingContext;
-use netgauze_parse_utils::{
+use netcalyx_bgp_pkt::wire::deserializer::BgpParsingContext;
+use netcalyx_parse_utils::{
     ErrorKindSerdeDeref, ReadablePduWithOneInput, Span, parse_into_located_one_input,
 };
-use netgauze_serde_macros::LocatedError;
+use netcalyx_serde_macros::LocatedError;
 use nom::IResult;
 use nom::error::ErrorKind;
 use nom::number::complete::{be_u8, be_u32};

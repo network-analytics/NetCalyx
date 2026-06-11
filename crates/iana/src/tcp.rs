@@ -17,7 +17,7 @@
 //! Handling TCP Parameters registered at [TCP Parameters](https://www.iana.org/assignments/tcp-parameters/tcp-parameters.xml)
 //!
 //! ```rust
-//! use netgauze_iana::tcp::*;
+//! use netcalyx_iana::tcp::*;
 //! use serde_json;
 //!
 //! let value: u8 = 0b01000111;

@@ -66,15 +66,15 @@ pub struct HttpPublisherStats {
 impl HttpPublisherStats {
     pub fn new(metric: opentelemetry::metrics::Meter) -> Self {
         let received = metric
-            .u64_counter("netgauze.http_publisher.received")
+            .u64_counter("netcalyx.http_publisher.received")
             .with_description("total received packets from the producer actor subscription")
             .build();
         let success_sent = metric
-            .u64_counter("netgauze.http_publisher.sent")
+            .u64_counter("netcalyx.http_publisher.sent")
             .with_description("total received packets sent via HTTP")
             .build();
         let failed_sent = metric
-            .u64_counter("netgauze.http_publisher.sent")
+            .u64_counter("netcalyx.http_publisher.sent")
             .with_description("total received packets failed to be sent via HTTP")
             .build();
         Self {
@@ -161,8 +161,8 @@ impl<T, M: Serialize, F: Fn(Arc<T>, String) -> Vec<M>> HttpPublisherActor<T, M, 
                 success_counter.add(
                     buf_len as u64,
                     &[
-                        KeyValue::new("netgauze.http_publisher.sent.url", url.to_string()),
-                        KeyValue::new("netgauze.http_publisher.writer_id", writer_id.clone()),
+                        KeyValue::new("netcalyx.http_publisher.sent.url", url.to_string()),
+                        KeyValue::new("netcalyx.http_publisher.writer_id", writer_id.clone()),
                     ],
                 );
                 debug!("Batch sent: {response:?}")
@@ -171,8 +171,8 @@ impl<T, M: Serialize, F: Fn(Arc<T>, String) -> Vec<M>> HttpPublisherActor<T, M, 
                 fail_counter.add(
                     1,
                     &[
-                        KeyValue::new("netgauze.http_publisher.sent.url", url.to_string()),
-                        KeyValue::new("netgauze.http_publisher.writer_id", writer_id),
+                        KeyValue::new("netcalyx.http_publisher.sent.url", url.to_string()),
+                        KeyValue::new("netcalyx.http_publisher.writer_id", writer_id),
                     ],
                 );
             })
@@ -202,7 +202,7 @@ impl<T, M: Serialize, F: Fn(Arc<T>, String) -> Vec<M>> HttpPublisherActor<T, M, 
                 msg = self.msg_recv.recv() => {
                     match msg {
                         Ok(msg) => {
-                            self.stats.received.add(1, &[KeyValue::new("netgauze.http_publisher.writer", self.writer_id.clone())]);
+                            self.stats.received.add(1, &[KeyValue::new("netcalyx.http_publisher.writer", self.writer_id.clone())]);
                             let msgs = (self.converter)(msg, self.writer_id.clone());
                             self.buf.extend(msgs.into_iter());
                             debug!("[{}] Queued up a message for sending, there are {} messages in the queue", self.name, self.buf.len());

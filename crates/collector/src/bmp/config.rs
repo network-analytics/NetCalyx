@@ -27,7 +27,7 @@ use crate::bmp::pmacct_schema::{
 use crate::publishers::kafka_avro::{AvroConverter, KafkaAvroPublisherActorError};
 use apache_avro::AvroSchema;
 use apache_avro::types::Value as AvroValue;
-use netgauze_bmp_service::BmpRequest;
+use netcalyx_bmp_service::BmpRequest;
 use schema_registry_converter::avro_common::get_supplied_schema;
 use schema_registry_converter::schema_registry_common::SubjectNameStrategy;
 use serde::{Deserialize, Serialize};

@@ -16,7 +16,7 @@
 //! Representations for BGP Update message
 
 use crate::nlri::Ipv4UnicastAddress;
-use netgauze_iana::address_family::AddressType;
+use netcalyx_iana::address_family::AddressType;
 use serde::{Deserialize, Serialize};
 
 use crate::path_attribute::{MpUnreach, PathAttribute, PathAttributeValue};

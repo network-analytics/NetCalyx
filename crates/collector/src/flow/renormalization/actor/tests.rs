@@ -15,7 +15,7 @@
 
 use super::*;
 use chrono::Utc;
-use netgauze_flow_pkt::ipfix::IpfixPacket;
+use netcalyx_flow_pkt::ipfix::IpfixPacket;
 use std::time::Duration;
 use tracing_test::traced_test;
 

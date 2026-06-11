@@ -22,7 +22,7 @@ use crate::community::{Community, ExtendedCommunity, ExtendedCommunityIpv6, Larg
 use crate::iana::PathAttributeType;
 use crate::nlri::*;
 use crate::path_attribute::{BgpLsAttribute, PrefixSegmentIdentifier};
-use netgauze_iana::address_family::{AddressFamily, AddressType, SubsequentAddressFamily};
+use netcalyx_iana::address_family::{AddressFamily, AddressType, SubsequentAddressFamily};
 use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use strum_macros::{Display, FromRepr};

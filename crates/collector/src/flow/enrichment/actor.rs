@@ -52,9 +52,9 @@
 use crate::flow::enrichment::EnrichmentOperation;
 use crate::flow::enrichment::cache::EnrichmentCache;
 use crate::inputs::EnrichmentHandle;
-use netgauze_flow_pkt::ie::{Field, netgauze};
-use netgauze_flow_pkt::{FlowInfo, ipfix, netflow};
-use netgauze_flow_service::FlowRequest;
+use netcalyx_flow_pkt::ie::{Field, netcalyx};
+use netcalyx_flow_pkt::{FlowInfo, ipfix, netflow};
+use netcalyx_flow_service::FlowRequest;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -92,7 +92,7 @@ impl EnrichmentActor {
         writer_id: String,
     ) -> Self {
         // Pre-create dataCollectionManifestName Field once
-        let writer_id = Field::NetGauze(netgauze::Field::dataCollectionManifestName(
+        let writer_id = Field::NetCalyx(netcalyx::Field::dataCollectionManifestName(
             writer_id.as_str().into(),
         ));
 
@@ -379,27 +379,27 @@ pub struct EnrichmentStats {
 impl EnrichmentStats {
     pub fn new(meter: opentelemetry::metrics::Meter) -> Self {
         let received_flows = meter
-            .u64_counter("netgauze.collector.flows.enrichment.received.flows")
+            .u64_counter("netcalyx.collector.flows.enrichment.received.flows")
             .with_description("Number of flows received for enrichment")
             .build();
         let received_enrichment_ops = meter
-            .u64_counter("netgauze.collector.flows.enrichment.received.enrichment.operations")
+            .u64_counter("netcalyx.collector.flows.enrichment.received.enrichment.operations")
             .with_description("Number of enrichment updates received")
             .build();
         let sent = meter
-            .u64_counter("netgauze.collector.flows.enrichment.sent")
+            .u64_counter("netcalyx.collector.flows.enrichment.sent")
             .with_description("Number of enriched flows successfully sent upstream")
             .build();
         let send_error = meter
-            .u64_counter("netgauze.collector.flows.enrichment.sent.error")
+            .u64_counter("netcalyx.collector.flows.enrichment.sent.error")
             .with_description("Number of enrichment updates sent upstream error")
             .build();
         let enrich_error = meter
-            .u64_counter("netgauze.collector.flows.enrichment.enrich.error")
+            .u64_counter("netcalyx.collector.flows.enrichment.enrich.error")
             .with_description("Number of enrichment updates sent upstream error")
             .build();
         let cache_peer_count = meter
-            .u64_gauge("netgauze.collector.flows.enrichment.cache.peer_count")
+            .u64_gauge("netcalyx.collector.flows.enrichment.cache.peer_count")
             .with_description("Number of peer IPs with cached metadata entries")
             .build();
         Self {

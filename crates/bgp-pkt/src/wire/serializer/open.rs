@@ -17,8 +17,8 @@ use std::io::Write;
 
 use byteorder::{NetworkEndian, WriteBytesExt};
 
-use netgauze_parse_utils::WritablePdu;
-use netgauze_serde_macros::WritingError;
+use netcalyx_parse_utils::WritablePdu;
+use netcalyx_serde_macros::WritingError;
 
 use crate::BgpOpenMessage;
 use crate::capabilities::BgpCapability;

@@ -20,8 +20,8 @@ pub mod v4;
 
 use crate::BmpMessage;
 use byteorder::{NetworkEndian, WriteBytesExt};
-use netgauze_parse_utils::WritablePdu;
-use netgauze_serde_macros::WritingError;
+use netcalyx_parse_utils::WritablePdu;
+use netcalyx_serde_macros::WritingError;
 use std::io::Write;
 
 #[derive(WritingError, Eq, PartialEq, Clone, Debug)]

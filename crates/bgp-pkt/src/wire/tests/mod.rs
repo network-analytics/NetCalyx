@@ -20,9 +20,9 @@ use std::str::FromStr;
 use ipnet::{Ipv4Net, Ipv6Net};
 use nom::error::ErrorKind;
 
-use netgauze_iana::address_family::{AddressFamily, AddressType};
-use netgauze_parse_utils::Span;
-use netgauze_parse_utils::test_helpers::{
+use netcalyx_iana::address_family::{AddressFamily, AddressType};
+use netcalyx_parse_utils::Span;
+use netcalyx_parse_utils::test_helpers::{
     combine, test_parse_error_with_one_input, test_parsed_completely_with_one_input, test_write,
 };
 

@@ -215,8 +215,8 @@ mod tests {
     };
     use bytes::Bytes;
     use chrono::{DateTime, Utc};
-    use netgauze_netconf_proto::yang_push::identities::Encoding;
-    use netgauze_netconf_proto::yang_push::subscription::{UpdateTrigger, YangPushModuleVersion};
+    use netcalyx_netconf_proto::yang_push::identities::Encoding;
+    use netcalyx_netconf_proto::yang_push::subscription::{UpdateTrigger, YangPushModuleVersion};
     use serde_json::json;
     use std::collections::HashMap;
 

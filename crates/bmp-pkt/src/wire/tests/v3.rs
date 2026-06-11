@@ -22,30 +22,30 @@ use crate::wire::serializer::v3::*;
 use crate::{BmpMessage, BmpPeerType, CounterU32, GaugeU64, PeerHeader};
 use chrono::{TimeZone, Utc};
 use ipnet::Ipv4Net;
-use netgauze_bgp_pkt::BgpMessage;
-use netgauze_bgp_pkt::capabilities::{
+use netcalyx_bgp_pkt::BgpMessage;
+use netcalyx_bgp_pkt::capabilities::{
     BgpCapability, ExtendedNextHopEncoding, ExtendedNextHopEncodingCapability,
     FourOctetAsCapability, MultiProtocolExtensionsCapability,
 };
-use netgauze_bgp_pkt::community::{
+use netcalyx_bgp_pkt::community::{
     Community, ExtendedCommunity, TransitiveTwoOctetExtendedCommunity,
 };
-use netgauze_bgp_pkt::iana::{BgpMessageType, UndefinedBgpMessageType};
-use netgauze_bgp_pkt::nlri::{
+use netcalyx_bgp_pkt::iana::{BgpMessageType, UndefinedBgpMessageType};
+use netcalyx_bgp_pkt::nlri::{
     Ipv4NlriMplsLabelsAddress, Ipv4Unicast, Ipv4UnicastAddress, MplsLabel, RouteDistinguisher,
 };
-use netgauze_bgp_pkt::notification::{BgpNotificationMessage, CeaseError};
-use netgauze_bgp_pkt::open::{BgpOpenMessage, BgpOpenMessageParameter};
-use netgauze_bgp_pkt::path_attribute::{
+use netcalyx_bgp_pkt::notification::{BgpNotificationMessage, CeaseError};
+use netcalyx_bgp_pkt::open::{BgpOpenMessage, BgpOpenMessageParameter};
+use netcalyx_bgp_pkt::path_attribute::{
     As4PathSegment, AsPath, AsPathSegmentType, Communities, ExtendedCommunities, LocalPreference,
     MpReach, MultiExitDiscriminator, NextHop, Origin, PathAttribute, PathAttributeValue,
 };
-use netgauze_bgp_pkt::update::BgpUpdateMessage;
-use netgauze_bgp_pkt::wire::deserializer::nlri::RouteDistinguisherParsingError;
-use netgauze_bgp_pkt::wire::deserializer::{BgpMessageParsingError, BgpParsingContext};
-use netgauze_iana::address_family::{AddressFamily, AddressType};
-use netgauze_parse_utils::Span;
-use netgauze_parse_utils::test_helpers::{
+use netcalyx_bgp_pkt::update::BgpUpdateMessage;
+use netcalyx_bgp_pkt::wire::deserializer::nlri::RouteDistinguisherParsingError;
+use netcalyx_bgp_pkt::wire::deserializer::{BgpMessageParsingError, BgpParsingContext};
+use netcalyx_iana::address_family::{AddressFamily, AddressType};
+use netcalyx_parse_utils::Span;
+use netcalyx_parse_utils::test_helpers::{
     test_parse_error, test_parse_error_with_one_input, test_parsed_completely,
     test_parsed_completely_with_one_input, test_write,
 };

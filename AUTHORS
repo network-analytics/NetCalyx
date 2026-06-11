@@ -1,8 +1,6 @@
-# This is the list of NetGauze authors for copyright purposes.
-# This does not necessarily list everyone who has contributed code;
-# for that, see the git commit log.
+# NetCalyx is a fork of NetGauze (https://github.com/NetGauze/NetGauze).
+# A full list of authors and contributors is available in the git commit history.
+# Individual author information is not maintained in this file.
 
-# Founder and original author
+# Original NetGauze author
 Ahmed Elhassany <ahmed@netgauze.io>
-
-# Additional Authors

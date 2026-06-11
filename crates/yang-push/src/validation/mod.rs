@@ -23,7 +23,7 @@
 //! ## Quick Start
 //!
 //! ```rust,ignore
-//! use netgauze_yang_push::validation::ValidationActorHandle;
+//! use netcalyx_yang_push::validation::ValidationActorHandle;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let (rx, tx, cache_cmd_tx) = /* channel setup */;
@@ -120,12 +120,12 @@ use crate::{
     OTL_YANG_PUSH_SUBSCRIPTION_ID_KEY, OTL_YANG_PUSH_SUBSCRIPTION_ROUTER_CONTENT_ID_KEY,
     OTL_YANG_PUSH_SUBSCRIPTION_TARGET_KEY,
 };
-use netgauze_netconf_proto::yang_push::subscription::YangPushModuleVersion;
-use netgauze_netconf_proto::yang_push::types::SubscriptionId;
-use netgauze_udp_notif_pkt::decoded::{UdpNotifPacketDecoded, UdpNotifPayload};
-use netgauze_udp_notif_pkt::notification::{NotificationVariant, SubscriptionStartedModified};
-use netgauze_udp_notif_pkt::raw::UdpNotifPacket;
-use netgauze_udp_notif_service::{OTL_UDP_NOTIF_PUBLISHER_ID_KEY, UdpNotifRequest};
+use netcalyx_netconf_proto::yang_push::subscription::YangPushModuleVersion;
+use netcalyx_netconf_proto::yang_push::types::SubscriptionId;
+use netcalyx_udp_notif_pkt::decoded::{UdpNotifPacketDecoded, UdpNotifPayload};
+use netcalyx_udp_notif_pkt::notification::{NotificationVariant, SubscriptionStartedModified};
+use netcalyx_udp_notif_pkt::raw::UdpNotifPacket;
+use netcalyx_udp_notif_service::{OTL_UDP_NOTIF_PUBLISHER_ID_KEY, UdpNotifRequest};
 use rustc_hash::FxHashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
@@ -169,73 +169,73 @@ pub struct ValidationStats {
 impl ValidationStats {
     pub fn new(meter: opentelemetry::metrics::Meter) -> Self {
         let messages_received = meter
-            .u64_counter("netgauze.collector.yang_push.validation.messages.received")
+            .u64_counter("netcalyx.collector.yang_push.validation.messages.received")
             .with_description(
                 "Number of Yang Push messages received for validation (before decoding)",
             )
             .build();
         let messages_decoding_success = meter
-            .u64_counter("netgauze.collector.yang_push.validation.messages.decode.success")
+            .u64_counter("netcalyx.collector.yang_push.validation.messages.decode.success")
             .with_description("Number of Yang Push messages decoded successfully (UDP-Notif payload read successfully)")
             .build();
         let messages_decoding_fail = meter
-            .u64_counter("netgauze.collector.yang_push.validation.messages.decode.fail")
+            .u64_counter("netcalyx.collector.yang_push.validation.messages.decode.fail")
             .with_description("Number of Yang Push messages dropped because of decoding errors (Couldn't read UDP-Notif payload)")
             .build();
         let cache_request_by_subscription_info = meter
-            .u64_counter("netgauze.collector.yang_push.validation.messages.cache.requests.by.subscription_info")
+            .u64_counter("netcalyx.collector.yang_push.validation.messages.cache.requests.by.subscription_info")
             .with_description("Number of cache requests by subscription info (from subscription-start or subscription-modified messages) to retrieve the schemas for YANG-Push subscriptions")
             .build();
         let cache_request_by_subscription_id = meter
-            .u64_counter("netgauze.collector.yang_push.validation.messages.cache.requests.by.subscription_info")
+            .u64_counter("netcalyx.collector.yang_push.validation.messages.cache.requests.by.subscription_info")
             .with_description("Number of cache requests by Subscription ID to retrieve the schemas for YANG-Push subscriptions")
             .build();
         let cached_packets = meter
-            .u64_gauge("netgauze.collector.yang_push.validation.cache.packets")
+            .u64_gauge("netcalyx.collector.yang_push.validation.cache.packets")
             .with_description("Number of Yang Push message cached")
             .build();
         let cache_drop = meter
-            .u64_counter("netgauze.collector.yang_push.validation.cache.drop")
+            .u64_counter("netcalyx.collector.yang_push.validation.cache.drop")
             .with_description("Number of Yang Push messages dropped because of cache is full")
             .build();
         let cache_drain = meter
-            .u64_counter("netgauze.collector.yang_push.validation.cache.drain")
+            .u64_counter("netcalyx.collector.yang_push.validation.cache.drain")
             .with_description("Number of Yang Push messages popped out of the cache and send is going to the validation step")
             .build();
         let cache_yang_ctx_created = meter
-            .u64_counter("netgauze.collector.yang_push.validation.cache.yang.ctx.created")
+            .u64_counter("netcalyx.collector.yang_push.validation.cache.yang.ctx.created")
             .with_description("Number of libyang validation context that are successfully created")
             .build();
         let cache_yang_ctx_invalid = meter
-            .u64_counter("netgauze.collector.yang_push.validation.cache.yang.ctx.invalid")
+            .u64_counter("netcalyx.collector.yang_push.validation.cache.yang.ctx.invalid")
             .with_description(
                 "Number of libyang validation context that are invalid (e.g., missing schema)",
             )
             .build();
         let cache_yang_ctx_empty = meter
-            .u64_counter("netgauze.collector.yang_push.validation.cache.yang.ctx.empty")
+            .u64_counter("netcalyx.collector.yang_push.validation.cache.yang.ctx.empty")
             .with_description("Number of libyang validation context that are empty (e.g., schema loading from the router failed)")
             .build();
         let validation_malformed = meter
-            .u64_counter("netgauze.collector.yang_push.validation.malformed")
+            .u64_counter("netcalyx.collector.yang_push.validation.malformed")
             .with_description(
                 "Number of Yang Push messages dropped because they are malformed; e.g., missing subscription info",
             )
             .build();
         let validation_success = meter
-            .u64_counter("netgauze.collector.yang_push.validation.success")
+            .u64_counter("netcalyx.collector.yang_push.validation.success")
             .with_description("Number of Yang Push messages successfully validated")
             .build();
         let validation_invalid = meter
-            .u64_counter("netgauze.collector.yang_push.validation.invalid")
+            .u64_counter("netcalyx.collector.yang_push.validation.invalid")
             .with_description("Number of Yang Push messages dropped because of validation errors")
             .build();
         let validation_skip = meter
-            .u64_counter("netgauze.collector.yang_push.validation.skipped")
+            .u64_counter("netcalyx.collector.yang_push.validation.skipped")
             .with_description("Number of Yang Push skipped the validation step because the subscription is not found in the cache")
             .build();
         let messages_sent = meter
-            .u64_counter("netgauze.collector.yang_push.validation.messages.sent")
+            .u64_counter("netcalyx.collector.yang_push.validation.messages.sent")
             .with_description("Number of Telemetry Messages successfully sent upstream")
             .build();
         Self {
@@ -1161,7 +1161,7 @@ mod tests {
     use super::*;
     use crate::cache::actor::tests::setup_actor_with_empty_cache;
     use bytes::Bytes;
-    use netgauze_udp_notif_pkt::raw::MediaType;
+    use netcalyx_udp_notif_pkt::raw::MediaType;
     use std::collections::HashMap;
     use std::time::Duration;
 

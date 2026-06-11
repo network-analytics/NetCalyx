@@ -116,39 +116,39 @@ pub struct KafkaAvroPublisherStats {
 impl KafkaAvroPublisherStats {
     pub fn new(meter: opentelemetry::metrics::Meter) -> Self {
         let received = meter
-            .u64_counter("netgauze.collector.kafka.avro.received")
+            .u64_counter("netcalyx.collector.kafka.avro.received")
             .with_description("Received messages from upstream producer")
             .build();
         let sent = meter
-            .u64_counter("netgauze.collector.kafka.avro.sent")
+            .u64_counter("netcalyx.collector.kafka.avro.sent")
             .with_description("Number of messages successfully sent to Kafka")
             .build();
         let send_retries = meter
-            .u64_counter("netgauze.collector.kafka.avro.send.retries")
+            .u64_counter("netcalyx.collector.kafka.avro.send.retries")
             .with_description("Number of send retries to Kafka due to full queue in librdkafka")
             .build();
         let error_avro_convert = meter
-            .u64_counter("netgauze.collector.kafka.avro.error_avro_convert")
+            .u64_counter("netcalyx.collector.kafka.avro.error_avro_convert")
             .with_description("Error converting message into a AVRO value")
             .build();
         let error_avro_encode = meter
-            .u64_counter("netgauze.collector.kafka.avro.error_avro_encode")
+            .u64_counter("netcalyx.collector.kafka.avro.error_avro_encode")
             .with_description("Error encoding message into AVRO binary array")
             .build();
         let error_key_encode = meter
-            .u64_counter("netgauze.collector.kafka.avro.error_key_encode")
+            .u64_counter("netcalyx.collector.kafka.avro.error_key_encode")
             .with_description("Error encoding message into AVRO binary array")
             .build();
         let error_send = meter
-            .u64_counter("netgauze.collector.kafka.avro.error_send")
+            .u64_counter("netcalyx.collector.kafka.avro.error_send")
             .with_description("Error sending message to Kafka")
             .build();
         let delivered_messages = meter
-            .u64_counter("netgauze.collector.kafka.avro.delivered_messages")
+            .u64_counter("netcalyx.collector.kafka.avro.delivered_messages")
             .with_description("Messages confirmed to be delivered to Kafka")
             .build();
         let failed_delivery_messages = meter
-            .u64_counter("netgauze.collector.kafka.avro.failed_delivery_messages")
+            .u64_counter("netcalyx.collector.kafka.avro.failed_delivery_messages")
             .with_description("Messages failed delivery to Kafka")
             .build();
 
@@ -303,7 +303,7 @@ where
                     self.stats.error_key_encode.add(
                         1,
                         &[opentelemetry::KeyValue::new(
-                            "netgauze.kafka.key.encode.error.msg",
+                            "netcalyx.kafka.key.encode.error.msg",
                             err.to_string(),
                         )],
                     );
@@ -320,7 +320,7 @@ where
                 self.stats.error_avro_convert.add(
                     1,
                     &[opentelemetry::KeyValue::new(
-                        "netgauze.kafka.avro.convert.error.msg",
+                        "netcalyx.kafka.avro.convert.error.msg",
                         err.to_string(),
                     )],
                 );
@@ -343,7 +343,7 @@ where
                     self.stats.error_avro_encode.add(
                         1,
                         &[opentelemetry::KeyValue::new(
-                            "netgauze.kafka.avro.encode.error.msg",
+                            "netcalyx.kafka.avro.encode.error.msg",
                             err.to_string(),
                         )],
                     );
@@ -378,7 +378,7 @@ where
                                     self.stats.error_send.add(
                                         1,
                                         &[opentelemetry::KeyValue::new(
-                                            "netgauze.kafka.sent.error.msg",
+                                            "netcalyx.kafka.sent.error.msg",
                                             err.to_string(),
                                         )],
                                     );
@@ -400,7 +400,7 @@ where
                                 self.stats.error_send.add(
                                     1,
                                     &[opentelemetry::KeyValue::new(
-                                        "netgauze.kafka.sent.error.msg",
+                                        "netcalyx.kafka.sent.error.msg",
                                         err.to_string(),
                                     )],
                                 );

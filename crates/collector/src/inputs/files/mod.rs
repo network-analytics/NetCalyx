@@ -12,7 +12,7 @@
 // implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-use netgauze_flow_pkt::ie::IE;
+use netcalyx_flow_pkt::ie::IE;
 use serde::{Deserialize, Serialize};
 
 mod actor;
@@ -89,7 +89,7 @@ pub enum LineChangeType {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use netgauze_flow_pkt::ie::IE;
+    use netcalyx_flow_pkt::ie::IE;
     use serde_yaml;
 
     #[test]

@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use netgauze_udp_notif_service::actor::ActorHandle;
+use netcalyx_udp_notif_service::actor::ActorHandle;
 use std::time::Duration;
 use tracing::info;
 

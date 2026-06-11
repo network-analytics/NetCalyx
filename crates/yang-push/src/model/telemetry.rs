@@ -43,10 +43,10 @@
 use chrono::{DateTime, Utc};
 
 use crate::cache::storage::SubscriptionInfo;
-use netgauze_netconf_proto::yang_push::identities::{ChangeType, Encoding, Transport};
-use netgauze_netconf_proto::yang_push::subscription::YangPushModuleVersion;
-use netgauze_netconf_proto::yang_push::types::{CentiSeconds, SubscriptionId};
-use netgauze_udp_notif_pkt::notification::Target;
+use netcalyx_netconf_proto::yang_push::identities::{ChangeType, Encoding, Transport};
+use netcalyx_netconf_proto::yang_push::subscription::YangPushModuleVersion;
+use netcalyx_netconf_proto::yang_push::types::{CentiSeconds, SubscriptionId};
+use netcalyx_udp_notif_pkt::notification::Target;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::net::IpAddr;
@@ -482,17 +482,17 @@ pub enum UpdateTrigger {
     },
 }
 
-impl From<netgauze_netconf_proto::yang_push::subscription::UpdateTrigger> for UpdateTrigger {
-    fn from(trigger: netgauze_netconf_proto::yang_push::subscription::UpdateTrigger) -> Self {
+impl From<netcalyx_netconf_proto::yang_push::subscription::UpdateTrigger> for UpdateTrigger {
+    fn from(trigger: netcalyx_netconf_proto::yang_push::subscription::UpdateTrigger) -> Self {
         match trigger {
-            netgauze_netconf_proto::yang_push::subscription::UpdateTrigger::Periodic {
+            netcalyx_netconf_proto::yang_push::subscription::UpdateTrigger::Periodic {
                 period,
                 anchor_time,
             } => UpdateTrigger::Periodic {
                 period,
                 anchor_time,
             },
-            netgauze_netconf_proto::yang_push::subscription::UpdateTrigger::OnChange {
+            netcalyx_netconf_proto::yang_push::subscription::UpdateTrigger::OnChange {
                 dampening_period,
                 sync_on_start,
                 excluded_change,
@@ -662,7 +662,7 @@ mod tests {
                 },
                 data_collection_manifest: Some(Manifest {
                     name: Some("dev-collector".to_string()),
-                    vendor: Some("NetGauze".to_string()),
+                    vendor: Some("NetCalyx".to_string()),
                     vendor_pen: Some(12345),
                     software_version: Some("1.0.0".to_string()),
                     software_flavor: Some("release".to_string()),
@@ -697,7 +697,7 @@ mod tests {
         let serialized = serde_json::to_string(&original_message).expect("Failed to serialize");
 
         // Expected JSON string
-        let expected_json = r#"{"ietf-telemetry-message:message":{"network-node-manifest":{"name":"node_id","vendor":"FRR"},"telemetry-message-metadata":{"collection-timestamp":"1970-01-01T00:00:00Z","notification-event":"log","sequence-number":1,"session-protocol":"yang-push","export-address":"127.0.0.1","export-port":8080,"ietf-yang-push-telemetry-message:yang-push-subscription":{"id":1,"stream":"example-stream-subtree-filter-map","subtree-filter":{"example-map":{"e1":"v1","e2":"v2"}},"transport":"ietf-udp-notif-transport:udp-notif","encoding":"ietf-subscribed-notifications:encode-json","periodic":{"period":100,"anchor-time":"1970-01-01T00:00:00Z"},"module":[{"name":"example-module","revision":"2025-01-01","version":"1.0.0"}],"yang-library-content-id":"random-content-id"}},"data-collection-manifest":{"name":"dev-collector","vendor":"NetGauze","vendor-pen":12345,"software-version":"1.0.0","software-flavor":"release","os-version":"8.10","os-type":"Rocky Linux"},"network-operator-metadata":{"labels":[{"name":"priority_level","number-value":"100"},{"name":"platform_id","string-value":"IETF LAB"},{"name":"test_anykey_label","anydata-values":{"key":"value"}}]}}}"#;
+        let expected_json = r#"{"ietf-telemetry-message:message":{"network-node-manifest":{"name":"node_id","vendor":"FRR"},"telemetry-message-metadata":{"collection-timestamp":"1970-01-01T00:00:00Z","notification-event":"log","sequence-number":1,"session-protocol":"yang-push","export-address":"127.0.0.1","export-port":8080,"ietf-yang-push-telemetry-message:yang-push-subscription":{"id":1,"stream":"example-stream-subtree-filter-map","subtree-filter":{"example-map":{"e1":"v1","e2":"v2"}},"transport":"ietf-udp-notif-transport:udp-notif","encoding":"ietf-subscribed-notifications:encode-json","periodic":{"period":100,"anchor-time":"1970-01-01T00:00:00Z"},"module":[{"name":"example-module","revision":"2025-01-01","version":"1.0.0"}],"yang-library-content-id":"random-content-id"}},"data-collection-manifest":{"name":"dev-collector","vendor":"NetCalyx","vendor-pen":12345,"software-version":"1.0.0","software-flavor":"release","os-version":"8.10","os-type":"Rocky Linux"},"network-operator-metadata":{"labels":[{"name":"priority_level","number-value":"100"},{"name":"platform_id","string-value":"IETF LAB"},{"name":"test_anykey_label","anydata-values":{"key":"value"}}]}}}"#;
 
         // Assert that the serialized JSON string matches the expected JSON string
         assert_eq!(

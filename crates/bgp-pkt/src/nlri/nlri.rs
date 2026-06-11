@@ -18,7 +18,7 @@
 
 use crate::iana::{L2EvpnRouteTypeCode, RouteDistinguisherTypeCode};
 use ipnet::{Ipv4Net, Ipv6Net};
-use netgauze_iana::address_family::AddressType;
+use netcalyx_iana::address_family::AddressType;
 use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 

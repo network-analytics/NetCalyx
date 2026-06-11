@@ -24,8 +24,8 @@ use crate::wire::serializer::{
     IpAddrWritingError, MultiTopologyIdWritingError, write_tlv_header_t16_l16,
 };
 use byteorder::{NetworkEndian, WriteBytesExt};
-use netgauze_parse_utils::{WritablePdu, WritablePduWithOneInput};
-use netgauze_serde_macros::WritingError;
+use netcalyx_parse_utils::{WritablePdu, WritablePduWithOneInput};
+use netcalyx_serde_macros::WritingError;
 use std::io::Write;
 
 #[derive(WritingError, Eq, PartialEq, Clone, Debug)]

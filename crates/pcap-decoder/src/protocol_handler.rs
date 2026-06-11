@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use bytes::BytesMut;
-use netgauze_pcap_reader::TransportProtocol;
+use netcalyx_pcap_reader::TransportProtocol;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io;

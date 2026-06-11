@@ -1,14 +1,14 @@
 lints.workspace = true
 
 [package]
-name = "netgauze-bgp-speaker"
+name = "netcalyx-bgp-speaker"
 version = "0.12.1"
 edition = "2024"
-authors = ["Ahmed Elhassany <a.hassany@gmail.com>"]
+authors = ["NetCalyx Authors"]
 license = "Apache-2.0"
 readme = "README.md"
-repository = "https://github.com/NetGauze/NetGauze"
-homepage = "https://github.com/NetGauze/NetGauze"
+repository = "https://github.com/network-analytics/NetCalyx"
+homepage = "https://github.com/network-analytics/NetCalyx"
 description = """
 BGP Speaker: Establish connection and exchange messages with other BGP peers
 """
@@ -16,9 +16,9 @@ keywords = ["bgp", "protocol"]
 categories = ["network-programming"]
 
 [dependencies]
-netgauze-bgp-pkt = { workspace = true, features = ["codec"] }
-netgauze-iana = { workspace = true }
-netgauze-parse-utils = { workspace = true }
+netcalyx-bgp-pkt = { workspace = true, features = ["codec"] }
+netcalyx-iana = { workspace = true }
+netcalyx-parse-utils = { workspace = true }
 chrono = { workspace = true, default-features = false, features = [
     "std",
     "clock",

@@ -16,10 +16,10 @@
 use super::{decode_buffer, serialize_error, serialize_success};
 use crate::protocol_handler::{DecodeOutcome, ProtocolHandler};
 use bytes::BytesMut;
-use netgauze_bgp_pkt::BgpMessage;
-use netgauze_bgp_pkt::codec::{BgpCodec, BgpCodecDecoderError};
-use netgauze_bgp_pkt::wire::deserializer::{BgpParsingContext, BgpParsingIgnoredErrors};
-use netgauze_pcap_reader::TransportProtocol;
+use netcalyx_bgp_pkt::BgpMessage;
+use netcalyx_bgp_pkt::codec::{BgpCodec, BgpCodecDecoderError};
+use netcalyx_bgp_pkt::wire::deserializer::{BgpParsingContext, BgpParsingIgnoredErrors};
+use netcalyx_pcap_reader::TransportProtocol;
 use std::collections::HashMap;
 use std::io;
 use std::net::IpAddr;
@@ -97,13 +97,13 @@ impl ProtocolHandler<(BgpMessage, BgpParsingIgnoredErrors), BgpCodec, BgpCodecDe
 #[cfg(test)]
 mod tests {
     use super::*;
-    use netgauze_bgp_pkt::open::BgpOpenMessage;
-    use netgauze_bgp_pkt::path_attribute::UndefinedOrigin;
-    use netgauze_bgp_pkt::wire::deserializer::BgpMessageParsingError;
-    use netgauze_bgp_pkt::wire::deserializer::path_attribute::{
+    use netcalyx_bgp_pkt::open::BgpOpenMessage;
+    use netcalyx_bgp_pkt::path_attribute::UndefinedOrigin;
+    use netcalyx_bgp_pkt::wire::deserializer::BgpMessageParsingError;
+    use netcalyx_bgp_pkt::wire::deserializer::path_attribute::{
         OriginParsingError, PathAttributeParsingError,
     };
-    use netgauze_bgp_pkt::wire::deserializer::update::BgpUpdateMessageParsingError;
+    use netcalyx_bgp_pkt::wire::deserializer::update::BgpUpdateMessageParsingError;
     use serde_json::json;
     use std::net::Ipv4Addr;
 

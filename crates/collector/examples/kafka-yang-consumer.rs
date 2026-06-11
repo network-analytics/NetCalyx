@@ -31,11 +31,11 @@
 use anyhow::Result;
 use clap::Parser;
 use futures_util::StreamExt;
-use netgauze_netconf_proto::yanglib::{
+use netcalyx_netconf_proto::yanglib::{
     Datastore, DatastoreName, Module, ModuleSet, Schema, Submodule, YangLibrary,
 };
-use netgauze_netconf_proto::yangparser::extract_yang_metadata;
-use netgauze_yang_push::cache::storage::{SubscriptionInfo, YangLibraryReference};
+use netcalyx_netconf_proto::yangparser::extract_yang_metadata;
+use netcalyx_yang_push::cache::storage::{SubscriptionInfo, YangLibraryReference};
 use rdkafka::TopicPartitionList;
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{Consumer, StreamConsumer};

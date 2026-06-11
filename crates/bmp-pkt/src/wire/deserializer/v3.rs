@@ -15,20 +15,20 @@
 
 use chrono::{LocalResult, TimeZone, Utc};
 
-use netgauze_bgp_pkt::BgpMessage;
-use netgauze_bgp_pkt::iana::BgpMessageType;
-use netgauze_bgp_pkt::nlri::RouteDistinguisher;
-use netgauze_bgp_pkt::wire::deserializer::nlri::RouteDistinguisherParsingError;
-use netgauze_bgp_pkt::wire::deserializer::{BgpMessageParsingError, BgpParsingContext};
-use netgauze_iana::address_family::{
+use netcalyx_bgp_pkt::BgpMessage;
+use netcalyx_bgp_pkt::iana::BgpMessageType;
+use netcalyx_bgp_pkt::nlri::RouteDistinguisher;
+use netcalyx_bgp_pkt::wire::deserializer::nlri::RouteDistinguisherParsingError;
+use netcalyx_bgp_pkt::wire::deserializer::{BgpMessageParsingError, BgpParsingContext};
+use netcalyx_iana::address_family::{
     AddressFamily, AddressType, InvalidAddressType, SubsequentAddressFamily,
     UndefinedAddressFamily, UndefinedSubsequentAddressFamily,
 };
-use netgauze_parse_utils::{
+use netcalyx_parse_utils::{
     ErrorKindSerdeDeref, ReadablePdu, ReadablePduWithOneInput, Span, parse_into_located,
     parse_into_located_one_input, parse_till_empty_into_located,
 };
-use netgauze_serde_macros::LocatedError;
+use netcalyx_serde_macros::LocatedError;
 use nom::IResult;
 use nom::error::{ErrorKind, FromExternalError};
 use nom::number::complete::{be_u8, be_u16, be_u32, be_u64, be_u128};
@@ -224,7 +224,7 @@ pub enum RouteMonitoringMessageParsingError {
     RouteMonitoringMessageError(v3::RouteMonitoringMessageError),
     PeerHeaderError(#[from_located(module = "self")] PeerHeaderParsingError),
     BgpMessageError(
-        #[from_located(module = "netgauze_bgp_pkt::wire::deserializer")] BgpMessageParsingError,
+        #[from_located(module = "netcalyx_bgp_pkt::wire::deserializer")] BgpMessageParsingError,
     ),
 }
 
@@ -322,7 +322,7 @@ pub enum PeerHeaderParsingError {
     NomError(#[from_nom] ErrorKind),
     BmpPeerTypeError(#[from_located(module = "self")] BmpPeerTypeParsingError),
     RouteDistinguisherError(
-        #[from_located(module = "netgauze_bgp_pkt::wire::deserializer::nlri")]
+        #[from_located(module = "netcalyx_bgp_pkt::wire::deserializer::nlri")]
         RouteDistinguisherParsingError,
     ),
     InvalidTime(u32, u32),
@@ -376,7 +376,7 @@ pub enum PeerUpNotificationMessageParsingError {
     UnexpectedPeerType(BmpPeerTypeCode),
     PeerHeaderError(#[from_located(module = "self")] PeerHeaderParsingError),
     BgpMessageError(
-        #[from_located(module = "netgauze_bgp_pkt::wire::deserializer")] BgpMessageParsingError,
+        #[from_located(module = "netcalyx_bgp_pkt::wire::deserializer")] BgpMessageParsingError,
     ),
     InitiationInformationError(#[from_located(module = "self")] InitiationInformationParsingError),
 }
@@ -521,7 +521,7 @@ pub enum PeerDownNotificationReasonParsingError {
     NomError(#[from_nom] ErrorKind),
     UndefinedPeerDownReasonCode(#[from_external] UndefinedPeerDownReasonCode),
     BgpMessageError(
-        #[from_located(module = "netgauze_bgp_pkt::wire::deserializer")] BgpMessageParsingError,
+        #[from_located(module = "netcalyx_bgp_pkt::wire::deserializer")] BgpMessageParsingError,
     ),
     InitiationInformationError(#[from_located(module = "self")] InitiationInformationParsingError),
 }
@@ -645,7 +645,7 @@ pub enum RouteMirroringValueParsingError {
     UndefinedRouteMirroringTlvType(#[from_external] UndefinedRouteMirroringTlvType),
     UndefinedRouteMirroringInformation(#[from_external] UndefinedRouteMirroringInformation),
     BgpMessageError(
-        #[from_located(module = "netgauze_bgp_pkt::wire::deserializer")] BgpMessageParsingError,
+        #[from_located(module = "netcalyx_bgp_pkt::wire::deserializer")] BgpMessageParsingError,
     ),
 }
 

@@ -20,8 +20,8 @@ pub mod renormalization;
 pub mod types;
 
 use apache_avro::types::{Value as AvroValue, ValueKind as AvroValueKind};
-use netgauze_flow_pkt::ie;
-use netgauze_flow_pkt::ie::{HasIE, InformationElementDataType, InformationElementTemplate};
+use netcalyx_flow_pkt::ie;
+use netcalyx_flow_pkt::ie::{HasIE, InformationElementDataType, InformationElementTemplate};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;

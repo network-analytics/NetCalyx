@@ -28,20 +28,20 @@ use crate::yang_push::enrichment::YangPushEnrichmentActorHandle;
 
 use futures_util::StreamExt;
 use futures_util::stream::FuturesUnordered;
-use netgauze_bmp_service::BmpRequest;
-use netgauze_bmp_service::supervisor::BmpSupervisorHandle;
-use netgauze_flow_pkt::FlowInfo;
-use netgauze_flow_service::FlowRequest;
-use netgauze_flow_service::flow_supervisor::FlowCollectorsSupervisorActorHandle;
-use netgauze_udp_notif_pkt::raw::MediaType;
-use netgauze_udp_notif_service::UdpNotifRequest;
-use netgauze_udp_notif_service::supervisor::UdpNotifSupervisorHandle;
-use netgauze_yang_push::ContentId;
-use netgauze_yang_push::cache::actor::CacheActorHandle;
-use netgauze_yang_push::cache::fetcher::{NetconfYangLibraryFetcher, RetryConfig};
-use netgauze_yang_push::cache::storage::SubscriptionInfo;
-use netgauze_yang_push::model::telemetry::{Manifest, TelemetryMessageWrapper};
-use netgauze_yang_push::validation::ValidationActorHandle;
+use netcalyx_bmp_service::BmpRequest;
+use netcalyx_bmp_service::supervisor::BmpSupervisorHandle;
+use netcalyx_flow_pkt::FlowInfo;
+use netcalyx_flow_service::FlowRequest;
+use netcalyx_flow_service::flow_supervisor::FlowCollectorsSupervisorActorHandle;
+use netcalyx_udp_notif_pkt::raw::MediaType;
+use netcalyx_udp_notif_service::UdpNotifRequest;
+use netcalyx_udp_notif_service::supervisor::UdpNotifSupervisorHandle;
+use netcalyx_yang_push::ContentId;
+use netcalyx_yang_push::cache::actor::CacheActorHandle;
+use netcalyx_yang_push::cache::fetcher::{NetconfYangLibraryFetcher, RetryConfig};
+use netcalyx_yang_push::cache::storage::SubscriptionInfo;
+use netcalyx_yang_push::model::telemetry::{Manifest, TelemetryMessageWrapper};
+use netcalyx_yang_push::validation::ValidationActorHandle;
 use shadow_rs::shadow;
 use std::net::IpAddr;
 use std::path::PathBuf;
@@ -1040,8 +1040,8 @@ pub(crate) fn fetch_sysinfo_manifest(name: Option<String>) -> Manifest {
                 System::host_name().unwrap_or_else(|| "unknown".to_string())
             ))
         }),
-        Some("NetGauze".to_string()),
-        Some(3746), // Swisscom AG (temp until NetGauze has its own PEN number)
+        Some("NetCalyx".to_string()),
+        Some(3746), // Swisscom AG (temp until NetCalyx has its own PEN number)
         Some(format!("{} ({})", build::PKG_VERSION, build::SHORT_COMMIT)),
         Some(build::BUILD_RUST_CHANNEL.to_string()),
         System::os_version(),
@@ -1053,7 +1053,7 @@ pub(crate) fn fetch_sysinfo_manifest(name: Option<String>) -> Manifest {
 mod tests {
     use super::*;
     use bytes::Bytes;
-    use netgauze_udp_notif_pkt::raw::UdpNotifPacket;
+    use netcalyx_udp_notif_pkt::raw::UdpNotifPacket;
     use std::collections::HashMap;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
@@ -1246,11 +1246,11 @@ mod tests {
 
     #[test]
     fn test_serialize_bmp() {
-        use netgauze_bgp_pkt::BgpMessage;
-        use netgauze_bgp_pkt::update::BgpUpdateMessage;
-        use netgauze_bmp_pkt::v4::{BmpMessageValue, RouteMonitoringMessage};
-        use netgauze_bmp_pkt::{BmpMessage, BmpPeerType, PeerHeader};
-        use netgauze_bmp_service::AddrInfo;
+        use netcalyx_bgp_pkt::BgpMessage;
+        use netcalyx_bgp_pkt::update::BgpUpdateMessage;
+        use netcalyx_bmp_pkt::v4::{BmpMessageValue, RouteMonitoringMessage};
+        use netcalyx_bmp_pkt::{BmpMessage, BmpPeerType, PeerHeader};
+        use netcalyx_bmp_service::AddrInfo;
 
         let local_socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1790);
         let remote_socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 55555);

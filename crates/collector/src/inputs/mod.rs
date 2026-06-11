@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! External input processing infrastructure for the NetGauze collector.
+//! External input processing infrastructure for the NetCalyx collector.
 //!
 //! This module contains components for ingesting enrichment data from multiple
 //! sources and applying enrichment operations. The primary abstractions

@@ -347,7 +347,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> NetConfSshClient<T> {
         announce_caps: HashSet<Capability>,
     ) -> Result<(Framed<T, SshCodec>, u32, HashSet<Capability>), NetConfSshClientError> {
         // send a hello message with NETCONF base 1.1 capability to the peer
-        // (NetGauze does not support base 1.0 protocol)
+        // (NetCalyx does not support base 1.0 protocol)
         if !announce_caps.contains(&Capability::NetconfBase(NetconfVersion::V1_1)) {
             return Err(
                 NetConfSshClientError::HelloMessageError("Client is not configured with the mandatory `urn:ietf:params:netconf:base:1.1` capability".to_string())

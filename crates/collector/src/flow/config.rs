@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! NetGauze Module for Flow Record Configuration and Transformation
+//! NetCalyx Module for Flow Record Configuration and Transformation
 //!
 //! This module provides functionality for configuring and transforming flow
 //! records from NetFlow and IPFIX formats. The main components are:
@@ -32,8 +32,8 @@ use crate::publishers::kafka_avro::{AvroConverter, KafkaAvroPublisherActorError}
 use apache_avro::types::{Value as AvroValue, ValueKind as AvroValueKind};
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
-use netgauze_flow_pkt::FlowInfo;
-use netgauze_flow_pkt::ie::{
+use netcalyx_flow_pkt::FlowInfo;
+use netcalyx_flow_pkt::ie::{
     self, FieldConversionError, HasIE, IE, InformationElementDataType, InformationElementTemplate,
 };
 use rustc_hash::FxHashMap;
@@ -195,7 +195,7 @@ impl AvroConverter<(IpAddr, FlowInfo), FlowAvroConverterError> for FlowOutputCon
                 .sets()
                 .iter()
                 .filter_map(|set| match set {
-                    netgauze_flow_pkt::ipfix::Set::Data { id: _, records } => Some(records),
+                    netcalyx_flow_pkt::ipfix::Set::Data { id: _, records } => Some(records),
                     _ => None,
                 })
                 .flatten()
@@ -205,7 +205,7 @@ impl AvroConverter<(IpAddr, FlowInfo), FlowAvroConverterError> for FlowOutputCon
                 .sets()
                 .iter()
                 .filter_map(|set| match set {
-                    netgauze_flow_pkt::netflow::Set::Data { id: _, records } => Some(records),
+                    netcalyx_flow_pkt::netflow::Set::Data { id: _, records } => Some(records),
                     _ => None,
                 })
                 .flatten()

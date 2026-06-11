@@ -3,11 +3,11 @@ use nom::number::complete::{be_u8, be_u16, be_u32, be_u128};
 use serde::{Deserialize, Serialize};
 use std::net::Ipv6Addr;
 
-use netgauze_parse_utils::{
+use netcalyx_parse_utils::{
     ErrorKindSerdeDeref, ReadablePdu, ReadablePduWithOneInput, Span, parse_into_located,
     parse_till_empty_into_located,
 };
-use netgauze_serde_macros::LocatedError;
+use netcalyx_serde_macros::LocatedError;
 
 use crate::iana::{
     BgpSidAttributeType, BgpSidAttributeTypeError, BgpSrv6ServiceSubSubTlvType,
@@ -258,7 +258,7 @@ pub mod tests {
 
     use ipnet::Ipv4Net;
 
-    use netgauze_parse_utils::test_helpers::{test_parsed_completely_with_one_input, test_write};
+    use netcalyx_parse_utils::test_helpers::{test_parsed_completely_with_one_input, test_write};
 
     use crate::community::{
         Community, ExtendedCommunity, LargeCommunity, TransitiveTwoOctetExtendedCommunity,

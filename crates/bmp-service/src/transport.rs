@@ -18,11 +18,11 @@
 //! Example
 //! ```no_run
 //! use futures_util::StreamExt;
-//! use netgauze_bmp_pkt::BmpMessage;
-//! use netgauze_bmp_pkt::codec::{BmpCodec, BmpCodecDecoderError};
-//! use netgauze_bmp_service::AddrInfo;
-//! use netgauze_bmp_service::server::BmpServerResponse;
-//! use netgauze_bmp_service::transport::{TaggedFramedReadStream, TaggedFramedReadStreamResult};
+//! use netcalyx_bmp_pkt::BmpMessage;
+//! use netcalyx_bmp_pkt::codec::{BmpCodec, BmpCodecDecoderError};
+//! use netcalyx_bmp_service::AddrInfo;
+//! use netcalyx_bmp_service::server::BmpServerResponse;
+//! use netcalyx_bmp_service::transport::{TaggedFramedReadStream, TaggedFramedReadStreamResult};
 //! use std::net::SocketAddr;
 //! use tokio::net::TcpListener;
 //! use tokio_util::codec::FramedRead;
@@ -140,11 +140,11 @@ where
 mod tests {
     use super::*;
     use futures_util::StreamExt;
-    use netgauze_bmp_pkt::codec::{BmpCodec, BmpCodecDecoderError};
-    use netgauze_bmp_pkt::iana::UndefinedBmpVersion;
-    use netgauze_bmp_pkt::v3::*;
-    use netgauze_bmp_pkt::wire::deserializer::BmpMessageParsingError;
-    use netgauze_bmp_pkt::*;
+    use netcalyx_bmp_pkt::codec::{BmpCodec, BmpCodecDecoderError};
+    use netcalyx_bmp_pkt::iana::UndefinedBmpVersion;
+    use netcalyx_bmp_pkt::v3::*;
+    use netcalyx_bmp_pkt::wire::deserializer::BmpMessageParsingError;
+    use netcalyx_bmp_pkt::*;
     use tokio_test::io::Builder;
 
     #[tokio::test]

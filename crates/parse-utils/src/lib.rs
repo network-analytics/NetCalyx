@@ -18,7 +18,7 @@
 #[cfg(feature = "test-helpers")]
 pub mod test_helpers;
 
-use netgauze_locate::BinarySpan;
+use netcalyx_locate::BinarySpan;
 use nom::IResult;
 use std::fmt::Debug;
 

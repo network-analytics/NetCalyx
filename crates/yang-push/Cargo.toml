@@ -1,14 +1,14 @@
 lints.workspace = true
 
 [package]
-name = "netgauze-yang-push"
+name = "netcalyx-yang-push"
 version = "0.12.1"
 edition = "2024"
-authors = ["Ahmed Elhassany <a.hassany@gmail.com>"]
+authors = ["NetCalyx Authors"]
 license = "Apache-2.0"
 readme = "README.md"
-repository = "https://github.com/NetGauze/NetGauze"
-homepage = "https://github.com/NetGauze/NetGauze"
+repository = "https://github.com/network-analytics/NetCalyx"
+homepage = "https://github.com/network-analytics/NetCalyx"
 description = """
 YANG-Push related functionality
 """
@@ -17,9 +17,9 @@ categories = ["network-programming"]
 
 
 [dependencies]
-netgauze-udp-notif-pkt = { workspace = true }
-netgauze-udp-notif-service = { workspace = true }
-netgauze-netconf-proto = { workspace = true }
+netcalyx-udp-notif-pkt = { workspace = true }
+netcalyx-udp-notif-service = { workspace = true }
+netcalyx-netconf-proto = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 strum_macros = { workspace = true }

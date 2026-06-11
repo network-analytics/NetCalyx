@@ -1,14 +1,14 @@
 lints.workspace = true
 
 [package]
-name = "netgauze-bmp-service"
+name = "netcalyx-bmp-service"
 version = "0.12.1"
 edition = "2024"
-authors = ["Ahmed Elhassany <a.hassany@gmail.com>"]
+authors = ["NetCalyx Authors"]
 license = "Apache-2.0"
 readme = "README.md"
-repository = "https://github.com/NetGauze/NetGauze"
-homepage = "https://github.com/NetGauze/NetGauze"
+repository = "https://github.com/network-analytics/NetCalyx"
+homepage = "https://github.com/network-analytics/NetCalyx"
 description = """
 BMP Protocol Server.
 """
@@ -16,7 +16,7 @@ keywords = ["bmp", "bgp", "parser", "protocol"]
 categories = ["network-programming", "parsing"]
 
 [dependencies]
-netgauze-bmp-pkt = { workspace = true, features = ["serde", "codec"] }
+netcalyx-bmp-pkt = { workspace = true, features = ["serde", "codec"] }
 
 tokio = { workspace = true, default-features = false, features = ["macros", "net", "time"] }
 tokio-util = { workspace = true, default-features = false }

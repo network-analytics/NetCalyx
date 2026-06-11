@@ -24,8 +24,8 @@
 //! use pcap_parser::PcapNGReader;
 //! use tokio_util::codec::Decoder;
 //!
-//! use netgauze_bmp_pkt::codec::BmpCodec;
-//! use netgauze_pcap_reader::{PcapIter, TransportProtocol};
+//! use netcalyx_bmp_pkt::codec::BmpCodec;
+//! use netcalyx_pcap_reader::{PcapIter, TransportProtocol};
 //!
 //! let mut path = env!("CARGO_MANIFEST_DIR").to_owned();
 //! path.push_str("/data/bmp.pcapng");

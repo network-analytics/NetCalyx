@@ -29,7 +29,7 @@
 //! 5. **Monitors Peers**: Periodically logs the status and connected peers of
 //!    all managed actors.
 
-use netgauze_bmp_service::supervisor::{BindingAddress, BmpSupervisorHandle, SupervisorConfig};
+use netcalyx_bmp_service::supervisor::{BindingAddress, BmpSupervisorHandle, SupervisorConfig};
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::time::Duration;

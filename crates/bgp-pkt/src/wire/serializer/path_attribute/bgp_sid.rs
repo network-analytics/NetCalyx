@@ -2,8 +2,8 @@ use std::io::Write;
 
 use byteorder::{NetworkEndian, WriteBytesExt};
 
-use netgauze_parse_utils::{WritablePdu, WritablePduWithOneInput};
-use netgauze_serde_macros::WritingError;
+use netcalyx_parse_utils::{WritablePdu, WritablePduWithOneInput};
+use netcalyx_serde_macros::WritingError;
 
 use crate::path_attribute::{
     BgpSidAttribute, PrefixSegmentIdentifier, SRv6ServiceSubSubTlv, SRv6ServiceSubTlv,

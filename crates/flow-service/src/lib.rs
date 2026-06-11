@@ -16,7 +16,7 @@
 pub mod flow_actor;
 pub mod flow_supervisor;
 
-use netgauze_flow_pkt::FlowInfo;
+use netcalyx_flow_pkt::FlowInfo;
 use std::fmt::Display;
 use std::io;
 use std::net::SocketAddr;

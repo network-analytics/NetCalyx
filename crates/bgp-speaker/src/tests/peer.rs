@@ -1,15 +1,15 @@
-use netgauze_bgp_pkt::iana::RouteRefreshSubcode;
+use netcalyx_bgp_pkt::iana::RouteRefreshSubcode;
 
-use netgauze_bgp_pkt::capabilities::{
+use netcalyx_bgp_pkt::capabilities::{
     BgpCapability, FourOctetAsCapability, MultiProtocolExtensionsCapability,
 };
-use netgauze_bgp_pkt::iana::AS_TRANS;
-use netgauze_bgp_pkt::notification::*;
-use netgauze_bgp_pkt::open::BgpOpenMessage;
-use netgauze_bgp_pkt::open::BgpOpenMessageParameter::Capabilities;
-use netgauze_bgp_pkt::route_refresh::BgpRouteRefreshMessage;
-use netgauze_bgp_pkt::update::BgpUpdateMessage;
-use netgauze_iana::address_family::AddressType;
+use netcalyx_bgp_pkt::iana::AS_TRANS;
+use netcalyx_bgp_pkt::notification::*;
+use netcalyx_bgp_pkt::open::BgpOpenMessage;
+use netcalyx_bgp_pkt::open::BgpOpenMessageParameter::Capabilities;
+use netcalyx_bgp_pkt::route_refresh::BgpRouteRefreshMessage;
+use netcalyx_bgp_pkt::update::BgpUpdateMessage;
+use netcalyx_iana::address_family::AddressType;
 
 use crate::events::*;
 use crate::fsm::*;

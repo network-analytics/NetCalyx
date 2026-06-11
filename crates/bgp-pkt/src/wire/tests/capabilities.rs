@@ -17,11 +17,11 @@ use crate::capabilities::*;
 use crate::iana::{BgpRoleValue, UndefinedBgpRoleValue};
 use crate::wire::deserializer::capabilities::*;
 use crate::wire::serializer::capabilities::*;
-use netgauze_iana::address_family::{
+use netcalyx_iana::address_family::{
     AddressFamily, AddressType, UndefinedAddressFamily, UndefinedSubsequentAddressFamily,
 };
-use netgauze_parse_utils::Span;
-use netgauze_parse_utils::test_helpers::{test_parse_error, test_parsed_completely, test_write};
+use netcalyx_parse_utils::Span;
+use netcalyx_parse_utils::test_helpers::{test_parse_error, test_parsed_completely, test_write};
 use nom::error::ErrorKind;
 
 #[test]

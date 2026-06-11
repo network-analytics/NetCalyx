@@ -15,7 +15,7 @@
 
 use crate::flow::enrichment::cache::*;
 use crate::flow::enrichment::{EnrichmentOperation, Scope, Weight};
-use netgauze_flow_pkt::ie::{Field, IE};
+use netcalyx_flow_pkt::ie::{Field, IE};
 use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 

@@ -4,12 +4,12 @@
 use std::io::Cursor;
 use std::net::Ipv4Addr;
 
-use netgauze_bgp_pkt::capabilities::*;
-use netgauze_bgp_pkt::open::*;
-use netgauze_bgp_pkt::wire::deserializer::BgpParsingContext;
-use netgauze_bgp_pkt::*;
-use netgauze_iana::address_family::*;
-use netgauze_parse_utils::{ReadablePduWithOneInput, Span, WritablePdu};
+use netcalyx_bgp_pkt::capabilities::*;
+use netcalyx_bgp_pkt::open::*;
+use netcalyx_bgp_pkt::wire::deserializer::BgpParsingContext;
+use netcalyx_bgp_pkt::*;
+use netcalyx_iana::address_family::*;
+use netcalyx_parse_utils::{ReadablePduWithOneInput, Span, WritablePdu};
 
 pub fn main() {
     // Construct a new BGP message

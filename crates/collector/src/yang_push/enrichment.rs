@@ -34,14 +34,14 @@ use crate::yang_push::{
     DeleteAllPayload, DeletePayload, EnrichmentOperation, UpsertPayload, Weight,
 };
 use chrono::Utc;
-use netgauze_udp_notif_pkt::decoded::{UdpNotifPacketDecoded, UdpNotifPayload};
-use netgauze_udp_notif_service::OTL_UDP_NOTIF_PUBLISHER_ID_KEY;
-use netgauze_yang_push::cache::storage::SubscriptionInfo;
-use netgauze_yang_push::model::telemetry::{
+use netcalyx_udp_notif_pkt::decoded::{UdpNotifPacketDecoded, UdpNotifPayload};
+use netcalyx_udp_notif_service::OTL_UDP_NOTIF_PUBLISHER_ID_KEY;
+use netcalyx_yang_push::cache::storage::SubscriptionInfo;
+use netcalyx_yang_push::model::telemetry::{
     EventType, Label, Manifest, NetworkOperatorMetadata, SessionProtocol, TelemetryMessage,
     TelemetryMessageMetadata, TelemetryMessageWrapper, YangPushSubscriptionMetadata,
 };
-use netgauze_yang_push::{
+use netcalyx_yang_push::{
     ContentId, OTL_YANG_PUSH_CACHED_CONTENT_ID_KEY, OTL_YANG_PUSH_SUBSCRIPTION_ID_KEY,
     OTL_YANG_PUSH_SUBSCRIPTION_ROUTER_CONTENT_ID_KEY, OTL_YANG_PUSH_SUBSCRIPTION_TARGET_KEY,
 };
@@ -92,35 +92,35 @@ pub struct YangPushEnrichmentStats {
 impl YangPushEnrichmentStats {
     pub fn new(meter: opentelemetry::metrics::Meter) -> Self {
         let received_messages = meter
-            .u64_counter("netgauze.collector.yang_push.enrichment.received.messages")
+            .u64_counter("netcalyx.collector.yang_push.enrichment.received.messages")
             .with_description("Number of Yang-Push messages received for enrichment")
             .build();
         let received_enrichment_ops = meter
-            .u64_counter("netgauze.collector.yang_push.enrichment.received.enrichment.operations")
+            .u64_counter("netcalyx.collector.yang_push.enrichment.received.enrichment.operations")
             .with_description("Number of enrichment updates received")
             .build();
         let sent_messages = meter
-            .u64_counter("netgauze.collector.yang_push.enrichment.sent.messages")
+            .u64_counter("netcalyx.collector.yang_push.enrichment.sent.messages")
             .with_description("Number of Telemetry Messages successfully sent upstream")
             .build();
         let send_error = meter
-            .u64_counter("netgauze.collector.yang_push.enrichment.send.error")
+            .u64_counter("netcalyx.collector.yang_push.enrichment.send.error")
             .with_description("Number of upstream sending errors")
             .build();
         let udpnotif_payload_decoding_error = meter
-            .u64_counter("netgauze.collector.yang_push.enrichment.payload.decoding.error")
+            .u64_counter("netcalyx.collector.yang_push.enrichment.payload.decoding.error")
             .with_description("Number of errors decoding UDP-Notif payloads")
             .build();
         let udpnotif_payload_processing_error = meter
-            .u64_counter("netgauze.collector.yang_push.enrichment.notification.processing.error")
+            .u64_counter("netcalyx.collector.yang_push.enrichment.notification.processing.error")
             .with_description("Number of errors processing Yang Push notifications")
             .build();
         let peer_subscriptions = meter
-            .u64_gauge("netgauze.collector.yang_push.enrichment.peer.subscriptions")
+            .u64_gauge("netcalyx.collector.yang_push.enrichment.peer.subscriptions")
             .with_description("Number of active subscriptions per peer")
             .build();
         let subscription_cache_miss = meter
-            .u64_counter("netgauze.collector.yang_push.enrichment.subscription.cache.miss")
+            .u64_counter("netcalyx.collector.yang_push.enrichment.subscription.cache.miss")
             .with_description("Number of subscription cache misses")
             .build();
         Self {
@@ -596,14 +596,14 @@ mod tests {
     use super::*;
     use bytes::Bytes;
     use chrono::TimeZone;
-    use netgauze_netconf_proto::yang_push::identities::{Encoding, Transport};
-    use netgauze_netconf_proto::yang_push::subscription::{UpdateTrigger, YangPushModuleVersion};
-    use netgauze_netconf_proto::yang_push::types::SubscriptionId;
-    use netgauze_netconf_proto::yanglib::DatastoreName;
-    use netgauze_udp_notif_pkt::decoded::UdpNotifPacketDecoded;
-    use netgauze_udp_notif_pkt::notification::Target;
-    use netgauze_udp_notif_pkt::raw::{MediaType, UdpNotifPacket};
-    use netgauze_yang_push::model::telemetry::{Label, LabelValue};
+    use netcalyx_netconf_proto::yang_push::identities::{Encoding, Transport};
+    use netcalyx_netconf_proto::yang_push::subscription::{UpdateTrigger, YangPushModuleVersion};
+    use netcalyx_netconf_proto::yang_push::types::SubscriptionId;
+    use netcalyx_netconf_proto::yanglib::DatastoreName;
+    use netcalyx_udp_notif_pkt::decoded::UdpNotifPacketDecoded;
+    use netcalyx_udp_notif_pkt::notification::Target;
+    use netcalyx_udp_notif_pkt::raw::{MediaType, UdpNotifPacket};
+    use netcalyx_yang_push::model::telemetry::{Label, LabelValue};
     use opentelemetry::global;
     use serde_json::json;
     use std::collections::HashMap;
@@ -613,7 +613,7 @@ mod tests {
     fn test_manifest() -> Manifest {
         Manifest::new(
             Some("test-writer".into()),
-            Some("NetGauze".into()),
+            Some("NetCalyx".into()),
             Some(3746),
             Some("0.11.0 (f5b7083e)".into()),
             Some("debug".into()),

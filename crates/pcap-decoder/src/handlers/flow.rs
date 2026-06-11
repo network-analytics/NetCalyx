@@ -16,9 +16,9 @@
 use super::{decode_buffer, serialize_error, serialize_success};
 use crate::protocol_handler::{DecodeOutcome, ProtocolHandler};
 use bytes::BytesMut;
-use netgauze_flow_pkt::FlowInfo;
-use netgauze_flow_pkt::codec::{FlowInfoCodec, FlowInfoCodecDecoderError};
-use netgauze_pcap_reader::TransportProtocol;
+use netcalyx_flow_pkt::FlowInfo;
+use netcalyx_flow_pkt::codec::{FlowInfoCodec, FlowInfoCodecDecoderError};
+use netcalyx_pcap_reader::TransportProtocol;
 use std::collections::HashMap;
 use std::io;
 use std::net::IpAddr;
@@ -77,10 +77,10 @@ mod tests {
     use super::*;
     use chrono::{TimeZone, Utc};
     use ipfix::IpfixPacket;
-    use netgauze_flow_pkt::ie::{Field, IE};
-    use netgauze_flow_pkt::ipfix::{DataRecord, OptionsTemplateRecord, Set};
-    use netgauze_flow_pkt::wire::deserializer::ipfix::IpfixPacketParsingError;
-    use netgauze_flow_pkt::{DataSetId, FlowInfo, ipfix};
+    use netcalyx_flow_pkt::ie::{Field, IE};
+    use netcalyx_flow_pkt::ipfix::{DataRecord, OptionsTemplateRecord, Set};
+    use netcalyx_flow_pkt::wire::deserializer::ipfix::IpfixPacketParsingError;
+    use netcalyx_flow_pkt::{DataSetId, FlowInfo, ipfix};
     use serde_json::json;
     use std::net::Ipv4Addr;
 
@@ -119,12 +119,12 @@ mod tests {
                     Box::new([Set::OptionsTemplate(Box::new([
                         OptionsTemplateRecord::new(
                             338,
-                            Box::new([netgauze_flow_pkt::FieldSpecifier::new(
+                            Box::new([netcalyx_flow_pkt::FieldSpecifier::new(
                                 IE::observationDomainId,
                                 4
                             )
                             .unwrap()]),
-                            Box::new([netgauze_flow_pkt::FieldSpecifier::new(
+                            Box::new([netcalyx_flow_pkt::FieldSpecifier::new(
                                 IE::systemInitTimeMilliseconds,
                                 8
                             )
@@ -184,12 +184,12 @@ mod tests {
                     Box::new([Set::OptionsTemplate(Box::new([
                         OptionsTemplateRecord::new(
                             338,
-                            Box::new([netgauze_flow_pkt::FieldSpecifier::new(
+                            Box::new([netcalyx_flow_pkt::FieldSpecifier::new(
                                 IE::observationDomainId,
                                 4
                             )
                             .unwrap()]),
-                            Box::new([netgauze_flow_pkt::FieldSpecifier::new(
+                            Box::new([netcalyx_flow_pkt::FieldSpecifier::new(
                                 IE::systemInitTimeMilliseconds,
                                 8
                             )
@@ -238,9 +238,9 @@ mod tests {
                 OptionsTemplateRecord::new(
                     338,
                     Box::new([
-                        netgauze_flow_pkt::FieldSpecifier::new(IE::observationDomainId, 4).unwrap(),
+                        netcalyx_flow_pkt::FieldSpecifier::new(IE::observationDomainId, 4).unwrap(),
                     ]),
-                    Box::new([netgauze_flow_pkt::FieldSpecifier::new(
+                    Box::new([netcalyx_flow_pkt::FieldSpecifier::new(
                         IE::systemInitTimeMilliseconds,
                         8,
                     )

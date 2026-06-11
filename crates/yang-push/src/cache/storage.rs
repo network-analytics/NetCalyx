@@ -94,12 +94,12 @@
 
 use crate::ContentId;
 use chrono::{DateTime, Utc};
-use netgauze_netconf_proto::xml_utils::{XmlDeserialize, XmlSerialize, XmlWriter};
-use netgauze_netconf_proto::yang_push::identities::{Encoding, Transport};
-use netgauze_netconf_proto::yang_push::subscription::{UpdateTrigger, YangPushModuleVersion};
-use netgauze_netconf_proto::yang_push::types::SubscriptionId;
-use netgauze_netconf_proto::yanglib::{SchemaLoadingError, YangLibrary};
-use netgauze_udp_notif_pkt::notification::Target;
+use netcalyx_netconf_proto::xml_utils::{XmlDeserialize, XmlSerialize, XmlWriter};
+use netcalyx_netconf_proto::yang_push::identities::{Encoding, Transport};
+use netcalyx_netconf_proto::yang_push::subscription::{UpdateTrigger, YangPushModuleVersion};
+use netcalyx_netconf_proto::yang_push::types::SubscriptionId;
+use netcalyx_netconf_proto::yanglib::{SchemaLoadingError, YangLibrary};
+use netcalyx_udp_notif_pkt::notification::Target;
 use quick_xml::NsReader;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
@@ -147,7 +147,7 @@ pub enum YangLibraryCacheError {
     DuplicateYangLibrary(PathBuf),
 
     #[strum(to_string = "xml parsing error while parsing the yang library: {0}")]
-    ParsingError(netgauze_netconf_proto::xml_utils::ParsingError),
+    ParsingError(netcalyx_netconf_proto::xml_utils::ParsingError),
 
     #[strum(to_string = "schema files loading error: {0}")]
     SchemaLoadingError(SchemaLoadingError),
@@ -162,13 +162,13 @@ pub enum YangLibraryCacheError {
     SerdeJsonError(serde_json::Error),
 
     #[strum(to_string = "failed to connect to netconf server: {0}")]
-    NetConfClientError(netgauze_netconf_proto::client::NetConfSshClientError),
+    NetConfClientError(netcalyx_netconf_proto::client::NetConfSshClientError),
 }
 
 impl std::error::Error for YangLibraryCacheError {}
 
-impl From<netgauze_netconf_proto::xml_utils::ParsingError> for YangLibraryCacheError {
-    fn from(err: netgauze_netconf_proto::xml_utils::ParsingError) -> Self {
+impl From<netcalyx_netconf_proto::xml_utils::ParsingError> for YangLibraryCacheError {
+    fn from(err: netcalyx_netconf_proto::xml_utils::ParsingError) -> Self {
         YangLibraryCacheError::ParsingError(err)
     }
 }
@@ -197,8 +197,8 @@ impl From<SchemaLoadingError> for YangLibraryCacheError {
     }
 }
 
-impl From<netgauze_netconf_proto::client::NetConfSshClientError> for YangLibraryCacheError {
-    fn from(err: netgauze_netconf_proto::client::NetConfSshClientError) -> Self {
+impl From<netcalyx_netconf_proto::client::NetConfSshClientError> for YangLibraryCacheError {
+    fn from(err: netcalyx_netconf_proto::client::NetConfSshClientError) -> Self {
         YangLibraryCacheError::NetConfClientError(err)
     }
 }
@@ -535,7 +535,7 @@ impl YangLibraryReference {
                 YangLibraryCacheError::ParsingError(error.into())
             })?;
         trace!(yang_library_path=%yang_library_path.display(), "parsing yang library from disk");
-        let mut xml_reader = netgauze_netconf_proto::xml_utils::XmlParser::new(reader)?;
+        let mut xml_reader = netcalyx_netconf_proto::xml_utils::XmlParser::new(reader)?;
         let yang_library = YangLibrary::xml_deserialize(&mut xml_reader)?;
         Ok(yang_library)
     }
@@ -1237,7 +1237,7 @@ impl YangLibraryCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use netgauze_netconf_proto::yang_push::types::CentiSeconds;
+    use netcalyx_netconf_proto::yang_push::types::CentiSeconds;
     use std::net::{IpAddr, Ipv4Addr};
     use tempfile::TempDir;
 
@@ -1917,7 +1917,7 @@ mod tests {
         // Create YANG library and schemas
         let yang_lib_xml = create_minimal_yang_library_xml(content_id);
         let reader = NsReader::from_str(&yang_lib_xml);
-        let mut xml_reader = netgauze_netconf_proto::xml_utils::XmlParser::new(reader).unwrap();
+        let mut xml_reader = netcalyx_netconf_proto::xml_utils::XmlParser::new(reader).unwrap();
         let yang_library = YangLibrary::xml_deserialize(&mut xml_reader).unwrap();
 
         let mut schemas = HashMap::new();

@@ -5,17 +5,17 @@
 [![Apache licensed][apache-badge]][apache-url]
 
 
-[crates-badge]: https://img.shields.io/crates/v/netgauze-ipfix-code-generator.svg
+[crates-badge]: https://img.shields.io/crates/v/netcalyx-ipfix-code-generator.svg
 
-[crates-url]: https://crates.io/crates/netgauze-ipfix-code-generator
+[crates-url]: https://crates.io/crates/netcalyx-ipfix-code-generator
 
 [apache-badge]: https://img.shields.io/badge/license-Apache-blue.svg
 
-[apache-url]: https://github.com/NetGauze/NetGauze/blob/main/LICENSE
+[apache-url]: https://github.com/network-analytics/NetCalyx/blob/main/LICENSE
 
-[docs-badge]: https://docs.rs/netgauze-ipfix-code-generator/badge.svg
+[docs-badge]: https://docs.rs/netcalyx-ipfix-code-generator/badge.svg
 
-[docs-url]: https://docs.rs/netgauze-ipfix-code-generator
+[docs-url]: https://docs.rs/netcalyx-ipfix-code-generator
 
 
 ## Example:
@@ -25,7 +25,7 @@ To include the generated IANA and custom registry Information elements, in `buil
 ```rust
 use std::env;
 
-use netgauze_ipfix_code_generator::{Config, generate, RegistrySource, RegistryType, SourceConfig};
+use netcalyx_ipfix_code_generator::{Config, generate, RegistrySource, RegistryType, SourceConfig};
 
 const IPFIX_URL: &str = "https://www.iana.org/assignments/ipfix/ipfix.xml";
 

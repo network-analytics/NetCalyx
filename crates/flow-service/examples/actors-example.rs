@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use netgauze_flow_service::flow_supervisor::{
+use netcalyx_flow_service::flow_supervisor::{
     FlowCollectorsSupervisorActorHandle, SupervisorConfig,
 };
 use std::time::Duration;

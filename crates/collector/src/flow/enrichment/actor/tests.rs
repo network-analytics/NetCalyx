@@ -16,12 +16,12 @@
 use crate::flow::enrichment::actor::*;
 use crate::flow::enrichment::{EnrichmentOperation, Scope, UpsertPayload};
 use chrono::{TimeZone, Utc};
-use netgauze_flow_pkt::ie::{Field, netgauze};
-use netgauze_flow_pkt::ipfix::{DataRecord, IpfixPacket, Set};
-use netgauze_flow_pkt::netflow::{
+use netcalyx_flow_pkt::ie::{Field, netcalyx};
+use netcalyx_flow_pkt::ipfix::{DataRecord, IpfixPacket, Set};
+use netcalyx_flow_pkt::netflow::{
     DataRecord as NetFlowV9DataRecord, NetFlowV9Packet, ScopeField, Set as NetFlowV9Set, System,
 };
-use netgauze_flow_pkt::{DataSetId, FlowInfo};
+use netcalyx_flow_pkt::{DataSetId, FlowInfo};
 use std::net::SocketAddr;
 
 #[test]
@@ -51,8 +51,8 @@ fn test_enrich_ipfix_with_cached_metadata() {
         scope: Scope::new(0, None), // Global scope
         weight: 100,
         fields: vec![
-            Field::NetGauze(netgauze::Field::platformId("test-platform-ABC".into())),
-            Field::NetGauze(netgauze::Field::nodeId("test-node-123".into())),
+            Field::NetCalyx(netcalyx::Field::platformId("test-platform-ABC".into())),
+            Field::NetCalyx(netcalyx::Field::nodeId("test-node-123".into())),
         ],
     });
     actor.enrichment_cache.apply_enrichment(enrichment_op);
@@ -88,9 +88,9 @@ fn test_enrich_ipfix_with_cached_metadata() {
                     Field::octetDeltaCount(5000),
                     Field::packetDeltaCount(5),
                     Field::tcpDestinationPort(80),
-                    Field::NetGauze(netgauze::Field::platformId("test-platform-ABC".into())),
-                    Field::NetGauze(netgauze::Field::nodeId("test-node-123".into())),
-                    Field::NetGauze(netgauze::Field::dataCollectionManifestName(
+                    Field::NetCalyx(netcalyx::Field::platformId("test-platform-ABC".into())),
+                    Field::NetCalyx(netcalyx::Field::nodeId("test-node-123".into())),
+                    Field::NetCalyx(netcalyx::Field::dataCollectionManifestName(
                         "test-writer-id".into(),
                     )),
                 ]),
@@ -158,7 +158,7 @@ fn test_enrich_filters_templates_sets_and_options_records() {
                 Box::new([]),
                 Box::new([
                     Field::octetDeltaCount(1000),
-                    Field::NetGauze(netgauze::Field::dataCollectionManifestName(
+                    Field::NetCalyx(netcalyx::Field::dataCollectionManifestName(
                         "test-writer-id".into(),
                     )),
                 ]),
@@ -198,7 +198,7 @@ fn test_enrich_multiple_records() {
         ip: peer_addr.ip(),
         scope: Scope::new(0, None),
         weight: 100,
-        fields: vec![Field::NetGauze(netgauze::Field::nodeId("router-01".into()))],
+        fields: vec![Field::NetCalyx(netcalyx::Field::nodeId("router-01".into()))],
     });
     actor.enrichment_cache.apply_enrichment(enrichment_op);
 
@@ -235,8 +235,8 @@ fn test_enrich_multiple_records() {
                     Box::new([
                         Field::octetDeltaCount(1000),
                         Field::tcpSourcePort(80),
-                        Field::NetGauze(netgauze::Field::nodeId("router-01".into())),
-                        Field::NetGauze(netgauze::Field::dataCollectionManifestName(
+                        Field::NetCalyx(netcalyx::Field::nodeId("router-01".into())),
+                        Field::NetCalyx(netcalyx::Field::dataCollectionManifestName(
                             "test-writer-id".into(),
                         )),
                     ]),
@@ -246,8 +246,8 @@ fn test_enrich_multiple_records() {
                     Box::new([
                         Field::octetDeltaCount(2000),
                         Field::tcpSourcePort(443),
-                        Field::NetGauze(netgauze::Field::nodeId("router-01".into())),
-                        Field::NetGauze(netgauze::Field::dataCollectionManifestName(
+                        Field::NetCalyx(netcalyx::Field::nodeId("router-01".into())),
+                        Field::NetCalyx(netcalyx::Field::dataCollectionManifestName(
                             "test-writer-id".into(),
                         )),
                     ]),
@@ -289,8 +289,8 @@ fn test_enrich_netflowv9_with_cached_metadata() {
         scope: Scope::new(0, None),
         weight: 100,
         fields: vec![
-            Field::NetGauze(netgauze::Field::platformId("test-platform-ABC".into())),
-            Field::NetGauze(netgauze::Field::nodeId("test-node-123".into())),
+            Field::NetCalyx(netcalyx::Field::platformId("test-platform-ABC".into())),
+            Field::NetCalyx(netcalyx::Field::nodeId("test-node-123".into())),
         ],
     });
     actor.enrichment_cache.apply_enrichment(enrichment_op);
@@ -328,9 +328,9 @@ fn test_enrich_netflowv9_with_cached_metadata() {
                     Field::octetDeltaCount(5000),
                     Field::packetDeltaCount(5),
                     Field::tcpDestinationPort(80),
-                    Field::NetGauze(netgauze::Field::platformId("test-platform-ABC".into())),
-                    Field::NetGauze(netgauze::Field::nodeId("test-node-123".into())),
-                    Field::NetGauze(netgauze::Field::dataCollectionManifestName(
+                    Field::NetCalyx(netcalyx::Field::platformId("test-platform-ABC".into())),
+                    Field::NetCalyx(netcalyx::Field::nodeId("test-node-123".into())),
+                    Field::NetCalyx(netcalyx::Field::dataCollectionManifestName(
                         "test-writer-id".into(),
                     )),
                 ]),
@@ -400,7 +400,7 @@ fn test_enrich_netflowv9_filters_templates_sets_and_options_records() {
                 Box::new([]),
                 Box::new([
                     Field::octetDeltaCount(1000),
-                    Field::NetGauze(netgauze::Field::dataCollectionManifestName(
+                    Field::NetCalyx(netcalyx::Field::dataCollectionManifestName(
                         "test-writer-id".into(),
                     )),
                 ]),
@@ -437,7 +437,7 @@ fn test_enrich_netflowv9_multiple_records() {
         ip: peer_addr.ip(),
         scope: Scope::new(0, None),
         weight: 100,
-        fields: vec![Field::NetGauze(netgauze::Field::nodeId("router-01".into()))],
+        fields: vec![Field::NetCalyx(netcalyx::Field::nodeId("router-01".into()))],
     });
     actor.enrichment_cache.apply_enrichment(enrichment_op);
 
@@ -476,8 +476,8 @@ fn test_enrich_netflowv9_multiple_records() {
                     Box::new([
                         Field::octetDeltaCount(1000),
                         Field::tcpSourcePort(80),
-                        Field::NetGauze(netgauze::Field::nodeId("router-01".into())),
-                        Field::NetGauze(netgauze::Field::dataCollectionManifestName(
+                        Field::NetCalyx(netcalyx::Field::nodeId("router-01".into())),
+                        Field::NetCalyx(netcalyx::Field::dataCollectionManifestName(
                             "test-writer-id".into(),
                         )),
                     ]),
@@ -487,8 +487,8 @@ fn test_enrich_netflowv9_multiple_records() {
                     Box::new([
                         Field::octetDeltaCount(2000),
                         Field::tcpSourcePort(443),
-                        Field::NetGauze(netgauze::Field::nodeId("router-01".into())),
-                        Field::NetGauze(netgauze::Field::dataCollectionManifestName(
+                        Field::NetCalyx(netcalyx::Field::nodeId("router-01".into())),
+                        Field::NetCalyx(netcalyx::Field::dataCollectionManifestName(
                             "test-writer-id".into(),
                         )),
                     ]),

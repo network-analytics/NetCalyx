@@ -1,21 +1,21 @@
-# NetGauze collector daemon
+# NetCalyx collector daemon
 
 [![Crates.io][crates-badge]][crates-url]
 [![Documentation][docs-badge]][docs-url]
 [![Apache licensed][apache-badge]][apache-url]
 
 
-[crates-badge]: https://img.shields.io/crates/v/netgauze-collector.svg
+[crates-badge]: https://img.shields.io/crates/v/netcalyx-collector.svg
 
-[crates-url]: https://crates.io/crates/netgauze-collector
+[crates-url]: https://crates.io/crates/netcalyx-collector
 
 [apache-badge]: https://img.shields.io/badge/license-Apache-blue.svg
 
-[apache-url]: https://github.com/NetGauze/NetGauze/blob/main/LICENSE
+[apache-url]: https://github.com/network-analytics/NetCalyx/blob/main/LICENSE
 
-[docs-badge]: https://docs.rs/netgauze-collector/badge.svg
+[docs-badge]: https://docs.rs/netcalyx-collector/badge.svg
 
-[docs-url]: https://docs.rs/netgauze-collector
+[docs-url]: https://docs.rs/netcalyx-collector
 
 
 Work in progress for telemetry collection. Currently supports:
@@ -31,29 +31,29 @@ With publisher towards Kafka and HTTP endpoints.
 
 ### From RPM (Recommended for RHEL/Rocky/Alma Linux)
 
-Pre-built RPM packages are available on the [GitHub Releases](https://github.com/NetGauze/NetGauze/releases) page.
+Pre-built RPM packages are available on the [GitHub Releases](https://github.com/network-analytics/NetCalyx/releases) page.
 
-1. Download the latest RPM for your architecture (e.g., `netgauze-collector-X.Y.Z-1.el8.x86_64.rpm`).
+1. Download the latest RPM for your architecture (e.g., `netcalyx-collector-X.Y.Z-1.el8.x86_64.rpm`).
 2. Install using `dnf` or `rpm`:
    ```bash
-   sudo dnf install ./netgauze-collector-*.rpm
+   sudo dnf install ./netcalyx-collector-*.rpm
    ```
-   The RPM installs the binary to `/usr/bin/netgauze-collector` and sets the necessary capabilities (`cap_net_raw+ep`).
+   The RPM installs the binary to `/usr/bin/netcalyx-collector` and sets the necessary capabilities (`cap_net_raw+ep`).
 
 ### From DEB (Recommended for Debian/Ubuntu)
 
-Pre-built DEB packages are available on the [GitHub Releases](https://github.com/NetGauze/NetGauze/releases) page.
+Pre-built DEB packages are available on the [GitHub Releases](https://github.com/network-analytics/NetCalyx/releases) page.
 
-1. Download the latest DEB for your architecture (e.g., `netgauze-collector-X.Y.Z-1_amd64.deb`).
+1. Download the latest DEB for your architecture (e.g., `netcalyx-collector-X.Y.Z-1_amd64.deb`).
 2. Install using `apt`:
    ```bash
-   sudo apt install ./netgauze-collector-*.deb
+   sudo apt install ./netcalyx-collector-*.deb
    ```
-   The DEB installs the binary to `/usr/bin/netgauze-collector`.
+   The DEB installs the binary to `/usr/bin/netcalyx-collector`.
 3. If you need raw socket access without running as root, set capabilities manually:
    ```bash
-   sudo setcap cap_net_raw+ep /usr/bin/netgauze-collector
-   getcap /usr/bin/netgauze-collector
+   sudo setcap cap_net_raw+ep /usr/bin/netcalyx-collector
+   getcap /usr/bin/netcalyx-collector
    ```
 
 ### From Source
@@ -62,12 +62,12 @@ To build from source, you need a Rust toolchain installed. We recommend using [r
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/NetGauze/NetGauze.git
-   cd NetGauze
+   git clone https://github.com/network-analytics/NetCalyx.git
+   cd NetCalyx
    ```
 2. Run using cargo:
    ```bash
-   cargo run -p netgauze-collector --release -- crates/collector/config.yaml
+   cargo run -p netcalyx-collector --release -- crates/collector/config.yaml
    ```
    *Note: You might need to install development libraries such as `libcurl-devel` (or `libcurl4-openssl-dev` on
    Debian/Ubuntu) depending on your OS.*
@@ -77,10 +77,10 @@ To build from source, you need a Rust toolchain installed. We recommend using [r
 Run the collector with a specific config file:
 
 ```bash
-netgauze-collector /path/to/config.yaml
+netcalyx-collector /path/to/config.yaml
 
 # Or if running from source:
-cargo run -p netgauze-collector -- /path/to/config.yaml
+cargo run -p netcalyx-collector -- /path/to/config.yaml
 ```
 
 ## Configuration
@@ -114,14 +114,14 @@ Override the log level at runtime using the `RUST_LOG` environment variable:
 
 ```bash
 # Set global log level
-RUST_LOG=debug cargo run -p netgauze-collector -- config.yaml
+RUST_LOG=debug cargo run -p netcalyx-collector -- config.yaml
 
 # Filter specific modules
-RUST_LOG=netgauze_collector=trace,tokio=info cargo run -p netgauze-collector -- config.yaml
+RUST_LOG=netcalyx_collector=trace,tokio=info cargo run -p netcalyx-collector -- config.yaml
 
 # Complex filtering (enable trace for flow, debug for UDP notif)
-RUST_LOG="warn,netgauze_collector::flow=trace,netgauze_collector::yang_push=debug" \
-  cargo run -p netgauze-collector -- config.yaml
+RUST_LOG="warn,netcalyx_collector::flow=trace,netcalyx_collector::yang_push=debug" \
+  cargo run -p netcalyx-collector -- config.yaml
 ```
 
 #### Filter Syntax Examples

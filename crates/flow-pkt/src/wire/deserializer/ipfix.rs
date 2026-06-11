@@ -22,11 +22,11 @@ use serde::{Deserialize, Serialize};
 use crate::ipfix::*;
 use crate::wire::deserializer::{FieldSpecifierParsingError, ie};
 use crate::{DATA_SET_MIN_ID, DataSetId};
-use netgauze_parse_utils::{
+use netcalyx_parse_utils::{
     ErrorKindSerdeDeref, ReadablePduWithOneInput, Span, parse_into_located,
     parse_into_located_one_input, parse_into_located_two_inputs,
 };
-use netgauze_serde_macros::LocatedError;
+use netcalyx_serde_macros::LocatedError;
 
 /// 2-octets version, 2-octets length, 4-octets * 3 (export time, seq no,
 /// observation domain id)

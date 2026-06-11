@@ -40,8 +40,8 @@ use crate::inputs::EnrichmentHandle;
 use crate::inputs::flow_options::FlowOptionsConfig;
 use crate::inputs::flow_options::handlers::{FlowEnrichmentOptionsHandler, FlowOptionsHandler};
 use crate::inputs::flow_options::normalize::OptionsDataRecord;
-use netgauze_flow_pkt::{FlowInfo, ipfix, netflow};
-use netgauze_flow_service::FlowRequest;
+use netcalyx_flow_pkt::{FlowInfo, ipfix, netflow};
+use netcalyx_flow_service::FlowRequest;
 use std::string::ToString;
 use std::sync::Arc;
 use std::time::Duration;
@@ -77,28 +77,28 @@ pub struct FlowOptionsActorStats {
 impl FlowOptionsActorStats {
     pub fn new(meter: opentelemetry::metrics::Meter) -> Self {
         let received_flows = meter
-            .u64_counter("netgauze.collector.flows.enrichment.input.options.received.flows")
+            .u64_counter("netcalyx.collector.flows.enrichment.input.options.received.flows")
             .with_description("Number of Received Flows")
             .build();
         let send_error = meter
-            .u64_counter("netgauze.collector.flows.enrichment.input.options.send_error")
+            .u64_counter("netcalyx.collector.flows.enrichment.input.options.send_error")
             .with_description("Error sending the enrichment operation to the enrichment actor")
             .build();
         let normalization_errors = meter
-            .u64_counter("netgauze.collector.flows.enrichment.input.options.normalization.errors")
+            .u64_counter("netcalyx.collector.flows.enrichment.input.options.normalization.errors")
             .with_description("Errors during record normalization")
             .build();
         let processed_options_records = meter
-            .u64_counter("netgauze.collector.flows.enrichment.input.options.processed.records")
+            .u64_counter("netcalyx.collector.flows.enrichment.input.options.processed.records")
             .with_description("Number of options data records processed")
             .build();
         let operations_generated = meter
-            .u64_counter("netgauze.collector.flows.enrichment.input.options.ops.generated")
+            .u64_counter("netcalyx.collector.flows.enrichment.input.options.ops.generated")
             .with_description("Number of enrichment operations generated")
             .build();
         let netflow_v9_conversion_errors = meter
             .u64_counter(
-                "netgauze.collector.flows.enrichment.input.options.netflow_v9.conversion.errors",
+                "netcalyx.collector.flows.enrichment.input.options.netflow_v9.conversion.errors",
             )
             .with_description("Errors converting NetFlowV9 records to OptionsDataRecord")
             .build();

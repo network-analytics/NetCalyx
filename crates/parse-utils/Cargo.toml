@@ -1,22 +1,22 @@
 lints.workspace = true
 
 [package]
-name = "netgauze-parse-utils"
+name = "netcalyx-parse-utils"
 version = "0.12.1"
 edition = "2024"
-authors = ["Ahmed Elhassany <a.hassany@gmail.com>"]
+authors = ["NetCalyx Authors"]
 license = "Apache-2.0"
 readme = "README.md"
-repository = "https://github.com/NetGauze/NetGauze"
-homepage = "https://github.com/NetGauze/NetGauze"
+repository = "https://github.com/network-analytics/NetCalyx"
+homepage = "https://github.com/network-analytics/NetCalyx"
 description = """
-Serialization/Deserialization utilities for NetGauze
+Serialization/Deserialization utilities for NetCalyx
 """
 keywords = ["protocol"]
 categories = ["parsing"]
 
 [dependencies]
-netgauze-locate = { workspace = true  }
+netcalyx-locate = { workspace = true  }
 nom = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 

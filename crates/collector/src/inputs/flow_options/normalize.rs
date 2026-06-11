@@ -20,8 +20,8 @@
 //! - Converting records to enrichment operations
 
 use crate::flow::types::{FieldRefLookup, IndexedDataRecord};
-use netgauze_flow_pkt::ie::{Field, IE, netgauze};
-use netgauze_flow_pkt::{ipfix, netflow};
+use netcalyx_flow_pkt::ie::{Field, IE, netcalyx};
+use netcalyx_flow_pkt::{ipfix, netflow};
 use std::string::ToString;
 use tracing::debug;
 
@@ -240,25 +240,25 @@ impl OptionsDataRecord {
         match iface {
             Field::ingressInterface(_) => {
                 if let Some(Field::interfaceName(name)) = iface_name {
-                    fields.push(Field::NetGauze(netgauze::Field::ingressInterfaceName(
+                    fields.push(Field::NetCalyx(netcalyx::Field::ingressInterfaceName(
                         name.clone(),
                     )));
                 }
                 if let Some(Field::interfaceDescription(desc)) = iface_desc {
-                    fields.push(Field::NetGauze(
-                        netgauze::Field::ingressInterfaceDescription(desc.clone()),
+                    fields.push(Field::NetCalyx(
+                        netcalyx::Field::ingressInterfaceDescription(desc.clone()),
                     ));
                 }
             }
             Field::egressInterface(_) => {
                 if let Some(Field::interfaceName(name)) = iface_name {
-                    fields.push(Field::NetGauze(netgauze::Field::egressInterfaceName(
+                    fields.push(Field::NetCalyx(netcalyx::Field::egressInterfaceName(
                         name.clone(),
                     )));
                 }
                 if let Some(Field::interfaceDescription(desc)) = iface_desc {
-                    fields.push(Field::NetGauze(
-                        netgauze::Field::egressInterfaceDescription(desc.clone()),
+                    fields.push(Field::NetCalyx(
+                        netcalyx::Field::egressInterfaceDescription(desc.clone()),
                     ));
                 }
             }
@@ -367,25 +367,25 @@ impl OptionsDataRecord {
         match vrf {
             Field::ingressVRFID(_) => {
                 if let Some(Field::VRFname(name)) = vrf_name {
-                    fields.push(Field::NetGauze(netgauze::Field::ingressVRFname(
+                    fields.push(Field::NetCalyx(netcalyx::Field::ingressVRFname(
                         name.clone(),
                     )));
                 }
                 if let Some(Field::mplsVpnRouteDistinguisher(rd_val)) = rd {
-                    fields.push(Field::NetGauze(
-                        netgauze::Field::ingressMplsVpnRouteDistinguisher(rd_val.clone()),
+                    fields.push(Field::NetCalyx(
+                        netcalyx::Field::ingressMplsVpnRouteDistinguisher(rd_val.clone()),
                     ));
                 }
             }
             Field::egressVRFID(_) => {
                 if let Some(Field::VRFname(name)) = vrf_name {
-                    fields.push(Field::NetGauze(netgauze::Field::egressVRFname(
+                    fields.push(Field::NetCalyx(netcalyx::Field::egressVRFname(
                         name.clone(),
                     )));
                 }
                 if let Some(Field::mplsVpnRouteDistinguisher(rd_val)) = rd {
-                    fields.push(Field::NetGauze(
-                        netgauze::Field::egressMplsVpnRouteDistinguisher(rd_val.clone()),
+                    fields.push(Field::NetCalyx(
+                        netcalyx::Field::egressMplsVpnRouteDistinguisher(rd_val.clone()),
                     ));
                 }
             }

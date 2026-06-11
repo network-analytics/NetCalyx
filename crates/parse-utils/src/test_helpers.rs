@@ -20,7 +20,7 @@ use crate::{
     ReadablePdu, ReadablePduWithOneInput, ReadablePduWithThreeInputs, ReadablePduWithTwoInputs,
     Span, WritablePdu, WritablePduWithOneInput, WritablePduWithTwoInputs,
 };
-use netgauze_locate::BinarySpan;
+use netcalyx_locate::BinarySpan;
 use nom::IResult;
 use std::fmt::Debug;
 use std::io::Cursor;

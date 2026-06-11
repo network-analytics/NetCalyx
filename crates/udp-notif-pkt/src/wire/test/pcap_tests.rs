@@ -17,7 +17,7 @@ use crate::codec::UdpPacketCodec;
 use crate::decoded::UdpNotifPacketDecoded;
 use crate::raw::MediaType;
 use bytes::{Buf, BytesMut};
-use netgauze_pcap_reader::{PcapIter, TransportProtocol};
+use netcalyx_pcap_reader::{PcapIter, TransportProtocol};
 use pcap_parser::LegacyPcapReader;
 use rstest::*;
 use serde_json::Value;

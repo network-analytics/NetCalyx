@@ -16,9 +16,9 @@
 use super::{decode_buffer, serialize_error, serialize_success};
 use crate::protocol_handler::{DecodeOutcome, ProtocolHandler};
 use bytes::BytesMut;
-use netgauze_pcap_reader::TransportProtocol;
-use netgauze_udp_notif_pkt::codec::{UdpPacketCodec, UdpPacketCodecError};
-use netgauze_udp_notif_pkt::raw::{MediaType, UdpNotifPacket};
+use netcalyx_pcap_reader::TransportProtocol;
+use netcalyx_udp_notif_pkt::codec::{UdpPacketCodec, UdpPacketCodecError};
+use netcalyx_udp_notif_pkt::raw::{MediaType, UdpNotifPacket};
 use std::collections::HashMap;
 use std::net::IpAddr;
 

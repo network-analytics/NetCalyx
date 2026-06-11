@@ -57,7 +57,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # TODO: enable msrv checks once NetGauze is more stable
+        # TODO: enable msrv checks once NetCalyx is more stable
         rust: [nightly, beta, stable]
     timeout-minutes: 45
     env:
@@ -112,7 +112,7 @@ jobs:
   #     - name: run tests
   #       run: cargo test
 
-  # TODO: enable min version checks once NetGauze is more stable
+  # TODO: enable min version checks once NetCalyx is more stable
   #  minimal:
   #    name: Minimal versions
   #    runs-on: ubuntu-latest
@@ -132,7 +132,7 @@ jobs:
     env:
       RUSTDOCFLAGS: -Dwarnings --cfg docsrs
       TRYBUILD: overwrite
-      NETGAUZE_CUSTOM_XML_PATHS: ""
+      NETCALYX_CUSTOM_XML_PATHS: ""
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@nightly
@@ -150,7 +150,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      NETGAUZE_CUSTOM_XML_PATHS: ""
+      NETCALYX_CUSTOM_XML_PATHS: ""
     steps:
       - name: Install curl-dev
         run: |
@@ -171,7 +171,7 @@ jobs:
     name: ubuntu / stable / coverage
     env:
       TRYBUILD: overwrite
-      NETGAUZE_CUSTOM_XML_PATHS: ""
+      NETCALYX_CUSTOM_XML_PATHS: ""
     steps:
       - uses: actions/checkout@v6
         with:
@@ -214,8 +214,8 @@ jobs:
   #    - Version: The git tag without the 'v' prefix (e.g., 0.7.0).
   #    - RPM release: '1'.
   #    - DEB revision: '1'.
-  #    - Example: netgauze-collector-0.7.0-1.el8_10.x86_64.rpm
-  #    - Example: netgauze-collector_0.7.0-1_amd64.deb
+  #    - Example: netcalyx-collector-0.7.0-1.el8_10.x86_64.rpm
+  #    - Example: netcalyx-collector_0.7.0-1_amd64.deb
   #
   # 2. Development Builds (non-tagged commits on main):
   #    - These are for testing the latest changes on the main branch.
@@ -226,8 +226,8 @@ jobs:
   #      '0.<commits_since_tag>~<date>git<short_sha>'.
   #      Debian treats '~' as sorting before the final release, so development
   #      packages are ordered lower than the eventual tagged package.
-  #    - Example: netgauze-collector-0.7.0-0.1^20250822gita3c6d71b.el8_10.x86_64.rpm
-  #    - Example: netgauze-collector_0.7.0-0.1~20250822gita3c6d71b_amd64.deb
+  #    - Example: netcalyx-collector-0.7.0-0.1^20250822gita3c6d71b.el8_10.x86_64.rpm
+  #    - Example: netcalyx-collector_0.7.0-0.1~20250822gita3c6d71b_amd64.deb
   #
   # Output mapping from this job:
   # - version/release are used by RPM packaging.
@@ -296,10 +296,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-generate-rpm
         run: cargo install cargo-generate-rpm
-      - name: Build netgauze-collector
-        run: cargo build --locked --release -p netgauze-collector
-      - name: Strip netgauze-collector binary
-        run: strip target/release/netgauze-collector
+      - name: Build netcalyx-collector
+        run: cargo build --locked --release -p netcalyx-collector
+      - name: Strip netcalyx-collector binary
+        run: strip target/release/netcalyx-collector
       - name: Build RPM package
         run: |
           cargo generate-rpm -p crates/collector -s "version = \"${{ needs.version.outputs.version }}\"" -s "release = \"${{ needs.version.outputs.release }}.${{ matrix.el_tag }}\""
@@ -348,15 +348,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-deb
         run: cargo install cargo-deb
-      - name: Build netgauze-collector
-        run: cargo build --locked --release -p netgauze-collector
+      - name: Build netcalyx-collector
+        run: cargo build --locked --release -p netcalyx-collector
       - name: Build DEB package
         run: |
-          cargo deb -p netgauze-collector --no-build --deb-version "${{ needs.version.outputs.deb_version }}-${{ needs.version.outputs.deb_release }}"
+          cargo deb -p netcalyx-collector --no-build --deb-version "${{ needs.version.outputs.deb_version }}-${{ needs.version.outputs.deb_release }}"
       - name: Get DEB filename
         id: deb_filename
         run: |
-          DEB_PATHS=$(find target/debian -type f -name "netgauze-collector*.deb" | sort)
+          DEB_PATHS=$(find target/debian -type f -name "netcalyx-collector*.deb" | sort)
           DEB_COUNT=$(printf '%s\n' "$DEB_PATHS" | sed '/^$/d' | wc -l | tr -d ' ')
           if [ "$DEB_COUNT" -ne 1 ]; then
             echo "Expected exactly one DEB package, found ${DEB_COUNT}"
@@ -387,15 +387,15 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           path: rpm-artifact
-          pattern: netgauze-collector-*${{ matrix.el_tag }}*.rpm
+          pattern: netcalyx-collector-*${{ matrix.el_tag }}*.rpm
       - name: Install RPM
         run: |
           dnf install -y findutils
           RPM_FILE=$(find rpm-artifact -type f -name "*.rpm")
           echo "Installing RPM file: ${RPM_FILE}"
           dnf install -y "${RPM_FILE}"
-      - name: Run netgauze-collector (it should start and then exit without errors)
-        run: netgauze-collector crates/collector/config_ci_rpm_test.yaml
+      - name: Run netcalyx-collector (it should start and then exit without errors)
+        run: netcalyx-collector crates/collector/config_ci_rpm_test.yaml
 
   test-collector-deb:
     runs-on: ubuntu-latest
@@ -411,7 +411,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           path: deb-artifact
-          pattern: netgauze-collector*.deb
+          pattern: netcalyx-collector*.deb
       - name: Install DEB
         run: |
           apt-get update
@@ -419,7 +419,7 @@ jobs:
             echo "DEB artifact directory was not created. Download step likely matched no artifacts."
             exit 1
           fi
-          DEB_PATHS=$(find deb-artifact -type f -name "netgauze-collector*.deb" | sort)
+          DEB_PATHS=$(find deb-artifact -type f -name "netcalyx-collector*.deb" | sort)
           DEB_COUNT=$(printf '%s\n' "$DEB_PATHS" | sed '/^$/d' | wc -l | tr -d ' ')
           if [ "$DEB_COUNT" -ne 1 ]; then
             echo "Expected exactly one downloaded DEB package, found ${DEB_COUNT}"
@@ -430,8 +430,8 @@ jobs:
           DEB_FILE=$(printf '%s\n' "$DEB_PATHS" | sed -n '1p')
           echo "Installing DEB file: ${DEB_FILE}"
           dpkg -i "$DEB_FILE" || apt-get install -f -y
-      - name: Run netgauze-collector (it should start and then exit without errors)
-        run: netgauze-collector crates/collector/config_ci_rpm_test.yaml
+      - name: Run netcalyx-collector (it should start and then exit without errors)
+        run: netcalyx-collector crates/collector/config_ci_rpm_test.yaml
 
   # Build pcap-decoder binary
   #
@@ -447,13 +447,13 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            binary_name: netgauze-pcap-decoder
+            binary_name: netcalyx-pcap-decoder
             strip_command: true
             dist_and_arch: x86_64-ubuntu_latest # used just for naming the binary
           - os: ubuntu-latest
             container: rockylinux/rockylinux:8.10
             target: x86_64-unknown-linux-gnu
-            binary_name: netgauze-pcap-decoder
+            binary_name: netcalyx-pcap-decoder
             strip_command: true
             install_deps: |
               dnf install -y gcc gcc-c++ pcre2-devel perl-core cmake git curl
@@ -461,17 +461,17 @@ jobs:
             dist_and_arch: x86_64-el8_10 # used just for naming the binary
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            binary_name: netgauze-pcap-decoder.exe
+            binary_name: netcalyx-pcap-decoder.exe
             strip_command: false # strip command not available on Windows
             dist_and_arch: x86_64-windows-latest.exe # used just for naming the binary
           - os: macos-latest
             target: x86_64-apple-darwin
-            binary_name: netgauze-pcap-decoder
+            binary_name: netcalyx-pcap-decoder
             strip_command: true
             dist_and_arch: x86_64-apple-latest # used just for naming the binary
           - os: macos-latest
             target: aarch64-apple-darwin
-            binary_name: netgauze-pcap-decoder
+            binary_name: netcalyx-pcap-decoder
             strip_command: true
             dist_and_arch: aarch64-apple-latest # used just for naming the binary
     steps:
@@ -485,7 +485,7 @@ jobs:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
       - name: Build pcap-decoder
-        run: cargo build --locked --release --target ${{ matrix.target }} -p netgauze-pcap-decoder
+        run: cargo build --locked --release --target ${{ matrix.target }} -p netcalyx-pcap-decoder
       - name: Strip binary (Unix only)
         if: matrix.strip_command == 'true'
         run: strip target/${{ matrix.target }}/release/${{ matrix.binary_name }}
@@ -493,7 +493,7 @@ jobs:
         id: binary_filename
         shell: pwsh # for Windows compatibility, available on all platforms
         run: |
-          $name = "netgauze-pcap-decoder-${{ needs.version.outputs.version }}-${{ needs.version.outputs.release }}-${{ matrix.dist_and_arch }}"
+          $name = "netcalyx-pcap-decoder-${{ needs.version.outputs.version }}-${{ needs.version.outputs.release }}-${{ matrix.dist_and_arch }}"
           "name=$name" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
       - name: Rename binary
         shell: pwsh # for Windows compatibility, available on all platforms

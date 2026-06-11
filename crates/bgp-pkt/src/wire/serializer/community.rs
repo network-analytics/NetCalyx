@@ -22,8 +22,8 @@ use crate::iana::{
 };
 use crate::wire::serializer::nlri::MacAddressWritingError;
 use byteorder::{NetworkEndian, WriteBytesExt};
-use netgauze_parse_utils::WritablePdu;
-use netgauze_serde_macros::WritingError;
+use netcalyx_parse_utils::WritablePdu;
+use netcalyx_serde_macros::WritingError;
 
 #[derive(WritingError, Eq, PartialEq, Clone, Debug)]
 pub enum CommunityWritingError {

@@ -15,9 +15,9 @@
 
 use super::*;
 use chrono::{TimeZone, Utc};
-use netgauze_flow_pkt::ie::{Field, netgauze, selectorAlgorithm};
-use netgauze_flow_pkt::ipfix::{DataRecord, IpfixPacket, Set};
-use netgauze_flow_pkt::{DataSetId, netflow};
+use netcalyx_flow_pkt::ie::{Field, netcalyx, selectorAlgorithm};
+use netcalyx_flow_pkt::ipfix::{DataRecord, IpfixPacket, Set};
+use netcalyx_flow_pkt::{DataSetId, netflow};
 use ordered_float::OrderedFloat;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use tracing_test::traced_test;
@@ -74,7 +74,7 @@ fn test_selector_algorithm_systematic_count_based() {
         Field::selectorAlgorithm(selectorAlgorithm::SystematiccountbasedSampling),
         Field::samplingPacketInterval(10),
         Field::samplingPacketSpace(90),
-        Field::NetGauze(netgauze::Field::isRenormalized(true)),
+        Field::NetCalyx(netcalyx::Field::isRenormalized(true)),
     ]
     .into_boxed_slice();
 
@@ -139,7 +139,7 @@ fn test_selector_algorithm_random_n_out_of_n() {
         Field::selectorAlgorithm(selectorAlgorithm::RandomnoutofNSampling),
         Field::samplingSize(10),
         Field::samplingPopulation(100),
-        Field::NetGauze(netgauze::Field::isRenormalized(true)),
+        Field::NetCalyx(netcalyx::Field::isRenormalized(true)),
     ]
     .into_boxed_slice();
 
@@ -199,7 +199,7 @@ fn test_selector_algorithm_uniform_probabilistic() {
         Field::octetDeltaCount(1000),
         Field::selectorAlgorithm(selectorAlgorithm::UniformprobabilisticSampling),
         Field::samplingProbability(OrderedFloat(0.1)),
-        Field::NetGauze(netgauze::Field::isRenormalized(true)),
+        Field::NetCalyx(netcalyx::Field::isRenormalized(true)),
     ]
     .into_boxed_slice();
 
@@ -272,7 +272,7 @@ fn test_sampler_mode_deterministic() {
         Field::octetDeltaCount(1000),
         Field::samplerMode(1),
         Field::samplerRandomInterval(10),
-        Field::NetGauze(netgauze::Field::isRenormalized(true)),
+        Field::NetCalyx(netcalyx::Field::isRenormalized(true)),
     ]
     .into_boxed_slice();
 
@@ -321,7 +321,7 @@ fn test_sampling_algorithm_deterministic() {
         Field::octetDeltaCount(1000),
         Field::samplingAlgorithm(1),
         Field::samplingInterval(10),
-        Field::NetGauze(netgauze::Field::isRenormalized(true)),
+        Field::NetCalyx(netcalyx::Field::isRenormalized(true)),
     ]
     .into_boxed_slice();
 
@@ -376,7 +376,7 @@ fn test_count_scaling() {
         Field::octetTotalCount(400),
         Field::packetDeltaCount(20),
         Field::packetTotalCount(40),
-        Field::NetGauze(netgauze::Field::isRenormalized(true)),
+        Field::NetCalyx(netcalyx::Field::isRenormalized(true)),
     ]
     .into_boxed_slice();
 
@@ -400,7 +400,7 @@ fn test_inferred_sampling_packet_interval_and_space() {
         Field::octetDeltaCount(1000),
         Field::samplingPacketInterval(10),
         Field::samplingPacketSpace(90),
-        Field::NetGauze(netgauze::Field::isRenormalized(true)),
+        Field::NetCalyx(netcalyx::Field::isRenormalized(true)),
     ]
     .into_boxed_slice();
 
@@ -423,7 +423,7 @@ fn test_inferred_sampling_size_and_population() {
         Field::octetDeltaCount(1000),
         Field::samplingSize(10),
         Field::samplingPopulation(100),
-        Field::NetGauze(netgauze::Field::isRenormalized(true)),
+        Field::NetCalyx(netcalyx::Field::isRenormalized(true)),
     ]
     .into_boxed_slice();
 
@@ -444,7 +444,7 @@ fn test_inferred_sampling_probability() {
     let expected: Box<[Field]> = vec![
         Field::octetDeltaCount(1000),
         Field::samplingProbability(OrderedFloat(0.1)),
-        Field::NetGauze(netgauze::Field::isRenormalized(true)),
+        Field::NetCalyx(netcalyx::Field::isRenormalized(true)),
     ]
     .into_boxed_slice();
 
@@ -465,7 +465,7 @@ fn test_inferred_sampler_random_interval() {
     let expected: Box<[Field]> = vec![
         Field::octetDeltaCount(1000),
         Field::samplerRandomInterval(10),
-        Field::NetGauze(netgauze::Field::isRenormalized(true)),
+        Field::NetCalyx(netcalyx::Field::isRenormalized(true)),
     ]
     .into_boxed_slice();
 
@@ -483,7 +483,7 @@ fn test_inferred_sampling_interval() {
     let expected: Box<[Field]> = vec![
         Field::octetDeltaCount(1000),
         Field::samplingInterval(10),
-        Field::NetGauze(netgauze::Field::isRenormalized(true)),
+        Field::NetCalyx(netcalyx::Field::isRenormalized(true)),
     ]
     .into_boxed_slice();
 
@@ -532,7 +532,7 @@ fn test_renormalize_ipfix_data_set_with_sampling() {
             Field::octetDeltaCount(10000),
             Field::samplingAlgorithm(1),
             Field::samplingInterval(10),
-            Field::NetGauze(netgauze::Field::isRenormalized(true)),
+            Field::NetCalyx(netcalyx::Field::isRenormalized(true)),
         ]),
     )];
 

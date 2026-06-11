@@ -41,14 +41,14 @@
 
 use bytes::BytesMut;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use netgauze_bgp_pkt::path_attribute::PathAttributeValue;
-use netgauze_bmp_pkt::codec::BmpCodec;
-use netgauze_bmp_pkt::iana::BmpMessageType;
-use netgauze_bmp_pkt::wire::deserializer::BmpParsingContext;
-use netgauze_bmp_pkt::{BmpMessage, v3, v4};
-use netgauze_iana::address_family::AddressType;
-use netgauze_parse_utils::{ReadablePduWithOneInput, Span, WritablePdu};
-use netgauze_pcap_reader::{PcapIter, TransportProtocol};
+use netcalyx_bgp_pkt::path_attribute::PathAttributeValue;
+use netcalyx_bmp_pkt::codec::BmpCodec;
+use netcalyx_bmp_pkt::iana::BmpMessageType;
+use netcalyx_bmp_pkt::wire::deserializer::BmpParsingContext;
+use netcalyx_bmp_pkt::{BmpMessage, v3, v4};
+use netcalyx_iana::address_family::AddressType;
+use netcalyx_parse_utils::{ReadablePduWithOneInput, Span, WritablePdu};
+use netcalyx_pcap_reader::{PcapIter, TransportProtocol};
 use pcap_parser::LegacyPcapReader;
 use std::collections::HashMap;
 use std::hint::black_box;
@@ -348,7 +348,7 @@ fn route_monitoring_mp_reach_address_type(msg: &BmpMessage) -> Option<AddressTyp
         _ => return None,
     };
     let update = match bgp {
-        netgauze_bgp_pkt::BgpMessage::Update(u) => u,
+        netcalyx_bgp_pkt::BgpMessage::Update(u) => u,
         _ => return None,
     };
     for attr in update.path_attributes() {
@@ -367,7 +367,7 @@ fn v4_route_monitoring_has_withdraw(msg: &BmpMessage) -> bool {
         _ => return false,
     };
     let update = match rm.update_message() {
-        netgauze_bgp_pkt::BgpMessage::Update(u) => u,
+        netcalyx_bgp_pkt::BgpMessage::Update(u) => u,
         _ => return false,
     };
     if !update.withdraw_routes().is_empty() {
@@ -387,7 +387,7 @@ fn v4_route_monitoring_has_add_path(msg: &BmpMessage) -> bool {
         _ => return false,
     };
     let update = match rm.update_message() {
-        netgauze_bgp_pkt::BgpMessage::Update(u) => u,
+        netcalyx_bgp_pkt::BgpMessage::Update(u) => u,
         _ => return false,
     };
     update.nlri().iter().any(|n| n.path_id().is_some())

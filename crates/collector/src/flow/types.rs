@@ -23,8 +23,8 @@
 //!
 //! Note: This module/functions may be relocated in the future.
 
-use netgauze_flow_pkt::ie::{Field, HasIE, IE};
-use netgauze_flow_pkt::ipfix;
+use netcalyx_flow_pkt::ie::{Field, HasIE, IE};
+use netcalyx_flow_pkt::ipfix;
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use serde::{Deserialize, Serialize};
 
@@ -255,8 +255,8 @@ impl From<IndexedDataRecord> for ipfix::DataRecord {
 mod tests {
     use super::*;
     use chrono::{TimeZone, Utc};
-    use netgauze_flow_pkt::ie::{Field, IE, protocolIdentifier};
-    use netgauze_iana::tcp::TCPHeaderFlags;
+    use netcalyx_flow_pkt::ie::{Field, IE, protocolIdentifier};
+    use netcalyx_iana::tcp::TCPHeaderFlags;
     use rustc_hash::{FxBuildHasher, FxHashMap};
     use std::collections::HashMap;
     use std::net::{Ipv4Addr, Ipv6Addr};

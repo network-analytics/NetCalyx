@@ -1,14 +1,14 @@
 lints.workspace = true
 
 [package]
-name = "netgauze-pcap-decoder"
+name = "netcalyx-pcap-decoder"
 version = "0.12.1"
 edition = "2024"
 authors = ["Riccardo Negri <hello@riccardonegri.dev>"]
 license = "Apache-2.0"
 readme = "README.md"
-repository = "https://github.com/NetGauze/NetGauze"
-homepage = "https://github.com/NetGauze/NetGauze"
+repository = "https://github.com/network-analytics/NetCalyx"
+homepage = "https://github.com/network-analytics/NetCalyx"
 description = """
 CLI Utility to convert NetFlow, IPFIX, BGP, BMP or UDP-Nofif data from a PCAP file to a JSON Lines file.
 """
@@ -16,11 +16,11 @@ keywords = ["pcap", "parser", "decoder", "protocol"]
 categories = ["network-programming", "parsing"]
 
 [dependencies]
-netgauze-flow-pkt = { workspace = true, features = ["codec"] }
-netgauze-pcap-reader = { workspace = true }
-netgauze-bmp-pkt = { workspace = true, features = ["codec"] }
-netgauze-bgp-pkt = { workspace = true, features = ["codec"] }
-netgauze-udp-notif-pkt = { workspace = true, features = ["codec"] }
+netcalyx-flow-pkt = { workspace = true, features = ["codec"] }
+netcalyx-pcap-reader = { workspace = true }
+netcalyx-bmp-pkt = { workspace = true, features = ["codec"] }
+netcalyx-bgp-pkt = { workspace = true, features = ["codec"] }
+netcalyx-udp-notif-pkt = { workspace = true, features = ["codec"] }
 ciborium = { workspace = true }
 serde = { workspace = true, features = ["derive"] } #  a generic serialization/deserialization framework
 serde_json = { workspace = true, features = ["preserve_order"] }

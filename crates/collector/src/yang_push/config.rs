@@ -21,9 +21,9 @@
 //! JSON format.
 
 use crate::publishers::kafka_yang::YangConverter;
-use netgauze_yang_push::ContentId;
-use netgauze_yang_push::cache::storage::{SubscriptionInfo, YangLibraryReference};
-use netgauze_yang_push::model::telemetry::TelemetryMessageWrapper;
+use netcalyx_yang_push::ContentId;
+use netcalyx_yang_push::cache::storage::{SubscriptionInfo, YangLibraryReference};
+use netcalyx_yang_push::model::telemetry::TelemetryMessageWrapper;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, strum_macros::Display)]
@@ -143,9 +143,9 @@ impl
 mod tests {
     use super::*;
     use chrono::TimeZone;
-    use netgauze_netconf_proto::yang_push::identities::{Encoding, Transport};
-    use netgauze_netconf_proto::yang_push::subscription::YangPushModuleVersion;
-    use netgauze_yang_push::model::telemetry::*;
+    use netcalyx_netconf_proto::yang_push::identities::{Encoding, Transport};
+    use netcalyx_netconf_proto::yang_push::subscription::YangPushModuleVersion;
+    use netcalyx_yang_push::model::telemetry::*;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
     fn create_test_subscription_info(ip: IpAddr) -> SubscriptionInfo {
@@ -154,7 +154,7 @@ mod tests {
             None,
             SocketAddr::new(ip, 8080),
             1,
-            netgauze_udp_notif_pkt::notification::Target::new_datastore(
+            netcalyx_udp_notif_pkt::notification::Target::new_datastore(
                 "ietf-datastores:operational".to_string(),
                 either::Right("/test-path".to_string()),
             ),
@@ -163,7 +163,7 @@ mod tests {
             Some(Encoding::Json),
             None,
             Some(
-                netgauze_netconf_proto::yang_push::subscription::UpdateTrigger::OnChange {
+                netcalyx_netconf_proto::yang_push::subscription::UpdateTrigger::OnChange {
                     dampening_period: None,
                     sync_on_start: Some(true),
                     excluded_change: None,

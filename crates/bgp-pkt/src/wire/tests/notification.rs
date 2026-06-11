@@ -26,8 +26,8 @@ use crate::notification::{
 };
 use crate::wire::deserializer::notification::*;
 use crate::wire::serializer::notification::*;
-use netgauze_parse_utils::Span;
-use netgauze_parse_utils::test_helpers::{test_parse_error, test_parsed_completely, test_write};
+use netcalyx_parse_utils::Span;
+use netcalyx_parse_utils::test_helpers::{test_parse_error, test_parsed_completely, test_write};
 use nom::error::ErrorKind;
 
 #[test]

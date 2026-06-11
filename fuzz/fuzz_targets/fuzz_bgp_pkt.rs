@@ -19,10 +19,10 @@
 use libfuzzer_sys::fuzz_target;
 use std::collections::HashMap;
 
-use netgauze_bgp_pkt::BgpMessage;
-use netgauze_bgp_pkt::wire::deserializer::BgpParsingContext;
-use netgauze_iana::address_family::AddressType;
-use netgauze_parse_utils::{ReadablePduWithOneInput, Span};
+use netcalyx_bgp_pkt::BgpMessage;
+use netcalyx_bgp_pkt::wire::deserializer::BgpParsingContext;
+use netcalyx_iana::address_family::AddressType;
+use netcalyx_parse_utils::{ReadablePduWithOneInput, Span};
 
 // We don't pass BgpParsingContext as fuzzed input since we don't want to
 // generate BgpParsingContext::parsing_errors.

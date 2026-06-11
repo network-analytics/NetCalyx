@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! NetGauze PCAP Decoder Library
+//! NetCalyx PCAP Decoder Library
 //!
 //! This library provides functionality to decode various network protocols
 //! (BGP, BMP, Flow, UDP-Notif) from PCAP files and serialize them to JSON.
@@ -22,7 +22,7 @@ pub mod handlers;
 pub mod protocol_handler;
 
 use crate::protocol_handler::ProtocolHandler;
-use netgauze_pcap_reader::PcapIter;
+use netcalyx_pcap_reader::PcapIter;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufWriter, Write};

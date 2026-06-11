@@ -15,7 +15,7 @@
 
 use crate::flow::aggregation::config::*;
 use indexmap::IndexMap;
-use netgauze_flow_pkt::ie::IE;
+use netcalyx_flow_pkt::ie::IE;
 use std::time::Duration;
 
 #[test]

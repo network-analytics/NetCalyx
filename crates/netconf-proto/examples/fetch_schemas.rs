@@ -15,10 +15,10 @@
 
 use anyhow::anyhow;
 use clap::Parser;
-use netgauze_netconf_proto::capabilities::{Capability, NetconfVersion};
-use netgauze_netconf_proto::client::{NetconfSshConnectConfig, SshAuth, SshHandler, connect};
-use netgauze_netconf_proto::xml_utils::{XmlDeserialize, XmlSerialize, XmlWriter};
-use netgauze_netconf_proto::yanglib::{PermissiveVersionChecker, YangLibrary};
+use netcalyx_netconf_proto::capabilities::{Capability, NetconfVersion};
+use netcalyx_netconf_proto::client::{NetconfSshConnectConfig, SshAuth, SshHandler, connect};
+use netcalyx_netconf_proto::xml_utils::{XmlDeserialize, XmlSerialize, XmlWriter};
+use netcalyx_netconf_proto::yanglib::{PermissiveVersionChecker, YangLibrary};
 use quick_xml::NsReader;
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
@@ -204,7 +204,7 @@ pub async fn main() -> anyhow::Result<()> {
     if let Some(yang_lib_path) = &args.extend_yang_lib {
         info!("Extending subscription yang library with schemas from {yang_lib_path}");
         let reader = NsReader::from_file(yang_lib_path)?;
-        let mut xml_reader = netgauze_netconf_proto::xml_utils::XmlParser::new(reader)?;
+        let mut xml_reader = netcalyx_netconf_proto::xml_utils::XmlParser::new(reader)?;
         let existing_yang_lib = YangLibrary::xml_deserialize(&mut xml_reader)?;
         let existing_yang_schemas = if let Some(search_path) = &args.yang_dep_path {
             let search_path = Path::new(search_path);

@@ -1,14 +1,14 @@
 lints.workspace = true
 
 [package]
-name = "netgauze-serde-macros"
+name = "netcalyx-serde-macros"
 version = "0.12.1"
 edition = "2024"
-authors = ["Ahmed Elhassany <a.hassany@gmail.com>"]
+authors = ["NetCalyx Authors"]
 license = "Apache-2.0"
 readme = "README.md"
-repository = "https://github.com/NetGauze/NetGauze"
-homepage = "https://github.com/NetGauze/NetGauze"
+repository = "https://github.com/network-analytics/NetCalyx"
+homepage = "https://github.com/network-analytics/NetCalyx"
 description = """
 Helper macros to make ser/deser binary protocols easier
 """
@@ -27,7 +27,7 @@ syn = { workspace = true, default-features = true, features = ["extra-traits", "
 quote = { workspace = true, default-features = true }
 
 [dev-dependencies]
-netgauze-parse-utils = { workspace = true }
-netgauze-locate = { workspace = true }
+netcalyx-parse-utils = { workspace = true }
+netcalyx-locate = { workspace = true }
 nom = { workspace = true }
 trybuild = { workspace = true, features = ["diff"] }

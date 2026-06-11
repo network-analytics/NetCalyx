@@ -44,7 +44,7 @@ fn run_pcap_decoder_test_with_options(
 ) {
     let overwrite = env::var("OVERWRITE").unwrap_or_else(|_| "false".to_string()) == "true";
 
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_netgauze-pcap-decoder"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_netcalyx-pcap-decoder"));
     cmd.arg("--input")
         .arg(pcap_path)
         .arg("--protocol")

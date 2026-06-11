@@ -71,7 +71,7 @@
 //! # Usage Example
 //!
 //! ```rust,no_run
-//! use netgauze_flow_service::flow_actor::FlowCollectorActorHandle;
+//! use netcalyx_flow_service::flow_actor::FlowCollectorActorHandle;
 //! use std::net::SocketAddr;
 //!
 //! #[tokio::main]
@@ -119,8 +119,8 @@ use crate::{
 use bytes::{Bytes, BytesMut};
 use futures_util::StreamExt;
 use futures_util::stream::SplitSink;
-use netgauze_flow_pkt::codec::FlowInfoCodec;
-use netgauze_flow_pkt::{ipfix, netflow};
+use netcalyx_flow_pkt::codec::FlowInfoCodec;
+use netcalyx_flow_pkt::{ipfix, netflow};
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::net::SocketAddr;
@@ -254,49 +254,49 @@ pub struct FlowCollectorActorStats {
 impl FlowCollectorActorStats {
     pub fn new(meter: opentelemetry::metrics::Meter) -> Self {
         let received = meter
-            .u64_counter("netgauze.flow.decoder.received")
+            .u64_counter("netcalyx.flow.decoder.received")
             .with_description(
                 "Number successfully received (before decoding) flow packets from the network",
             )
             .build();
         let decoded = meter
-            .u64_counter("netgauze.flow.decoder.decoded")
+            .u64_counter("netcalyx.flow.decoder.decoded")
             .with_description(
                 "Number successfully received and decoded flow packets from the network",
             )
             .build();
         let malformed = meter
-            .u64_counter("netgauze.flow.decoder.malformed")
+            .u64_counter("netcalyx.flow.decoder.malformed")
             .with_description(
                 "Number flow packets from the network that were not decoded correctly",
             )
             .build();
         let subscribers = meter
-            .u64_gauge("netgauze.flow.subscribers.number")
+            .u64_gauge("netcalyx.flow.subscribers.number")
             .with_description(
                 "Number of actors subscribed to receive flow info events from this actor",
             )
             .build();
         let subscriber_sent = meter
-            .u64_counter("netgauze.flow.subscribers.sent")
+            .u64_counter("netcalyx.flow.subscribers.sent")
             .with_description("Number successfully received flow and sent to subscribers")
             .build();
         let subscriber_dropped = meter
-            .u64_counter("netgauze.flow.subscribers.dropped")
+            .u64_counter("netcalyx.flow.subscribers.dropped")
             .with_description(
                 "Number successfully received flow but dropped before sending to the subscribers",
             )
             .build();
         let templates_v9 = meter
-            .u64_gauge("netgauze.flow.decoder.templates.v9")
+            .u64_gauge("netcalyx.flow.decoder.templates.v9")
             .with_description("Number of templates received for NETFLOW v9")
             .build();
         let templates_v10 = meter
-            .u64_gauge("netgauze.flow.decoder.templates.v10")
+            .u64_gauge("netcalyx.flow.decoder.templates.v10")
             .with_description("Number of templates received for IPFIX v10")
             .build();
         let templates_usage = meter
-            .u64_counter("netgauze.flow.decoder.templates.usage")
+            .u64_counter("netcalyx.flow.decoder.templates.usage")
             .with_description("Number successfully Data records processed by a given template")
             .build();
         Self {
@@ -345,7 +345,7 @@ impl FlowCollectorActor {
         // FlowInfoCodec handles the decoding/encoding of packets and caches
         // the templates learned from the client
         let mut attrs = vec![
-            opentelemetry::KeyValue::new("netgauze.flow.actor", format!("{}", self.actor_id)),
+            opentelemetry::KeyValue::new("netcalyx.flow.actor", format!("{}", self.actor_id)),
             opentelemetry::KeyValue::new("network.peer.address", format!("{}", addr.ip())),
             opentelemetry::KeyValue::new(
                 "network.peer.port",
@@ -396,7 +396,7 @@ impl FlowCollectorActor {
             }
             Err(err) => {
                 attrs.push(opentelemetry::KeyValue::new(
-                    "netgauze.flow.decoding.error.msg",
+                    "netcalyx.flow.decoding.error.msg",
                     opentelemetry::Value::String(err.to_string().into()),
                 ));
                 self.stats.malformed.add(1, &attrs);
@@ -431,9 +431,9 @@ impl FlowCollectorActor {
                 drop_counter.add(1,&[
                     opentelemetry::KeyValue::new("network.peer.address", format!("{}", socket_addr.ip())),
                     opentelemetry::KeyValue::new("network.peer.port", opentelemetry::Value::I64(socket_addr.port().into())),
-                    opentelemetry::KeyValue::new("netgauze.flow.actor", format!("{actor_id}")),
-                    opentelemetry::KeyValue::new("netgauze.flow.subscriber.id", format!("{id}")),
-                    opentelemetry::KeyValue::new("netgauze.flow.subscriber.error.type", "channel is full".to_string()),
+                    opentelemetry::KeyValue::new("netcalyx.flow.actor", format!("{actor_id}")),
+                    opentelemetry::KeyValue::new("netcalyx.flow.subscriber.id", format!("{id}")),
+                    opentelemetry::KeyValue::new("netcalyx.flow.subscriber.error.type", "channel is full".to_string()),
                 ]);
                 return;
             }
@@ -443,8 +443,8 @@ impl FlowCollectorActor {
                     sent_counter.add(1,&[
                         opentelemetry::KeyValue::new("network.peer.address", format!("{}", socket_addr.ip())),
                         opentelemetry::KeyValue::new("network.peer.port", opentelemetry::Value::I64(socket_addr.port().into())),
-                        opentelemetry::KeyValue::new("netgauze.flow.actor", format!("{actor_id}")),
-                        opentelemetry::KeyValue::new("netgauze.flow.subscriber.id", format!("{id}")),
+                        opentelemetry::KeyValue::new("netcalyx.flow.actor", format!("{actor_id}")),
+                        opentelemetry::KeyValue::new("netcalyx.flow.subscriber.id", format!("{id}")),
                     ]);
                 }
                 Err(_err) => {
@@ -452,9 +452,9 @@ impl FlowCollectorActor {
                     drop_counter.add(1,&[
                         opentelemetry::KeyValue::new("network.peer.address", format!("{}", socket_addr.ip())),
                         opentelemetry::KeyValue::new("network.peer.port", opentelemetry::Value::I64(socket_addr.port().into())),
-                        opentelemetry::KeyValue::new("netgauze.flow.actor", format!("{actor_id}")),
-                        opentelemetry::KeyValue::new("netgauze.flow.subscriber.id", format!("{id}")),
-                        opentelemetry::KeyValue::new("netgauze.flow.subscriber.error.type", "send error".to_string()),
+                        opentelemetry::KeyValue::new("netcalyx.flow.actor", format!("{actor_id}")),
+                        opentelemetry::KeyValue::new("netcalyx.flow.subscriber.id", format!("{id}")),
+                        opentelemetry::KeyValue::new("netcalyx.flow.subscriber.error.type", "send error".to_string()),
                     ]);
                 }
             }
@@ -475,10 +475,10 @@ impl FlowCollectorActor {
                         "network.peer.port",
                         opentelemetry::Value::I64(socket_addr.port().into()),
                     ),
-                    opentelemetry::KeyValue::new("netgauze.flow.actor", format!("{actor_id}")),
-                    opentelemetry::KeyValue::new("netgauze.flow.subscriber.id", format!("{id}")),
+                    opentelemetry::KeyValue::new("netcalyx.flow.actor", format!("{actor_id}")),
+                    opentelemetry::KeyValue::new("netcalyx.flow.subscriber.id", format!("{id}")),
                     opentelemetry::KeyValue::new(
-                        "netgauze.flow.subscriber.error.type",
+                        "netcalyx.flow.subscriber.error.type",
                         "timeout".to_string(),
                     ),
                 ],
@@ -506,7 +506,7 @@ impl FlowCollectorActor {
             self.stats.subscribers.record(
                 self.subscribers.len() as u64,
                 &[opentelemetry::KeyValue::new(
-                    "netgauze.flow.actor",
+                    "netcalyx.flow.actor",
                     format!("{actor_id}"),
                 )],
             );
@@ -861,7 +861,7 @@ impl FlowCollectorActor {
                     match next {
                         Some(Ok(next)) => {
                             self.stats.received.add(1, &[
-                                opentelemetry::KeyValue::new("netgauze.flow.actor", format!("{}", self.actor_id)),
+                                opentelemetry::KeyValue::new("netcalyx.flow.actor", format!("{}", self.actor_id)),
                                 opentelemetry::KeyValue::new("network.peer.address", format!("{}", next.1.ip())),
                                 opentelemetry::KeyValue::new("network.peer.port", opentelemetry::Value::I64(next.1.port().into())),
                             ]);
@@ -1166,8 +1166,8 @@ mod tests {
     use super::*;
     use bytes::{Buf, BytesMut};
     use chrono::{TimeZone, Utc};
-    use netgauze_flow_pkt::codec::FlowInfoCodec;
-    use netgauze_flow_pkt::{FieldSpecifier, FlowInfo, ie, ipfix, netflow};
+    use netcalyx_flow_pkt::codec::FlowInfoCodec;
+    use netcalyx_flow_pkt::{FieldSpecifier, FlowInfo, ie, ipfix, netflow};
     use tokio::net::UdpSocket;
     use tokio::time::Duration;
     use tokio_util::codec::Encoder;

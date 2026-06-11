@@ -16,9 +16,9 @@
 use crate::iana::{BmpMessageType, UndefinedBmpMessageType};
 use crate::wire::deserializer::BmpParsingContext;
 use crate::{BmpPeerType, PeerHeader, PeerKey, v3, v4};
-use netgauze_bgp_pkt::BgpMessage;
-use netgauze_bgp_pkt::wire::deserializer::capabilities::BgpCapabilityParsingError;
-use netgauze_bgp_pkt::wire::deserializer::{
+use netcalyx_bgp_pkt::BgpMessage;
+use netcalyx_bgp_pkt::wire::deserializer::capabilities::BgpCapabilityParsingError;
+use netcalyx_bgp_pkt::wire::deserializer::{
     BgpMessageParsingError, BgpParsingContext, read_tlv_header_t16_l16,
 };
 
@@ -27,12 +27,12 @@ use crate::wire::deserializer::v3::{
     PeerUpNotificationMessageParsingError, RouteMirroringMessageParsingError,
     StatisticsReportMessageParsingError, TerminationMessageParsingError,
 };
-use netgauze_parse_utils::{
+use netcalyx_parse_utils::{
     ErrorKindSerdeDeref, ReadablePdu, ReadablePduWithOneInput, ReadablePduWithTwoInputs, Span,
     parse_into_located, parse_into_located_one_input, parse_into_located_two_inputs,
     parse_till_empty_into_located,
 };
-use netgauze_serde_macros::LocatedError;
+use netcalyx_serde_macros::LocatedError;
 use nom::IResult;
 use nom::error::{ErrorKind, FromExternalError};
 use nom::number::complete::{be_u8, be_u16, be_u32};
@@ -158,7 +158,7 @@ pub enum RouteMonitoringMessageParsingError {
     RouteMonitoringMessage(v4::RouteMonitoringError),
     PeerHeader(#[from_located(module = "crate::wire::deserializer::v3")] PeerHeaderParsingError),
     BgpMessage(
-        #[from_located(module = "netgauze_bgp_pkt::wire::deserializer")] BgpMessageParsingError,
+        #[from_located(module = "netcalyx_bgp_pkt::wire::deserializer")] BgpMessageParsingError,
     ),
     RouteMonitoringTlvParsing(#[from_located(module = "self")] RouteMonitoringTlvParsingError),
     MissingBgpPdu,
@@ -269,11 +269,11 @@ pub enum RouteMonitoringTlvParsingError {
         actual: u16,
     },
     BgpMessage(
-        #[from_located(module = "netgauze_bgp_pkt::wire::deserializer")] BgpMessageParsingError,
+        #[from_located(module = "netcalyx_bgp_pkt::wire::deserializer")] BgpMessageParsingError,
     ),
     FromUtf8Error(String),
     BgpCapability(
-        #[from_located(module = "netgauze_bgp_pkt::wire::deserializer::capabilities")]
+        #[from_located(module = "netcalyx_bgp_pkt::wire::deserializer::capabilities")]
         BgpCapabilityParsingError,
     ),
     InvalidRouteMonitoringTlv(v4::RouteMonitoringTlvError),

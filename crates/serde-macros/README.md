@@ -5,17 +5,17 @@
 [![Apache licensed][apache-badge]][apache-url]
 
 
-[crates-badge]: https://img.shields.io/crates/v/netgauze-serde-macros.svg
+[crates-badge]: https://img.shields.io/crates/v/netcalyx-serde-macros.svg
 
-[crates-url]: https://crates.io/crates/netgauze-serde-macros
+[crates-url]: https://crates.io/crates/netcalyx-serde-macros
 
 [apache-badge]: https://img.shields.io/badge/license-Apache-blue.svg
 
-[apache-url]: https://github.com/NetGauze/NetGauze/blob/main/LICENSE
+[apache-url]: https://github.com/network-analytics/NetCalyx/blob/main/LICENSE
 
-[docs-badge]: https://docs.rs/netgauze-serde-macros/badge.svg
+[docs-badge]: https://docs.rs/netcalyx-serde-macros/badge.svg
 
-[docs-url]: https://docs.rs/netgauze-serde-macros
+[docs-url]: https://docs.rs/netcalyx-serde-macros
 
 
 *LocatedError*: For a given error enum {Name} generate a struct called Located{Name} that
@@ -24,7 +24,7 @@ error. Additionally, generates [`From`] for `nom` library errors, external,
 and another located errors.
 
 ```rust
-use netgauze_serde_macros::LocatedError;
+use netcalyx_serde_macros::LocatedError;
 
 #[derive(LocatedError, Eq, PartialEq, Clone, Debug)]
 pub enum ExtendedCommunityParsingError {
@@ -61,7 +61,7 @@ provides the following decorations for any members of the enum.
 Example:
 
 ```rust
-use netgauze_serde_macros::WritingError;
+use netcalyx_serde_macros::WritingError;
 
 #[derive(WritingError, Eq, PartialEq, Clone, Debug)]
 pub enum BgpMessageWritingError {

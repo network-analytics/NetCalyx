@@ -14,10 +14,10 @@
 // limitations under the License.
 
 use clap::Parser;
-use netgauze_netconf_proto::capabilities::{Capability, NetconfVersion};
-use netgauze_netconf_proto::client::{NetconfSshConnectConfig, SshAuth, SshHandler, connect};
-use netgauze_netconf_proto::xml_utils::{XmlSerialize, XmlWriter};
-use netgauze_netconf_proto::yanglib::PermissiveVersionChecker;
+use netcalyx_netconf_proto::capabilities::{Capability, NetconfVersion};
+use netcalyx_netconf_proto::client::{NetconfSshConnectConfig, SshAuth, SshHandler, connect};
+use netcalyx_netconf_proto::xml_utils::{XmlSerialize, XmlWriter};
+use netcalyx_netconf_proto::yanglib::PermissiveVersionChecker;
 use std::collections::HashSet;
 use std::io;
 use std::sync::Arc;

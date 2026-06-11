@@ -41,7 +41,7 @@ pub use actor::{EnrichmentActor, EnrichmentStats};
 #[cfg(feature = "bench")]
 pub use cache::EnrichmentCache;
 
-use netgauze_flow_pkt::ie::{Field, HasIE, IE};
+use netcalyx_flow_pkt::ie::{Field, HasIE, IE};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
@@ -229,7 +229,7 @@ impl std::fmt::Display for Scope {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use netgauze_flow_pkt::ie::Field;
+    use netcalyx_flow_pkt::ie::Field;
     use serde_json;
 
     #[test]

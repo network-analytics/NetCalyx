@@ -69,7 +69,7 @@
 //! ## Usage Example
 //!
 //! ```rust,no_run
-//! use netgauze_udp_notif_service::actor::ActorHandle;
+//! use netcalyx_udp_notif_service::actor::ActorHandle;
 //! use std::net::SocketAddr;
 //!
 //! #[tokio::main]
@@ -118,7 +118,7 @@ use crate::{
 use bytes::{Bytes, BytesMut};
 use futures_util::StreamExt;
 use futures_util::stream::SplitSink;
-use netgauze_udp_notif_pkt::codec::UdpPacketCodec;
+use netcalyx_udp_notif_pkt::codec::UdpPacketCodec;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -210,29 +210,29 @@ pub struct UdpNotifCollectorStats {
 impl UdpNotifCollectorStats {
     pub fn new(meter: opentelemetry::metrics::Meter) -> Self {
         let received = meter
-            .u64_counter("netgauze.udp-notif.decoder.received")
+            .u64_counter("netcalyx.udp-notif.decoder.received")
             .with_description("Number of successfully received udp-notif packets from the network")
             .build();
         let decoded = meter
-            .u64_counter("netgauze.udp-notif.decoder.decoded")
+            .u64_counter("netcalyx.udp-notif.decoder.decoded")
             .with_description("Number of successfully decoded udp-notif packets")
             .build();
         let malformed = meter
-            .u64_counter("netgauze.udp-notif.decoder.malformed")
+            .u64_counter("netcalyx.udp-notif.decoder.malformed")
             .with_description("Number of udp-notif packets that were not decoded correctly")
             .build();
         let subscribers = meter
-            .u64_gauge("netgauze.udp-notif.subscribers.number")
+            .u64_gauge("netcalyx.udp-notif.subscribers.number")
             .with_description(
                 "Number of actors subscribed to receive udp-notif info events from this actor",
             )
             .build();
         let subscriber_sent = meter
-            .u64_counter("netgauze.udp-notif.subscribers.sent")
+            .u64_counter("netcalyx.udp-notif.subscribers.sent")
             .with_description("Number of udp-notif packets successfully sent to subscribers")
             .build();
         let subscriber_dropped = meter
-            .u64_counter("netgauze.udp-notif.subscribers.dropped")
+            .u64_counter("netcalyx.udp-notif.subscribers.dropped")
             .with_description("Number of udp-notif packets dropped before sending to subscribers")
             .build();
 
@@ -289,7 +289,7 @@ impl UdpNotifActor {
                     1,
                     &[
                         opentelemetry::KeyValue::new(
-                            "netgauze.udp-notif.actor",
+                            "netcalyx.udp-notif.actor",
                             format!("{}", self.actor_id),
                         ),
                         opentelemetry::KeyValue::new(
@@ -328,7 +328,7 @@ impl UdpNotifActor {
                     1,
                     &[
                         opentelemetry::KeyValue::new(
-                            "netgauze.udp-notif.actor",
+                            "netcalyx.udp-notif.actor",
                             format!("{}", self.actor_id),
                         ),
                         opentelemetry::KeyValue::new(
@@ -340,7 +340,7 @@ impl UdpNotifActor {
                             opentelemetry::Value::I64(addr.port().into()),
                         ),
                         opentelemetry::KeyValue::new(
-                            "netgauze.udp-notif.decoding.error.msg",
+                            "netcalyx.udp-notif.decoding.error.msg",
                             opentelemetry::Value::String(err.to_string().into()),
                         ),
                     ],
@@ -401,15 +401,15 @@ impl UdpNotifActor {
                             opentelemetry::Value::I64(publisher_id.into()),
                         ),
                         opentelemetry::KeyValue::new(
-                            "netgauze.udp-notif.actor",
+                            "netcalyx.udp-notif.actor",
                             format!("{actor_id}"),
                         ),
                         opentelemetry::KeyValue::new(
-                            "netgauze.udp-notif.subscriber.id",
+                            "netcalyx.udp-notif.subscriber.id",
                             format!("{id}"),
                         ),
                         opentelemetry::KeyValue::new(
-                            "netgauze.udp-notif.subscriber.error.type",
+                            "netcalyx.udp-notif.subscriber.error.type",
                             "channel is full".to_string(),
                         ),
                     ],
@@ -442,11 +442,11 @@ impl UdpNotifActor {
                                 opentelemetry::Value::I64(publisher_id.into()),
                             ),
                             opentelemetry::KeyValue::new(
-                                "netgauze.udp-notif.actor",
+                                "netcalyx.udp-notif.actor",
                                 format!("{actor_id}"),
                             ),
                             opentelemetry::KeyValue::new(
-                                "netgauze.udp-notif.subscriber.id",
+                                "netcalyx.udp-notif.subscriber.id",
                                 format!("{id}"),
                             ),
                         ],
@@ -477,15 +477,15 @@ impl UdpNotifActor {
                                 opentelemetry::Value::I64(publisher_id.into()),
                             ),
                             opentelemetry::KeyValue::new(
-                                "netgauze.udp-notif.actor",
+                                "netcalyx.udp-notif.actor",
                                 format!("{actor_id}"),
                             ),
                             opentelemetry::KeyValue::new(
-                                "netgauze.udp-notif.subscriber.id",
+                                "netcalyx.udp-notif.subscriber.id",
                                 format!("{id}"),
                             ),
                             opentelemetry::KeyValue::new(
-                                "netgauze.udp-notif.subscriber.error.type",
+                                "netcalyx.udp-notif.subscriber.error.type",
                                 "send error".to_string(),
                             ),
                         ],
@@ -518,13 +518,13 @@ impl UdpNotifActor {
                         OTL_UDP_NOTIF_PUBLISHER_ID_KEY,
                         opentelemetry::Value::I64(publisher_id.into()),
                     ),
-                    opentelemetry::KeyValue::new("netgauze.udp-notif.actor", format!("{actor_id}")),
+                    opentelemetry::KeyValue::new("netcalyx.udp-notif.actor", format!("{actor_id}")),
                     opentelemetry::KeyValue::new(
-                        "netgauze.udp-notif.subscriber.id",
+                        "netcalyx.udp-notif.subscriber.id",
                         format!("{id}"),
                     ),
                     opentelemetry::KeyValue::new(
-                        "netgauze.udp-notif.subscriber.error.type",
+                        "netcalyx.udp-notif.subscriber.error.type",
                         "timeout".to_string(),
                     ),
                 ],
@@ -558,7 +558,7 @@ impl UdpNotifActor {
             self.stats.subscribers.record(
                 self.subscribers.len() as u64,
                 &[opentelemetry::KeyValue::new(
-                    "netgauze.udp-notif.actor",
+                    "netcalyx.udp-notif.actor",
                     format!("{}", self.actor_id),
                 )],
             );
@@ -824,7 +824,7 @@ impl UdpNotifActor {
                     match next {
                         Some(Ok(next)) => {
                             self.stats.received.add(1, &[
-                                opentelemetry::KeyValue::new("netgauze.udp-notif.actor", format!("{}", self.actor_id)),
+                                opentelemetry::KeyValue::new("netcalyx.udp-notif.actor", format!("{}", self.actor_id)),
                                 opentelemetry::KeyValue::new("network.peer.address", format!("{}", next.1.ip())),
                                 opentelemetry::KeyValue::new("network.peer.port", opentelemetry::Value::I64(next.1.port().into())),
                             ]);
@@ -1044,8 +1044,8 @@ impl ActorHandle {
 mod tests {
     use super::*;
     use bytes::{Buf, Bytes, BytesMut};
-    use netgauze_parse_utils::WritablePdu;
-    use netgauze_udp_notif_pkt::raw::{MediaType, UdpNotifPacket};
+    use netcalyx_parse_utils::WritablePdu;
+    use netcalyx_udp_notif_pkt::raw::{MediaType, UdpNotifPacket};
     use std::io::Cursor;
     use tokio::net::UdpSocket;
     use tokio::time::Duration;

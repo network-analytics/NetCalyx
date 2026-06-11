@@ -84,27 +84,27 @@ pub struct FilesActorStats {
 impl FilesActorStats {
     pub fn new(meter: opentelemetry::metrics::Meter) -> Self {
         let files_watched = meter
-            .u64_gauge("netgauze.collector.flows.enrichment.input.files.watched")
+            .u64_gauge("netcalyx.collector.flows.enrichment.input.files.watched")
             .with_description("Number of files being watched")
             .build();
         let files_failing = meter
-            .u64_gauge("netgauze.collector.flows.enrichment.input.files.failing")
+            .u64_gauge("netcalyx.collector.flows.enrichment.input.files.failing")
             .with_description("Number of files where currently parsing is completely failing")
             .build();
         let file_changes_detected = meter
-            .u64_counter("netgauze.collector.flows.enrichment.input.files.changes.detected")
+            .u64_counter("netcalyx.collector.flows.enrichment.input.files.changes.detected")
             .with_description("Number of file changes detected")
             .build();
         let file_processing_errors = meter
-            .u64_counter("netgauze.collector.flows.enrichment.input.files.processing.errors")
+            .u64_counter("netcalyx.collector.flows.enrichment.input.files.processing.errors")
             .with_description("Errors during file processing")
             .build();
         let operations_generated = meter
-            .u64_counter("netgauze.collector.flows.enrichment.input.files.ops.generated")
+            .u64_counter("netcalyx.collector.flows.enrichment.input.files.ops.generated")
             .with_description("Number of enrichment operations generated from files")
             .build();
         let send_error = meter
-            .u64_counter("netgauze.collector.flows.enrichment.input.files.send_error")
+            .u64_counter("netcalyx.collector.flows.enrichment.input.files.send_error")
             .with_description("Error sending enrichment operations to enrichment actors")
             .build();
         Self {

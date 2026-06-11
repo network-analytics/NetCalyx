@@ -20,11 +20,11 @@ use crate::notification::OpenMessageError;
 use crate::open::{BGP_VERSION, BgpOpenMessageParameter};
 use crate::wire::deserializer::BgpParsingContext;
 use crate::wire::deserializer::capabilities::BgpCapabilityParsingError;
-use netgauze_parse_utils::{
+use netcalyx_parse_utils::{
     ErrorKindSerdeDeref, LocatedParsingError, ReadablePdu, ReadablePduWithOneInput, Span,
     parse_into_located_one_input,
 };
-use netgauze_serde_macros::LocatedError;
+use netcalyx_serde_macros::LocatedError;
 use nom::IResult;
 use nom::error::ErrorKind;
 use nom::number::complete::{be_u8, be_u16, be_u32};

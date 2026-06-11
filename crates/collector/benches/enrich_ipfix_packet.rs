@@ -14,12 +14,12 @@
 // limitations under the License.
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use netgauze_collector::flow::enrichment::{
+use netcalyx_collector::flow::enrichment::{
     EnrichmentActor, EnrichmentCache, EnrichmentOperation, EnrichmentStats, Scope, UpsertPayload,
 };
-use netgauze_flow_pkt::DataSetId;
-use netgauze_flow_pkt::ie::{Field, netgauze};
-use netgauze_flow_pkt::ipfix::{DataRecord, IpfixPacket, Set};
+use netcalyx_flow_pkt::DataSetId;
+use netcalyx_flow_pkt::ie::{Field, netcalyx};
+use netcalyx_flow_pkt::ipfix::{DataRecord, IpfixPacket, Set};
 use std::hint::black_box;
 use std::net::IpAddr;
 use tokio::sync::mpsc;
@@ -96,16 +96,16 @@ fn create_enrichment_cache(peer_ip: IpAddr, cache_scale: u32) -> EnrichmentCache
         scope: Scope::new(0, None),
         weight: 50,
         fields: vec![
-            Field::NetGauze(netgauze::Field::platformId("global-platform-001".into())),
-            Field::NetGauze(netgauze::Field::nodeId("global-node-001".into())),
+            Field::NetCalyx(netcalyx::Field::platformId("global-platform-001".into())),
+            Field::NetCalyx(netcalyx::Field::nodeId("global-node-001".into())),
             Field::applicationId([1, 2, 3].into()),
-            Field::applicationName("NetGauze".into()),
+            Field::applicationName("NetCalyx".into()),
             Field::applicationGroupName("Flow Collectors".into()),
             Field::applicationCategoryName("Network Telemetry Collectors".into()),
             Field::samplingSize(1),
             Field::samplingPopulation(4096),
-            Field::NetGauze(netgauze::Field::ingressInterfaceName("unknown".into())),
-            Field::NetGauze(netgauze::Field::egressInterfaceName("unknown".into())),
+            Field::NetCalyx(netcalyx::Field::ingressInterfaceName("unknown".into())),
+            Field::NetCalyx(netcalyx::Field::egressInterfaceName("unknown".into())),
         ],
     }));
 
@@ -123,7 +123,7 @@ fn create_enrichment_cache(peer_ip: IpAddr, cache_scale: u32) -> EnrichmentCache
                 Field::selectorId(100 + obs_domain_id as u64),
                 Field::selectorName(format!("random sampler {}", obs_domain_id).into()),
                 Field::selectorAlgorithm(
-                    netgauze_flow_pkt::ie::selectorAlgorithm::RandomnoutofNSampling,
+                    netcalyx_flow_pkt::ie::selectorAlgorithm::RandomnoutofNSampling,
                 ),
                 Field::samplingSize(1),
                 Field::samplingPopulation(1024),
@@ -142,10 +142,10 @@ fn create_enrichment_cache(peer_ip: IpAddr, cache_scale: u32) -> EnrichmentCache
                 ),
                 weight: 100,
                 fields: vec![
-                    Field::NetGauze(netgauze::Field::ingressInterfaceName(
+                    Field::NetCalyx(netcalyx::Field::ingressInterfaceName(
                         format!("eth 0/{}", ingress_if).into(),
                     )),
-                    Field::NetGauze(netgauze::Field::ingressInterfaceDescription(
+                    Field::NetCalyx(netcalyx::Field::ingressInterfaceDescription(
                         format!("interface {} ingress desc", ingress_if).into(),
                     )),
                 ],
@@ -161,10 +161,10 @@ fn create_enrichment_cache(peer_ip: IpAddr, cache_scale: u32) -> EnrichmentCache
                 scope: Scope::new(obs_domain_id, Some(vec![Field::egressInterface(egress_if)])),
                 weight: 100,
                 fields: vec![
-                    Field::NetGauze(netgauze::Field::egressInterfaceName(
+                    Field::NetCalyx(netcalyx::Field::egressInterfaceName(
                         format!("eth 0/{}", egress_if).into(),
                     )),
-                    Field::NetGauze(netgauze::Field::egressInterfaceDescription(
+                    Field::NetCalyx(netcalyx::Field::egressInterfaceDescription(
                         format!("interface {} egress desc", egress_if).into(),
                     )),
                 ],
@@ -187,16 +187,16 @@ fn create_enrichment_cache(peer_ip: IpAddr, cache_scale: u32) -> EnrichmentCache
                 ),
                 weight: 150,
                 fields: vec![
-                    Field::NetGauze(netgauze::Field::ingressInterfaceName(
+                    Field::NetCalyx(netcalyx::Field::ingressInterfaceName(
                         format!("eth 0/{}", ingress_if).into(),
                     )),
-                    Field::NetGauze(netgauze::Field::ingressInterfaceDescription(
+                    Field::NetCalyx(netcalyx::Field::ingressInterfaceDescription(
                         format!("interface {} ingress combined desc", ingress_if).into(),
                     )),
-                    Field::NetGauze(netgauze::Field::egressInterfaceName(
+                    Field::NetCalyx(netcalyx::Field::egressInterfaceName(
                         format!("eth 0/{}", egress_if).into(),
                     )),
-                    Field::NetGauze(netgauze::Field::egressInterfaceDescription(
+                    Field::NetCalyx(netcalyx::Field::egressInterfaceDescription(
                         format!("interface {} egress combined desc", egress_if).into(),
                     )),
                 ],

@@ -1,9 +1,9 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <?xml-stylesheet type="text/xsl" href="ipfix.xsl"?>
-<?xml-model href="ipfix.rng" schematypens="http://relaxng.org/ns/structure/1.0" ?>
+<?xml-model href="ipfix.rng" schematypens="http://relaxng.org/ns/structure/1.0"?>
 <registry xmlns="http://www.iana.org/assignments" id="ipfix">
   <registry id="ipfix-information-elements">
-    <title>NetGauze IPFIX Information Elements</title>
+    <title>NetCalyx IPFIX Information Elements</title>
 
     <record>
       <name>windowStart</name>
@@ -13,10 +13,8 @@
       <applicability>data</applicability>
       <status>current</status>
       <description>
-        <paragraph>
-            Start time of the aggregation window in which the flow was observed,
-            represented as a dateTimeSeconds value.
-        </paragraph>
+        <paragraph> Start time of the aggregation window in which the
+          flow was observed, represented as a dateTimeSeconds value. </paragraph>
       </description>
       <units>seconds</units>
       <revision>0</revision>
@@ -31,10 +29,8 @@
       <applicability>data</applicability>
       <status>current</status>
       <description>
-        <paragraph>
-            End time of the aggregation window in which the flow was observed,
-            represented as a dateTimeSeconds value.
-        </paragraph>
+        <paragraph> End time of the aggregation window in which the flow
+          was observed, represented as a dateTimeSeconds value. </paragraph>
       </description>
       <units>seconds</units>
       <revision>0</revision>
@@ -50,12 +46,11 @@
       <applicability>option</applicability>
       <status>current</status>
       <description>
-        <paragraph>
-            The Template IDs of the original records contributing to the record
-            where this IE is contained, as seen by the Collecting Process on an
-            IPFIX Mediator. Used to provide information about the Original Template
-            IDs to a downstream Collector.
-        </paragraph>
+        <paragraph> The Template IDs of the original records
+          contributing to the record where this IE is contained, as seen
+          by the Collecting Process on an IPFIX Mediator. Used to
+          provide information about the Original Template IDs to a
+          downstream Collector. </paragraph>
       </description>
       <revision>0</revision>
       <date>2025-06-27</date>
@@ -70,12 +65,11 @@
       <applicability>all</applicability>
       <status>current</status>
       <description>
-        <paragraph>
-            The source port identifier used by the Exporting Process on an
-            Original Exporter, as seen by the Collecting Process on an IPFIX
-            Mediator. Used to provide information about the Original
-            Observation Points to a downstream Collector.
-        </paragraph>
+        <paragraph> The source port identifier used by the Exporting
+          Process on an Original Exporter, as seen by the Collecting
+          Process on an IPFIX Mediator. Used to provide information
+          about the Original Observation Points to a downstream
+          Collector. </paragraph>
       </description>
       <revision>0</revision>
       <date>2025-06-27</date>
@@ -88,9 +82,7 @@
       <elementId>5</elementId>
       <status>current</status>
       <description>
-        <paragraph>
-        A short name uniquely describing a node.
-        </paragraph>
+        <paragraph> A short name uniquely describing a node. </paragraph>
       </description>
       <revision>0</revision>
       <date>2025-06-27</date>
@@ -103,9 +95,8 @@
       <elementId>6</elementId>
       <status>current</status>
       <description>
-        <paragraph>
-            A short name uniquely describing a network operator platform.
-        </paragraph>
+        <paragraph> A short name uniquely describing a network operator
+          platform. </paragraph>
       </description>
       <revision>0</revision>
       <date>2025-06-27</date>
@@ -118,9 +109,8 @@
       <elementId>7</elementId>
       <status>current</status>
       <description>
-        <paragraph>
-            A short name uniquely describing the name of the data collection instance.
-        </paragraph>
+        <paragraph> A short name uniquely describing the name of the
+          data collection instance. </paragraph>
       </description>
       <revision>0</revision>
       <date>2025-06-27</date>
@@ -134,9 +124,8 @@
       <applicability>data</applicability>
       <status>current</status>
       <description>
-        <paragraph>
-            The name of the IP interface where packets of this Flow are being received.
-        </paragraph>
+        <paragraph> The name of the IP interface where packets of this
+          Flow are being received. </paragraph>
       </description>
       <revision>0</revision>
       <date>2025-08-26</date>
@@ -150,9 +139,8 @@
       <applicability>data</applicability>
       <status>current</status>
       <description>
-        <paragraph>
-            The name of the IP interface where packets of this Flow are being sent.
-        </paragraph>
+        <paragraph> The name of the IP interface where packets of this
+          Flow are being sent. </paragraph>
       </description>
       <revision>0</revision>
       <date>2025-08-26</date>
@@ -166,9 +154,8 @@
       <applicability>data</applicability>
       <status>current</status>
       <description>
-        <paragraph>
-            The description of the IP interface where packets of this Flow are being received.
-        </paragraph>
+        <paragraph> The description of the IP interface where packets of
+          this Flow are being received. </paragraph>
       </description>
       <revision>0</revision>
       <date>2025-08-26</date>
@@ -182,9 +169,8 @@
       <applicability>data</applicability>
       <status>current</status>
       <description>
-        <paragraph>
-            The description of the IP interface where packets of this Flow are being sent.
-        </paragraph>
+        <paragraph> The description of the IP interface where packets of
+          this Flow are being sent. </paragraph>
       </description>
       <revision>0</revision>
       <date>2025-08-26</date>
@@ -198,9 +184,8 @@
       <applicability>data</applicability>
       <status>current</status>
       <description>
-        <paragraph>
-            The name of the VRF where the packets of this flow are being received.
-        </paragraph>
+        <paragraph> The name of the VRF where the packets of this flow
+          are being received. </paragraph>
       </description>
       <revision>0</revision>
       <date>2025-08-26</date>
@@ -214,9 +199,8 @@
       <applicability>data</applicability>
       <status>current</status>
       <description>
-        <paragraph>
-            The name of the VRF where the packets of this flow are being sent.
-        </paragraph>
+        <paragraph> The name of the VRF where the packets of this flow
+          are being sent. </paragraph>
       </description>
       <revision>0</revision>
       <date>2025-08-26</date>
@@ -230,10 +214,8 @@
       <applicability>data</applicability>
       <status>current</status>
       <description>
-        <paragraph>
-            The value of the VPN route distinguisher of the ingress VRF where
-            packets of this Flow are being received.
-        </paragraph>
+        <paragraph> The value of the VPN route distinguisher of the
+          ingress VRF where packets of this Flow are being received. </paragraph>
       </description>
       <revision>0</revision>
       <date>2025-08-26</date>
@@ -247,10 +229,8 @@
       <applicability>data</applicability>
       <status>current</status>
       <description>
-        <paragraph>
-            The value of the VPN route distinguisher of the egress VRF where
-            packets of this Flow are being sent.
-        </paragraph>
+        <paragraph> The value of the VPN route distinguisher of the
+          egress VRF where packets of this Flow are being sent. </paragraph>
       </description>
       <revision>0</revision>
       <date>2025-08-26</date>
@@ -264,12 +244,12 @@
       <applicability>data</applicability>
       <status>current</status>
       <description>
-        <paragraph>
-            A boolean value indicating whether the flow record has been renormalized.
-            A value of true indicates that renormalization has occurred, while false
-            indicates that it has not. Renormalization refers to the process of adjusting
-            flow record values to account for packet sampling and flow sampling.
-        </paragraph>
+        <paragraph> A boolean value indicating whether the flow record
+          has been renormalized. A value of true indicates that
+          renormalization has occurred, while false indicates that it
+          has not. Renormalization refers to the process of adjusting
+          flow record values to account for packet sampling and flow
+          sampling. </paragraph>
       </description>
       <revision>0</revision>
       <date>2025-12-09</date>

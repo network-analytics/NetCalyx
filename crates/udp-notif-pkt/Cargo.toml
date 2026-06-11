@@ -1,14 +1,14 @@
 lints.workspace = true
 
 [package]
-name = "netgauze-udp-notif-pkt"
+name = "netcalyx-udp-notif-pkt"
 version = "0.12.1"
 edition = "2024"
-authors = ["Ahmed Elhassany <a.hassany@gmail.com>"]
+authors = ["NetCalyx Authors"]
 license = "Apache-2.0"
 readme = "README.md"
-repository = "https://github.com/NetGauze/NetGauze"
-homepage = "https://github.com/NetGauze/NetGauze"
+repository = "https://github.com/network-analytics/NetCalyx"
+homepage = "https://github.com/network-analytics/NetCalyx"
 description = """
 UDP-Notif (draft-ietf-netconf-udp-notif) packet library for YANG Push streaming telemetry. Provides zero-copy wire format handling, automatic JSON/CBOR deserialization, and type-safe access to RFC 8639/8641 subscription notifications.
 """
@@ -17,10 +17,10 @@ categories = ["network-programming", "parsing"]
 
 
 [dependencies]
-netgauze-locate = { workspace = true, optional = true }
-netgauze-parse-utils = { workspace = true, optional = true }
-netgauze-serde-macros = { workspace = true, optional = true }
-netgauze-netconf-proto = { workspace = true }
+netcalyx-locate = { workspace = true, optional = true }
+netcalyx-parse-utils = { workspace = true, optional = true }
+netcalyx-serde-macros = { workspace = true, optional = true }
+netcalyx-netconf-proto = { workspace = true }
 strum = { workspace = true }
 strum_macros = { workspace = true }
 
@@ -38,13 +38,13 @@ either = { workspace = true }
 
 [features]
 default = ["serde", "codec"]
-serde = ["nom", "byteorder", "netgauze-locate", "netgauze-parse-utils", "netgauze-serde-macros"]
+serde = ["nom", "byteorder", "netcalyx-locate", "netcalyx-parse-utils", "netcalyx-serde-macros"]
 codec = ["tokio-util"]
 fuzz = ["arbitrary", "arbitrary_ext"]
 
 [dev-dependencies]
-netgauze-pcap-reader = { workspace = true }
-netgauze-parse-utils = { workspace = true, features = ["test-helpers"] }
+netcalyx-pcap-reader = { workspace = true }
+netcalyx-parse-utils = { workspace = true, features = ["test-helpers"] }
 serde_json = { workspace = true }
 rstest = { workspace = true }
 pcap-parser = { workspace = true, features = ["data"] }

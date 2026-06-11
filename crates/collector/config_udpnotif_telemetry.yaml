@@ -3,12 +3,12 @@ runtime:
   threads: 4
 
 logging:
-  level: netgauze_collector=trace,netgauze_yang_push=trace,info
+  level: netcalyx_collector=trace,netcalyx_yang_push=trace,info
   ansi: true
 
 telemetry:
   url: http://localhost:4317/v1/metrics
-  id: netgauze-udpnotif-telemetry
+  id: netcalyx-udpnotif-telemetry
   exporter_timeout: 3000
   reader_interval: 60000
   reader_timeout: 3000
@@ -19,7 +19,7 @@ udp_notif:
     - address: "[::]:10000"
       workers: 2
 
-  cache_location: /tmp/netgauze-udpnotif-telemetry-cache
+  cache_location: /tmp/netcalyx-udpnotif-telemetry-cache
 
   netconf:
     username: someusername
@@ -58,7 +58,7 @@ udp_notif:
         #     bootstrap.servers: localhost:49092
         #     message.timeout.ms: "60000"
         #     queue.buffering.max.messages: "1000"
-        #   writer_id: coll-netgauze-telemetry-json
+        #   writer_id: coll-netcalyx-telemetry-json
         yang-endpoint: !TelemetryKafkaYang
           topic: telemetry-message-yang
           schema_registry_url: http://localhost:48081
@@ -66,7 +66,7 @@ udp_notif:
             bootstrap.servers: localhost:49092
             message.timeout.ms: "60000"
             queue.buffering.max.messages: "1000"
-          writer_id: coll-netgauze-telemetry-yang
+          writer_id: coll-netcalyx-telemetry-yang
           yang_converter:
             subject_prefix: daisy.dev
             root_schema_name: ietf-telemetry-message

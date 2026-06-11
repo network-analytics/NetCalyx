@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use netgauze_parse_utils::Span;
-use netgauze_parse_utils::test_helpers::{
+use netcalyx_parse_utils::Span;
+use netcalyx_parse_utils::test_helpers::{
     combine, test_parse_error_with_one_input, test_parsed_completely_with_one_input, test_write,
 };
 use std::collections::HashMap;

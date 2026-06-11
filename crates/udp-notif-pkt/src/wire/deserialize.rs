@@ -15,8 +15,8 @@
 
 use crate::raw::{MediaType, MediaTypeNames, UdpNotifOption, UdpNotifOptionCode, UdpNotifPacket};
 use bytes::Bytes;
-use netgauze_parse_utils::{ReadablePdu, Span, parse_into_located};
-use netgauze_serde_macros::LocatedError;
+use netcalyx_parse_utils::{ReadablePdu, Span, parse_into_located};
+use netcalyx_serde_macros::LocatedError;
 use nom::IResult;
 use nom::error::ErrorKind;
 use nom::number::complete::{be_u16, be_u32};
@@ -27,7 +27,7 @@ use std::collections::HashMap;
     LocatedError, strum_macros::Display, Eq, PartialEq, Clone, Debug, Serialize, Deserialize,
 )]
 pub enum UdpNotifOptionParsingError {
-    #[serde(with = "netgauze_parse_utils::ErrorKindSerdeDeref")]
+    #[serde(with = "netcalyx_parse_utils::ErrorKindSerdeDeref")]
     NomError(#[from_nom] ErrorKind),
     InvalidOptionLength(u8),
 }
@@ -72,7 +72,7 @@ impl<'a> ReadablePdu<'a, LocatedUdpNotifOptionParsingError<'a>> for UdpNotifOpti
     LocatedError, strum_macros::Display, Eq, PartialEq, Clone, Debug, Serialize, Deserialize,
 )]
 pub enum UdpNotifPacketParsingError {
-    #[serde(with = "netgauze_parse_utils::ErrorKindSerdeDeref")]
+    #[serde(with = "netcalyx_parse_utils::ErrorKindSerdeDeref")]
     NomError(#[from_nom] ErrorKind),
 
     #[strum(to_string = "Invalid UDP-Notif version {0}")]

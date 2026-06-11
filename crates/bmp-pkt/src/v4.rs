@@ -17,9 +17,9 @@ use crate::iana::{BmpMessageType, InitiationInformationTlvType};
 use crate::{PeerHeader, v3};
 use bitflags::bitflags;
 use either::Either;
-use netgauze_bgp_pkt::BgpMessage;
-use netgauze_bgp_pkt::capabilities::BgpCapability;
-use netgauze_bgp_pkt::iana::BgpMessageType;
+use netcalyx_bgp_pkt::BgpMessage;
+use netcalyx_bgp_pkt::capabilities::BgpCapability;
+use netcalyx_bgp_pkt::iana::BgpMessageType;
 use serde::{Deserialize, Serialize};
 use strum_macros::{Display, FromRepr};
 

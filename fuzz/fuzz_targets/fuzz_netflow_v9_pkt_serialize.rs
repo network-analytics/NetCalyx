@@ -16,8 +16,8 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use netgauze_flow_pkt::netflow::{NetFlowV9Packet, TemplatesMap};
-use netgauze_parse_utils::WritablePduWithOneInput;
+use netcalyx_flow_pkt::netflow::{NetFlowV9Packet, TemplatesMap};
+use netcalyx_parse_utils::WritablePduWithOneInput;
 use std::io::Cursor;
 
 fuzz_target!(|data: (NetFlowV9Packet, Option<TemplatesMap>)| {

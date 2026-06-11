@@ -1,14 +1,14 @@
 lints.workspace = true
 
 [package]
-name = "netgauze-bmp-pkt"
+name = "netcalyx-bmp-pkt"
 version = "0.12.1"
 edition = "2024"
-authors = ["Ahmed Elhassany <a.hassany@gmail.com>"]
+authors = ["NetCalyx Authors"]
 license = "Apache-2.0"
 readme = "README.md"
-repository = "https://github.com/NetGauze/NetGauze"
-homepage = "https://github.com/NetGauze/NetGauze"
+repository = "https://github.com/network-analytics/NetCalyx"
+homepage = "https://github.com/network-analytics/NetCalyx"
 description = """
 BMP Protocol representation and serde.
 """
@@ -16,11 +16,11 @@ keywords = ["bmp", "bgp", "parser", "protocol"]
 categories = ["network-programming", "parsing"]
 
 [dependencies]
-netgauze-iana = { workspace = true }
-netgauze-bgp-pkt = { workspace = true }
-netgauze-locate = { workspace = true, optional = true }
-netgauze-parse-utils = { workspace = true, optional = true }
-netgauze-serde-macros = { workspace = true, optional = true }
+netcalyx-iana = { workspace = true }
+netcalyx-bgp-pkt = { workspace = true }
+netcalyx-locate = { workspace = true, optional = true }
+netcalyx-parse-utils = { workspace = true, optional = true }
+netcalyx-serde-macros = { workspace = true, optional = true }
 strum_macros = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 ipnet = { workspace = true, features = ["serde"] }
@@ -41,18 +41,18 @@ default = ["serde"]
 serde = [
     "nom",
     "byteorder",
-    "netgauze-locate",
-    "netgauze-parse-utils",
-    "netgauze-serde-macros",
+    "netcalyx-locate",
+    "netcalyx-parse-utils",
+    "netcalyx-serde-macros",
 ]
 codec = ["tokio-util", "bytes"]
 bench = ["criterion", "codec"]
 fuzz = ["arbitrary", "arbitrary_ext", "bitflags/arbitrary"]
-json-schema = ["schemars", "netgauze-bgp-pkt/json-schema", "netgauze-iana/json-schema", "ipnet/schemars1"]
+json-schema = ["schemars", "netcalyx-bgp-pkt/json-schema", "netcalyx-iana/json-schema", "ipnet/schemars1"]
 
 [dev-dependencies]
-netgauze-pcap-reader = { workspace = true }
-netgauze-parse-utils = { workspace = true, features = ["test-helpers"] }
+netcalyx-pcap-reader = { workspace = true }
+netcalyx-parse-utils = { workspace = true, features = ["test-helpers"] }
 chrono = { workspace = true, default-features = false, features = [
     "std",
     "serde",

@@ -38,15 +38,15 @@
 
 use bytes::BytesMut;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use netgauze_bgp_pkt::BgpMessage;
-use netgauze_bgp_pkt::capabilities::BgpCapability;
-use netgauze_bgp_pkt::codec::BgpCodec;
-use netgauze_bgp_pkt::iana::BgpMessageType;
-use netgauze_bgp_pkt::path_attribute::PathAttributeValue;
-use netgauze_bgp_pkt::wire::deserializer::BgpParsingContext;
-use netgauze_iana::address_family::AddressType;
-use netgauze_parse_utils::{ReadablePduWithOneInput, Span, WritablePdu};
-use netgauze_pcap_reader::{PcapIter, TransportProtocol};
+use netcalyx_bgp_pkt::BgpMessage;
+use netcalyx_bgp_pkt::capabilities::BgpCapability;
+use netcalyx_bgp_pkt::codec::BgpCodec;
+use netcalyx_bgp_pkt::iana::BgpMessageType;
+use netcalyx_bgp_pkt::path_attribute::PathAttributeValue;
+use netcalyx_bgp_pkt::wire::deserializer::BgpParsingContext;
+use netcalyx_iana::address_family::AddressType;
+use netcalyx_parse_utils::{ReadablePduWithOneInput, Span, WritablePdu};
+use netcalyx_pcap_reader::{PcapIter, TransportProtocol};
 use pcap_parser::LegacyPcapReader;
 use std::collections::HashMap;
 use std::hint::black_box;

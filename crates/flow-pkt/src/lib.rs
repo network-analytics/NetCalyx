@@ -23,8 +23,8 @@
 //!
 //! ```rust
 //! use chrono::{TimeZone, Utc};
-//! use netgauze_flow_pkt::ipfix::{IpfixPacket, Set};
-//! use netgauze_flow_pkt::{DataSetId, FlowInfo};
+//! use netcalyx_flow_pkt::ipfix::{IpfixPacket, Set};
+//! use netcalyx_flow_pkt::{DataSetId, FlowInfo};
 //!
 //! let export_time = Utc.with_ymd_and_hms(2024, 6, 20, 14, 0, 0).unwrap();
 //! let ipfix = IpfixPacket::new(
@@ -220,7 +220,7 @@ mod tests {
     use crate::ipfix::IpfixPacket;
     use crate::netflow::NetFlowV9Packet;
     use chrono::{TimeZone, Utc};
-    use netgauze_iana::tcp::TCPHeaderFlags;
+    use netcalyx_iana::tcp::TCPHeaderFlags;
 
     #[test]
     fn test_flow_info_api() {

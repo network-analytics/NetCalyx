@@ -14,8 +14,8 @@
 // limitations under the License.
 
 use byteorder::{NetworkEndian, WriteBytesExt};
-use netgauze_parse_utils::{WritablePdu, WritablePduWithOneInput};
-use netgauze_serde_macros::WritingError;
+use netcalyx_parse_utils::{WritablePdu, WritablePduWithOneInput};
+use netcalyx_serde_macros::WritingError;
 use std::io::Write;
 
 use crate::ipfix::*;

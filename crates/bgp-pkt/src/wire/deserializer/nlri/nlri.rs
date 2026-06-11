@@ -23,12 +23,12 @@ use crate::wire::serializer::nlri::{
     MAC_ADDRESS_LEN_BITS, MPLS_LABEL_LEN_BITS, RD_LEN,
 };
 use ipnet::{Ipv4Net, Ipv6Net};
-use netgauze_parse_utils::{
+use netcalyx_parse_utils::{
     ErrorKindSerdeDeref, ReadablePdu, ReadablePduWithOneInput, ReadablePduWithThreeInputs,
     ReadablePduWithTwoInputs, Span, parse_into_located, parse_into_located_one_input,
     parse_into_located_two_inputs,
 };
-use netgauze_serde_macros::LocatedError;
+use netcalyx_serde_macros::LocatedError;
 use nom::IResult;
 use nom::error::ErrorKind;
 use nom::number::complete::{be_u8, be_u16, be_u32, be_u128};

@@ -14,7 +14,7 @@
 // limitations under the License.
 
 use clap::{Parser, ValueEnum};
-use netgauze_pcap_decoder::{
+use netcalyx_pcap_decoder::{
     BgpProtocolHandler, BmpProtocolHandler, Config, FlowProtocolHandler, UdpNotifProtocolHandler,
     load_pcap_and_process,
 };

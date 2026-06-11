@@ -25,8 +25,8 @@ use crate::wire::serializer::nlri::*;
 use crate::wire::serializer::path_attribute::BgpLsAttributeWritingError;
 use crate::wire::serializer::path_attribute::bgp_sid::SegmentIdentifierWritingError;
 use byteorder::{NetworkEndian, WriteBytesExt};
-use netgauze_parse_utils::{WritablePdu, WritablePduWithOneInput};
-use netgauze_serde_macros::WritingError;
+use netcalyx_parse_utils::{WritablePdu, WritablePduWithOneInput};
+use netcalyx_serde_macros::WritingError;
 use std::net::IpAddr;
 
 #[derive(WritingError, Eq, PartialEq, Clone, Debug)]

@@ -5,17 +5,17 @@
 [![Apache licensed][apache-badge]][apache-url]
 
 
-[crates-badge]: https://img.shields.io/crates/v/netgauze-udp-notif-pkt.svg
+[crates-badge]: https://img.shields.io/crates/v/netcalyx-udp-notif-pkt.svg
 
-[crates-url]: https://crates.io/crates/netgauze-udp-notif-pkt
+[crates-url]: https://crates.io/crates/netcalyx-udp-notif-pkt
 
 [apache-badge]: https://img.shields.io/badge/license-Apache-blue.svg
 
-[apache-url]: https://github.com/NetGauze/NetGauze/blob/main/LICENSE
+[apache-url]: https://github.com/network-analytics/NetCalyx/blob/main/LICENSE
 
-[docs-badge]: https://docs.rs/netgauze-udp-notif-pkt/badge.svg
+[docs-badge]: https://docs.rs/netcalyx-udp-notif-pkt/badge.svg
 
-[docs-url]: https://docs.rs/netgauze-udp-notif-pkt
+[docs-url]: https://docs.rs/netcalyx-udp-notif-pkt
 
 
 A complete Rust implementation
