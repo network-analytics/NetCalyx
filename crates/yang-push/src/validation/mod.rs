@@ -167,6 +167,7 @@ pub struct ValidationStats {
     pub validation_malformed: opentelemetry::metrics::Counter<u64>,
     pub validation_skip: opentelemetry::metrics::Counter<u64>,
     pub messages_sent: opentelemetry::metrics::Counter<u64>,
+    pub messages_dropped: opentelemetry::metrics::Counter<u64>,
 }
 
 impl ValidationStats {
@@ -241,6 +242,10 @@ impl ValidationStats {
             .u64_counter("netcalyx.collector.yang_push.validation.messages.sent")
             .with_description("Number of Telemetry Messages successfully sent upstream")
             .build();
+        let messages_dropped = meter
+            .u64_counter("netcalyx.collector.yang_push.validation.messages.dropped")
+            .with_description("Number of Telemetry Messages failed to send upstream")
+            .build();
         Self {
             messages_received,
             messages_decoding_success,
@@ -258,6 +263,7 @@ impl ValidationStats {
             validation_malformed,
             validation_skip,
             messages_sent,
+            messages_dropped,
         }
     }
 }
@@ -688,6 +694,7 @@ impl ValidationActor {
                     notification_type,
                     "Failed to send UDP-Notif message for the next actor to process"
                 );
+                self.stats.messages_dropped.add(1, &peer_tags);
                 ValidationActorError::SendError
             })?;
         self.stats.messages_sent.add(1, &peer_tags);
