@@ -159,7 +159,7 @@ mod tests {
     }
 
     #[test]
-    fn test_udp_notif_handler_decode_fragmented_success() {
+    fn test_udp_notif_handler_decode_truncated_datagram_is_malformed() {
         let handler = UdpNotifProtocolHandler::new(vec![4739]);
         let flow_key = (
             IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
@@ -167,39 +167,51 @@ mod tests {
             IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)),
             4739,
         );
-        let packet_data1 = [
+        // A datagram whose declared Message Length (14) exceeds the bytes actually
+        // present (12). UDP-Notif is datagram oriented: each datagram is complete on
+        // its own and must not be reassembled across datagrams, so a short datagram
+        // is malformed rather than an incomplete read awaiting more data.
+        let truncated = [
+            0x21, // version 1, no private space, Media type: 1 = YANG data JSON
+            0x0c, // Header length
+            0x00, 0x0e, // Message length (14, but only 12 bytes are present)
+            0x01, 0x00, 0x00, 0x01, // Publisher ID
+            0x02, 0x00, 0x00, 0x02, // Message ID
+        ];
+        let mut exporter_peers = HashMap::new();
+
+        let result = handler.decode(
+            flow_key,
+            TransportProtocol::UDP,
+            &truncated,
+            &mut exporter_peers,
+        );
+        assert_eq!(
+            result,
+            Some(vec![DecodeOutcome::Error(
+                UdpPacketCodecError::InvalidMessageLength(14)
+            )]),
+        );
+        // The malformed bytes must be cleared, never retained for a later datagram.
+        assert!(exporter_peers.get(&flow_key).unwrap().1.is_empty());
+
+        // A subsequent complete datagram decodes independently of the prior one.
+        let complete = [
             0x21, // version 1, no private space, Media type: 1 = YANG data JSON
             0x0c, // Header length
             0x00, 0x0e, // Message length
             0x01, 0x00, 0x00, 0x01, // Publisher ID
             0x02, 0x00, 0x00, 0x02, // Message ID
-        ];
-        let packet_data2 = [
             0xff, 0xff, // dummy payload
         ];
-        let mut exporter_peers = HashMap::new();
-
-        let result1 = handler.decode(
+        let result = handler.decode(
             flow_key,
             TransportProtocol::UDP,
-            &packet_data1,
+            &complete,
             &mut exporter_peers,
         );
-        // UDP is datagram oriented, so the codec will wait for the full datagram.
-        // The test setup simulates fragmentation at a higher level.
-        assert!(result1.is_none());
-        // The buffer for this flow key should now contain the first part, so not empty
-        assert!(!exporter_peers.get(&flow_key).unwrap().1.is_empty());
-
-        let result2 = handler.decode(
-            flow_key,
-            TransportProtocol::UDP,
-            &packet_data2,
-            &mut exporter_peers,
-        );
-
         assert_eq!(
-            result2,
+            result,
             Some(vec![DecodeOutcome::Success((
                 flow_key,
                 UdpNotifPacket::new(

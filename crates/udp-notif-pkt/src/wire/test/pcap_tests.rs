@@ -194,10 +194,7 @@ fn test_udp_notif_pcap(overwrite: bool, pcap_path: PathBuf) {
                             "dump": hexdump,
                         }
                     );
-                    (
-                        ret,
-                        Err(format!("Packet was not valid UDP-Notif massage: {err}")),
-                    )
+                    (ret, Err(format!("UDP-Notif codec error: {err}")))
                 }
             };
             if let Some(file) = json_file.as_mut() {

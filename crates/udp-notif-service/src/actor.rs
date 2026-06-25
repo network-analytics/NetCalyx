@@ -84,6 +84,8 @@
 //!         interface_bind,
 //!         100,
 //!         Duration::from_millis(500),
+//!         64,
+//!         Duration::from_secs(10),
 //!         either::Either::Left(meter),
 //!     )
 //!     .await
@@ -192,6 +194,12 @@ struct UdpNotifActor {
     /// Timeout for sending a udp-notif packet to a subscriber before dropping
     /// it.
     subscriber_timeout: Duration,
+    /// Maximum number of segments per reassembly buffer, forwarded to each new
+    /// per-peer [`UdpPacketCodec`].
+    reassembly_max_segments: u16,
+    /// How long to keep an incomplete reassembly buffer before discarding it,
+    /// forwarded to each new per-peer [`UdpPacketCodec`].
+    reassembly_timeout: Duration,
     peers_usage: HashMap<SocketAddr, PeerUsage>,
     clients: HashMap<SocketAddr, UdpPacketCodec>,
     stats: UdpNotifCollectorStats,
@@ -205,6 +213,10 @@ pub struct UdpNotifCollectorStats {
     subscribers: opentelemetry::metrics::Gauge<u64>,
     subscriber_sent: opentelemetry::metrics::Counter<u64>,
     subscriber_dropped: opentelemetry::metrics::Counter<u64>,
+    reassembly_timeout_evictions: opentelemetry::metrics::Counter<u64>,
+    reassembly_duplicate_drops: opentelemetry::metrics::Counter<u64>,
+    reassembly_max_segments_exceeded: opentelemetry::metrics::Counter<u64>,
+    reassembly_incomplete_messages: opentelemetry::metrics::Gauge<u64>,
 }
 
 impl UdpNotifCollectorStats {
@@ -235,6 +247,30 @@ impl UdpNotifCollectorStats {
             .u64_counter("netcalyx.udp-notif.subscribers.dropped")
             .with_description("Number of udp-notif packets dropped before sending to subscribers")
             .build();
+        let reassembly_timeout_evictions = meter
+            .u64_counter("netcalyx.udp-notif.reassembly.timeout_evictions")
+            .with_description(
+                "Number of incomplete reassembly buffers discarded because they exceeded the reassembly timeout",
+            )
+            .build();
+        let reassembly_duplicate_drops = meter
+            .u64_counter("netcalyx.udp-notif.reassembly.duplicate_drops")
+            .with_description(
+                "Number of segments dropped because their segment number was already in the reassembly buffer (retransmission or message-id reuse)",
+            )
+            .build();
+        let reassembly_max_segments_exceeded = meter
+            .u64_counter("netcalyx.udp-notif.reassembly.max_segments_exceeded")
+            .with_description(
+                "Number of reassembly buffers aborted because they exceeded the configured maximum segment count",
+            )
+            .build();
+        let reassembly_incomplete_messages = meter
+            .u64_gauge("netcalyx.udp-notif.reassembly.incomplete_messages")
+            .with_description(
+                "Current number of incomplete reassembly buffers waiting for more segments",
+            )
+            .build();
 
         Self {
             received,
@@ -243,17 +279,24 @@ impl UdpNotifCollectorStats {
             subscribers,
             subscriber_sent,
             subscriber_dropped,
+            reassembly_timeout_evictions,
+            reassembly_duplicate_drops,
+            reassembly_max_segments_exceeded,
+            reassembly_incomplete_messages,
         }
     }
 }
 
 impl UdpNotifActor {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         actor_id: ActorId,
         socket_addr: SocketAddr,
         interface_bind: Option<String>,
         cmd_rx: mpsc::Receiver<ActorCommand>,
         subscriber_timeout: Duration,
+        reassembly_max_segments: u16,
+        reassembly_timeout: Duration,
         stats: UdpNotifCollectorStats,
     ) -> Self {
         Self {
@@ -264,6 +307,8 @@ impl UdpNotifActor {
             next_subscriber_id: 1,
             subscribers: HashMap::default(),
             subscriber_timeout,
+            reassembly_max_segments,
+            reassembly_timeout,
             peers_usage: HashMap::default(),
             clients: HashMap::new(),
             stats,
@@ -280,7 +325,60 @@ impl UdpNotifActor {
         let (mut buf, addr) = next;
         // If we haven't seen the client before, create a new UdpPacketCodec for it.
         // UdpPacketCodec handles the decoding/encoding of packets.
-        let result = self.clients.entry(addr).or_default().decode(&mut buf);
+        let codec = self.clients.entry(addr).or_insert_with(|| {
+            UdpPacketCodec::new(self.reassembly_max_segments, self.reassembly_timeout)
+        });
+        let result = codec.decode(&mut buf);
+
+        // Update gauge tracking incomplete-messages current queue depth.
+        let peer_attrs = [
+            opentelemetry::KeyValue::new("netcalyx.udp-notif.actor", format!("{}", self.actor_id)),
+            opentelemetry::KeyValue::new("network.peer.address", format!("{}", addr.ip())),
+            opentelemetry::KeyValue::new(
+                "network.peer.port",
+                opentelemetry::Value::I64(addr.port().into()),
+            ),
+        ];
+        self.stats
+            .reassembly_incomplete_messages
+            .record(codec.incomplete_messages_count() as u64, &peer_attrs);
+
+        // Drain reassembly events
+        let reassembly_events = codec.take_reassembly_events();
+        if reassembly_events.timeout_evictions > 0 {
+            debug!(
+                peer=%addr,
+                evicted=reassembly_events.timeout_evictions,
+                "[Actor {}-{}] evicted timed-out reassembly buffers",
+                self.actor_id, self.socket_addr,
+            );
+            self.stats
+                .reassembly_timeout_evictions
+                .add(reassembly_events.timeout_evictions, &peer_attrs);
+        }
+        if reassembly_events.duplicate_drops > 0 {
+            debug!(
+                peer=%addr,
+                dropped=reassembly_events.duplicate_drops,
+                "[Actor {}-{}] dropped duplicate segments",
+                self.actor_id, self.socket_addr,
+            );
+            self.stats
+                .reassembly_duplicate_drops
+                .add(reassembly_events.duplicate_drops, &peer_attrs);
+        }
+        if reassembly_events.max_segments_exceeded > 0 {
+            debug!(
+                peer=%addr,
+                aborted=reassembly_events.max_segments_exceeded,
+                "[Actor {}-{}] aborted reassembly buffers exceeding the max segment count",
+                self.actor_id, self.socket_addr,
+            );
+            self.stats
+                .reassembly_max_segments_exceeded
+                .add(reassembly_events.max_segments_exceeded, &peer_attrs);
+        }
+
         match result {
             Ok(Some(pkt)) => {
                 let message_id = pkt.message_id();
@@ -884,12 +982,15 @@ pub struct ActorHandle {
 }
 
 impl ActorHandle {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         actor_id: ActorId,
         socket_addr: SocketAddr,
         interface_bind: Option<String>,
         cmd_buffer_size: usize,
         subscriber_timeout: Duration,
+        reassembly_max_segments: u16,
+        reassembly_timeout: Duration,
         stats: either::Either<opentelemetry::metrics::Meter, UdpNotifCollectorStats>,
     ) -> Result<
         (
@@ -909,6 +1010,8 @@ impl ActorHandle {
             interface_bind.clone(),
             cmd_rx,
             subscriber_timeout,
+            reassembly_max_segments,
+            reassembly_timeout,
             stats,
         );
         let join_handle = tokio::spawn(actor.run());
@@ -1045,6 +1148,7 @@ mod tests {
     use super::*;
     use bytes::{Buf, Bytes, BytesMut};
     use netcalyx_parse_utils::WritablePdu;
+    use netcalyx_udp_notif_pkt::codec::{DEFAULT_MAX_SEGMENTS, DEFAULT_REASSEMBLY_TIMEOUT};
     use netcalyx_udp_notif_pkt::raw::{MediaType, UdpNotifPacket};
     use std::io::Cursor;
     use tokio::net::UdpSocket;
@@ -1064,6 +1168,8 @@ mod tests {
             None,
             10,
             Duration::from_secs(1),
+            DEFAULT_MAX_SEGMENTS,
+            DEFAULT_REASSEMBLY_TIMEOUT,
             either::Either::Left(meter),
         )
         .await
