@@ -10,11 +10,10 @@ use tracing::{error, info};
 use netcalyx_udp_notif_pkt::codec::UdpPacketCodec;
 
 fn init_tracing() {
-    // Very simple setup at the moment to validate the instrumentation in the code
-    // is working in the future that should be configured automatically based on
-    // configuration options
+    // Delegate filtering entirely to RUST_LOG so callers can set any level,
+    // including TRACE, without recompiling.
     let subscriber = tracing_subscriber::FmtSubscriber::builder()
-        .with_max_level(tracing::Level::DEBUG)
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .finish();
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 }
