@@ -179,11 +179,11 @@ impl ValidationStats {
             )
             .build();
         let messages_decoding_success = meter
-            .u64_counter("netcalyx.collector.yang_push.validation.messages.decode.success")
+            .u64_counter("netcalyx.collector.yang_push.validation.messages.decoded.success")
             .with_description("Number of YANG-Push messages decoded successfully (UDP-Notif payload read successfully)")
             .build();
         let messages_decoding_fail = meter
-            .u64_counter("netcalyx.collector.yang_push.validation.messages.decode.fail")
+            .u64_counter("netcalyx.collector.yang_push.validation.messages.decoded.fail")
             .with_description("Number of YANG-Push messages dropped because of decoding errors (Couldn't read UDP-Notif payload)")
             .build();
         let cache_request_by_subscription_info = meter
