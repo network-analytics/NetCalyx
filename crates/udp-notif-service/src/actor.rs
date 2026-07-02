@@ -383,27 +383,12 @@ impl UdpNotifActor {
             Ok(Some(pkt)) => {
                 let message_id = pkt.message_id();
                 let publisher_id = pkt.publisher_id();
-                self.stats.decoded.add(
-                    1,
-                    &[
-                        opentelemetry::KeyValue::new(
-                            "netcalyx.udp-notif.actor",
-                            format!("{}", self.actor_id),
-                        ),
-                        opentelemetry::KeyValue::new(
-                            "network.peer.address",
-                            format!("{}", addr.ip()),
-                        ),
-                        opentelemetry::KeyValue::new(
-                            "network.peer.port",
-                            opentelemetry::Value::I64(addr.port().into()),
-                        ),
-                        opentelemetry::KeyValue::new(
-                            OTL_UDP_NOTIF_PUBLISHER_ID_KEY,
-                            opentelemetry::Value::I64(publisher_id.into()),
-                        ),
-                    ],
-                );
+                let mut decoded_tags = peer_attrs.to_vec();
+                decoded_tags.push(opentelemetry::KeyValue::new(
+                    OTL_UDP_NOTIF_PUBLISHER_ID_KEY,
+                    opentelemetry::Value::I64(publisher_id.into()),
+                ));
+                self.stats.decoded.add(1, &decoded_tags);
                 trace!(
                     peer=%addr,
                     message_id,
@@ -422,27 +407,12 @@ impl UdpNotifActor {
                 None
             }
             Err(err) => {
-                self.stats.malformed.add(
-                    1,
-                    &[
-                        opentelemetry::KeyValue::new(
-                            "netcalyx.udp-notif.actor",
-                            format!("{}", self.actor_id),
-                        ),
-                        opentelemetry::KeyValue::new(
-                            "network.peer.address",
-                            format!("{}", addr.ip()),
-                        ),
-                        opentelemetry::KeyValue::new(
-                            "network.peer.port",
-                            opentelemetry::Value::I64(addr.port().into()),
-                        ),
-                        opentelemetry::KeyValue::new(
-                            "netcalyx.udp-notif.decoding.error.msg",
-                            opentelemetry::Value::String(err.to_string().into()),
-                        ),
-                    ],
-                );
+                let mut malformed_tags = peer_attrs.to_vec();
+                malformed_tags.push(opentelemetry::KeyValue::new(
+                    "netcalyx.udp-notif.decoding.error.msg",
+                    opentelemetry::Value::String(err.to_string().into()),
+                ));
+                self.stats.malformed.add(1, &malformed_tags);
                 warn!(
                     peer=%addr,
                     error=%err,
@@ -488,11 +458,11 @@ impl UdpNotifActor {
                     &[
                         opentelemetry::KeyValue::new(
                             "network.peer.address",
-                            format!("{}", socket_addr.ip()),
+                            format!("{}", peer.ip()),
                         ),
                         opentelemetry::KeyValue::new(
                             "network.peer.port",
-                            opentelemetry::Value::I64(socket_addr.port().into()),
+                            opentelemetry::Value::I64(peer.port().into()),
                         ),
                         opentelemetry::KeyValue::new(
                             OTL_UDP_NOTIF_PUBLISHER_ID_KEY,
@@ -529,11 +499,11 @@ impl UdpNotifActor {
                         &[
                             opentelemetry::KeyValue::new(
                                 "network.peer.address",
-                                format!("{}", socket_addr.ip()),
+                                format!("{}", peer.ip()),
                             ),
                             opentelemetry::KeyValue::new(
                                 "network.peer.port",
-                                opentelemetry::Value::I64(socket_addr.port().into()),
+                                opentelemetry::Value::I64(peer.port().into()),
                             ),
                             opentelemetry::KeyValue::new(
                                 OTL_UDP_NOTIF_PUBLISHER_ID_KEY,
@@ -564,11 +534,11 @@ impl UdpNotifActor {
                         &[
                             opentelemetry::KeyValue::new(
                                 "network.peer.address",
-                                format!("{}", socket_addr.ip()),
+                                format!("{}", peer.ip()),
                             ),
                             opentelemetry::KeyValue::new(
                                 "network.peer.port",
-                                opentelemetry::Value::I64(socket_addr.port().into()),
+                                opentelemetry::Value::I64(peer.port().into()),
                             ),
                             opentelemetry::KeyValue::new(
                                 OTL_UDP_NOTIF_PUBLISHER_ID_KEY,
@@ -604,13 +574,10 @@ impl UdpNotifActor {
             drop_counter_clone.add(
                 1,
                 &[
-                    opentelemetry::KeyValue::new(
-                        "network.peer.address",
-                        format!("{}", socket_addr.ip()),
-                    ),
+                    opentelemetry::KeyValue::new("network.peer.address", format!("{}", peer.ip())),
                     opentelemetry::KeyValue::new(
                         "network.peer.port",
-                        opentelemetry::Value::I64(socket_addr.port().into()),
+                        opentelemetry::Value::I64(peer.port().into()),
                     ),
                     opentelemetry::KeyValue::new(
                         OTL_UDP_NOTIF_PUBLISHER_ID_KEY,
