@@ -32,11 +32,13 @@ use tokio_util::codec::{Decoder, Encoder};
 const MIN_HEADER_LENGTH: u8 = 12;
 
 /// Default maximum number of segments per reassembly buffer.
-/// Adjust according to draft-ietf-netconf-udp-notif recommendations.
+/// draft-ietf-netconf-udp-notif §5.2 RECOMMENDs limiting segments to fewer than
+/// 64.
 pub const DEFAULT_MAX_SEGMENTS: u16 = 64;
 
 /// Default reassembly timeout.
-/// Adjust according to draft-ietf-netconf-udp-notif recommendations.
+/// draft-ietf-netconf-udp-notif §5.2: reassembly SHOULD occur within 10 seconds
+/// and SHALL NOT exceed 20 seconds.
 pub const DEFAULT_REASSEMBLY_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Counts of reassembly events accumulated since the last call to
@@ -120,8 +122,8 @@ struct ReassemblyBuffer {
 
 impl ReassemblyBuffer {
     #[inline]
-    fn is_timed_out(&self, timeout_duration: Duration) -> bool {
-        Instant::now().duration_since(self.timestamp) > timeout_duration
+    fn is_timed_out(&self, now: Instant, timeout_duration: Duration) -> bool {
+        now.duration_since(self.timestamp) > timeout_duration
     }
 
     fn add_segment(&mut self, segment_number: u16, packet: UdpNotifPacket, is_last: bool) {
@@ -230,6 +232,9 @@ pub enum UdpPacketCodecError {
     #[strum(to_string = "I/O error {0}")]
     IoError(String),
 
+    #[strum(to_string = "Truncated UDP-Notif header: received {0} bytes, need at least 12")]
+    TruncatedHeader(usize),
+
     #[strum(to_string = "Invalid UDP-Notif header length {0}")]
     InvalidHeaderLength(u8),
 
@@ -244,6 +249,9 @@ pub enum UdpPacketCodecError {
 
     #[strum(to_string = "UDP-Notif serialization error: {0}")]
     WritingError(UdpNotifPacketWritingError),
+
+    #[strum(to_string = "UDP-Notif codec internal error: {0}")]
+    InternalError(&'static str),
 }
 
 impl<'a> From<nom::Err<LocatedUdpNotifPacketParsingError<'a>>> for UdpPacketCodecError {
@@ -334,18 +342,20 @@ impl UdpPacketCodec {
         self.incomplete_messages.len()
     }
 
-    /// Validate the fixed header against a single, self-contained UDP datagram.
+    /// Validate the fixed header of a single, self-contained UDP datagram.
     ///
-    /// Unlike a TCP stream codec, every `decode()` call receives exactly one
-    /// complete datagram, so a buffer that is shorter than the declared header
-    /// or message length is malformed (truncated) rather than "incomplete".
-    /// Such datagrams are rejected with an error instead of being held for a
-    /// future read.
+    /// POSIX `recvfrom(2)` guarantees that for `SOCK_DGRAM` sockets the
+    /// entire message is read in a single operation; if the buffer is smaller
+    /// than the datagram the excess bytes are discarded, never queued for the
+    /// next call. `UdpFramed<BytesCodec>` relies on this directly, so each
+    /// `decode()` call sees exactly one complete datagram. A buffer shorter
+    /// than the declared header or message length is therefore a
+    /// truncated/malformed datagram and is rejected immediately.
     #[inline]
     fn check_len(&self, buf: &BytesMut) -> Result<(u8, u16), UdpPacketCodecError> {
         if buf.len() < MIN_HEADER_LENGTH as usize {
-            // Datagram is shorter than the fixed header: malformed/truncated.
-            return Err(UdpPacketCodecError::InvalidHeaderLength(buf.len() as u8));
+            // Datagram is shorter than the fixed header: truncated in transit.
+            return Err(UdpPacketCodecError::TruncatedHeader(buf.len()));
         }
         let header_len = buf[1];
         if header_len < MIN_HEADER_LENGTH || buf.len() < header_len as usize {
@@ -388,10 +398,13 @@ impl UdpPacketCodec {
 
         let message_key = (publisher_id, message_id);
 
-        // Detect duplicate segment numbers: a segment whose number is already
-        // present in the buffer is either a network retransmission or a sign that
-        // the sender has reused the message-id for a new message.
-        // Duplicate segments are dropped according to draft-ietf-netconf-udp-notif.
+        // Detect duplicate segment numbers: a segment whose (publisher_id,
+        // message_id, seg_no) triple is already present in the buffer is a
+        // network retransmission and MUST be dropped (draft-ietf-netconf-udp-notif
+        // §4.1). Note: if a sender reuses a message_id before the old
+        // reassembly buffer has timed out, new segments will be dropped here
+        // too until the old buffer is evicted by the timeout. This is bounded
+        // by reassembly_timeout.
         let is_duplicate = self
             .incomplete_messages
             .get(&message_key)
@@ -403,11 +416,13 @@ impl UdpPacketCodec {
             return Ok(None);
         }
 
-        let reassembly_buf = self.incomplete_messages.entry(message_key).or_default();
-        reassembly_buf.add_segment(seg_no, pkt, is_last);
-
-        // Enforce the per-message segment cap
-        if reassembly_buf.segments.len() > self.max_segments as usize {
+        // Enforce the per-message segment cap (draft-ietf-netconf-udp-notif §5.2):
+        // reject if adding this segment would exceed the limit.
+        if self
+            .incomplete_messages
+            .get(&message_key)
+            .is_some_and(|b| b.segments.len() >= self.max_segments as usize)
+        {
             self.incomplete_messages.remove(&message_key);
             self.reassembly_events.max_segments_exceeded += 1;
             return Err(UdpPacketCodecError::ReassemblyError(
@@ -418,6 +433,9 @@ impl UdpPacketCodec {
                 },
             ));
         }
+
+        let reassembly_buf = self.incomplete_messages.entry(message_key).or_default();
+        reassembly_buf.add_segment(seg_no, pkt, is_last);
 
         if !reassembly_buf.ready_to_reassemble() {
             return Ok(None);
@@ -431,7 +449,10 @@ impl UdpPacketCodec {
                 publisher_id,
                 message_id,
             )?)),
-            None => Ok(None),
+            // Unreachable (internal error just for safety)
+            None => Err(UdpPacketCodecError::InternalError(
+                "reassembly buffer vanished after ready_to_reassemble returned true",
+            )),
         }
     }
 }
@@ -444,9 +465,10 @@ impl Decoder for UdpPacketCodec {
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         // Evict reassembly buffers that have exceeded the configured timeout,
         // accumulating the count into reassembly_events for the caller to report.
+        let now = Instant::now();
         let before = self.incomplete_messages.len();
         self.incomplete_messages
-            .retain(|_, b| !b.is_timed_out(self.reassembly_timeout));
+            .retain(|_, b| !b.is_timed_out(now, self.reassembly_timeout));
         let evicted = before - self.incomplete_messages.len();
         if evicted > 0 {
             self.reassembly_events.timeout_evictions += evicted as u64;
@@ -567,7 +589,7 @@ mod tests {
 
         let mut buf = BytesMut::from(&value_wire1[..]);
         let value1 = codec.decode(&mut buf);
-        buf.extend_from_slice(&value_wire2[..]);
+        let mut buf = BytesMut::from(&value_wire2[..]);
         let value2 = codec.decode(&mut buf);
 
         assert!(matches!(value1, Ok(None)));
@@ -616,7 +638,7 @@ mod tests {
 
         let value1 = codec.decode(&mut buf);
 
-        buf.extend_from_slice(&value_wire2[..]);
+        let mut buf = BytesMut::from(&value_wire2[..]);
         let value2 = codec.decode(&mut buf);
 
         assert!(matches!(value1, Ok(None)));
@@ -651,7 +673,7 @@ mod tests {
         let mut buf = BytesMut::from(&[0x21u8, 0x0c, 0x00][..]);
         assert!(matches!(
             codec.decode(&mut buf),
-            Err(UdpPacketCodecError::InvalidHeaderLength(3))
+            Err(UdpPacketCodecError::TruncatedHeader(3))
         ));
     }
 
@@ -703,7 +725,7 @@ mod tests {
         assert_eq!(codec.decode(&mut buf), Ok(None));
 
         // Resend the same segment (duplicate).
-        buf.extend_from_slice(&seg0[..]);
+        let mut buf = BytesMut::from(&seg0[..]);
         assert_eq!(codec.decode(&mut buf), Ok(None));
 
         let events = codec.take_reassembly_events();
@@ -732,7 +754,7 @@ mod tests {
         assert_eq!(codec.decode(&mut buf), Ok(None));
         assert_eq!(codec.incomplete_messages_count(), 1);
 
-        buf.extend_from_slice(&seg1[..]);
+        let mut buf = BytesMut::from(&seg1[..]);
         assert!(matches!(
             codec.decode(&mut buf),
             Err(UdpPacketCodecError::ReassemblyError(
@@ -741,6 +763,49 @@ mod tests {
         ));
         // Buffer must be removed after the cap is exceeded.
         assert_eq!(codec.incomplete_messages_count(), 0);
+
+        let events = codec.take_reassembly_events();
+        assert_eq!(events.max_segments_exceeded, 1);
+    }
+
+    #[test]
+    fn test_decode_max_segments_exceeded_on_last_segment() {
+        // Verify that when the *last* segment triggers the cap, the buffer is
+        // fully removed and the has_last/expected_count state does not persist,
+        // so a subsequent message with the same key starts with a clean buffer.
+        let mut codec = UdpPacketCodec::new(1, DEFAULT_REASSEMBLY_TIMEOUT);
+        let seg0: Vec<u8> = vec![
+            0x21, 0x10, 0x00, 0x14, 0x01, 0x00, 0x00, 0x01, // Publisher ID
+            0x02, 0x00, 0x00, 0x02, // Message ID
+            0x01, 0x04, 0x00, 0x00, // segment 0, not last
+            0xff, 0xff, 0xff, 0xff,
+        ];
+        let seg1_last: Vec<u8> = vec![
+            0x21, 0x10, 0x00, 0x14, 0x01, 0x00, 0x00, 0x01, // Publisher ID
+            0x02, 0x00, 0x00, 0x02, // Message ID
+            0x01, 0x04, 0x00, 0x03, // segment 1, last
+            0xee, 0xee, 0xee, 0xee,
+        ];
+
+        let mut buf = BytesMut::from(&seg0[..]);
+        assert_eq!(codec.decode(&mut buf), Ok(None));
+        assert_eq!(codec.incomplete_messages_count(), 1);
+
+        // The last segment triggers the cap — buffer must be dropped entirely.
+        let mut buf = BytesMut::from(&seg1_last[..]);
+        assert!(matches!(
+            codec.decode(&mut buf),
+            Err(UdpPacketCodecError::ReassemblyError(
+                ReassemblyBufferError::MaxSegmentsExceeded { .. }
+            ))
+        ));
+        assert_eq!(codec.incomplete_messages_count(), 0);
+
+        // Re-send seg0 for the same key: must create a fresh buffer, not
+        // inherit any has_last/expected_count from the dropped buffer.
+        let mut buf = BytesMut::from(&seg0[..]);
+        assert_eq!(codec.decode(&mut buf), Ok(None));
+        assert_eq!(codec.incomplete_messages_count(), 1);
 
         let events = codec.take_reassembly_events();
         assert_eq!(events.max_segments_exceeded, 1);
