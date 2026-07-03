@@ -149,6 +149,10 @@ pub struct NetconfSshConnectConfig<H> {
     announce_caps: HashSet<Capability>,
     handler: H,
     config: Arc<russh::client::Config>,
+    /// Maximum buffered NETCONF message size (in bytes); defaults
+    /// to [`crate::codec::DEFAULT_MAX_MESSAGE_SIZE`], override with
+    /// [`NetconfSshConnectConfig::with_max_message_size`].
+    max_message_size: usize,
 }
 
 impl<H: russh::client::Handler> NetconfSshConnectConfig<H> {
@@ -169,7 +173,15 @@ impl<H: russh::client::Handler> NetconfSshConnectConfig<H> {
             announce_caps,
             handler,
             config,
+            max_message_size: crate::codec::DEFAULT_MAX_MESSAGE_SIZE,
         }
+    }
+
+    /// Override the maximum buffered NETCONF message size (in bytes).
+    /// Defaults to [`crate::codec::DEFAULT_MAX_MESSAGE_SIZE`].
+    pub const fn with_max_message_size(mut self, max_message_size: usize) -> Self {
+        self.max_message_size = max_message_size;
+        self
     }
 
     pub const fn auth(&self) -> &SshAuth {
@@ -198,6 +210,10 @@ impl<H: russh::client::Handler> NetconfSshConnectConfig<H> {
 
     pub fn config(&self) -> &russh::client::Config {
         self.config.as_ref()
+    }
+
+    pub const fn max_message_size(&self) -> usize {
+        self.max_message_size
     }
 }
 
@@ -286,7 +302,13 @@ where
         config.peer_address
     );
     let stream = channel.into_stream();
-    NetConfSshClient::connect(config.peer_address, stream, config.announce_caps).await
+    NetConfSshClient::connect(
+        config.peer_address,
+        stream,
+        config.announce_caps,
+        config.max_message_size,
+    )
+    .await
 }
 
 pub struct NetConfSshClient<T> {
@@ -388,13 +410,17 @@ impl<T: AsyncRead + AsyncWrite + Unpin> NetConfSshClient<T> {
     /// Connect to a NETCONF server via SSH.
     /// The client can choose which NETCONF capabilities to announce to the
     /// server, the [NetconfVersion::V1_1] is required and
-    /// [NetconfVersion::V1_0] is not allowed
+    /// [NetconfVersion::V1_0] is not allowed.
+    ///
+    /// `max_message_size` bounds the buffered message size (in bytes); use
+    /// [`crate::codec::DEFAULT_MAX_MESSAGE_SIZE`] for the default.
     pub async fn connect(
         peer: SocketAddr,
         stream: T,
         announce_caps: HashSet<Capability>,
+        max_message_size: usize,
     ) -> Result<Self, NetConfSshClientError> {
-        let framed = Framed::new(stream, SshCodec::default());
+        let framed = Framed::new(stream, SshCodec::with_max_message_size(max_message_size));
         let (framed, session_id, peer_caps) = Self::exchange_hello(framed, announce_caps).await?;
         let next_message_id = 10110;
         Ok(Self {
@@ -414,21 +440,17 @@ impl<T: AsyncRead + AsyncWrite + Unpin> NetConfSshClient<T> {
     ) -> Result<Box<str>, NetConfSshClientError> {
         let message_id = self.next_message_id().to_string().into_boxed_str();
         let rpc = Rpc::new(message_id.clone(), operation);
-        if tracing::enabled!(tracing::Level::TRACE) {
-            trace!(
-                "[{}] Sending RPC Request with message id `{}` and payload `{rpc:?}`",
-                self.peer, message_id
-            );
-        }
+        trace!(
+            "[{}] Sending RPC Request with message id `{}` and payload `{rpc:?}`",
+            self.peer, message_id
+        );
         self.framed.send(NetConfMessage::Rpc(rpc)).await?;
         Ok(message_id)
     }
 
     pub async fn rpc_reply(&mut self) -> Result<RpcReply, NetConfSshClientError> {
         let msg = self.framed.next().await;
-        if tracing::enabled!(tracing::Level::TRACE) {
-            trace!("[{}] Received NETCONF message: `{msg:?}`", self.peer);
-        }
+        trace!("[{}] Received NETCONF message: `{msg:?}`", self.peer);
         match msg {
             None => {
                 warn!("[{}] Broken connection", self.peer);
