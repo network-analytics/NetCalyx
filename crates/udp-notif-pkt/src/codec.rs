@@ -244,7 +244,7 @@ pub enum UdpPacketCodecError {
     #[strum(to_string = "UDP-Notif packet parsing error: {0}")]
     UdpNotifError(UdpNotifPacketParsingError),
 
-    #[strum(to_string = "Segments reassembly error: {0}")]
+    #[strum(to_string = "Segment reassembly error: {0}")]
     ReassemblyError(ReassemblyBufferError),
 
     #[strum(to_string = "UDP-Notif serialization error: {0}")]
@@ -469,10 +469,8 @@ impl Decoder for UdpPacketCodec {
         let before = self.incomplete_messages.len();
         self.incomplete_messages
             .retain(|_, b| !b.is_timed_out(now, self.reassembly_timeout));
-        let evicted = before - self.incomplete_messages.len();
-        if evicted > 0 {
-            self.reassembly_events.timeout_evictions += evicted as u64;
-        }
+        self.reassembly_events.timeout_evictions +=
+            (before - self.incomplete_messages.len()) as u64;
 
         // Early return for empty buffer (nothing to decode)
         if buf.is_empty() {
