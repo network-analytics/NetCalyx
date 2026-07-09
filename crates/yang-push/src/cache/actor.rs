@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2025-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -580,7 +581,8 @@ impl<F: YangLibraryFetcher> CacheActor<F> {
                 );
                 warn!(error=%err, "cache actor worker failed to execute a task");
             }
-            Ok(Err((subscription_info, err))) => {
+            Ok(Err(worker_err)) => {
+                let (subscription_info, err) = *worker_err;
                 self.stats.device_fetch_failed.add(
                     1,
                     &[
@@ -911,7 +913,7 @@ impl<F: YangLibraryFetcher> CacheActor<F> {
                                 format!("{err}"),
                             ));
                             self.stats.device_fetch_failed.add(1, &otl_tags);
-                            Err((subscription_info.clone(), err.into()))
+                            Err(Box::new((subscription_info.clone(), err.into())))
                         }
                     };
                     self.process_worker_result(Ok(worker_result)).await;
@@ -1090,7 +1092,7 @@ impl<F: YangLibraryFetcher> CacheActor<F> {
                                 peer,
                                 subscription_id,
                             );
-                            Err((empty.clone(), err.into()))
+                            Err(Box::new((empty.clone(), err.into())))
                         }
                     };
                     self.process_worker_result(Ok(worker_result)).await;
