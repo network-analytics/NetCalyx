@@ -45,7 +45,7 @@ use tracing::{error, info, trace, warn};
 
 pub type FetcherResult = Result<
     (SubscriptionInfo, YangLibrary, HashMap<Box<str>, Box<str>>),
-    (SubscriptionInfo, YangLibraryCacheError),
+    Box<(SubscriptionInfo, YangLibraryCacheError)>,
 >;
 
 /// Fetch YANG Library and schemas from an external source
@@ -180,11 +180,11 @@ impl NetconfYangLibraryFetcher {
             Ok(Ok(c)) => c,
             Ok(Err(err)) => {
                 error!(host=%host,error=%err, "error connecting to device over SSH");
-                return Err((subscription_info.clone(), err.into()));
+                return Err(Box::new((subscription_info.clone(), err.into())));
             }
             Err(err) => {
                 error!(host=%host,error=%err, "timeout while connecting to device over SSH");
-                return Err((subscription_info.clone(), err.into()));
+                return Err(Box::new((subscription_info.clone(), err.into())));
             }
         };
         let modules = subscription_info
@@ -196,7 +196,7 @@ impl NetconfYangLibraryFetcher {
         let (yang_lib, schemas) = client
             .load_from_modules(&modules, &PermissiveVersionChecker)
             .await
-            .map_err(|err| (subscription_info.clone(), err.into()))?;
+            .map_err(|err| Box::new((subscription_info.clone(), err.into())))?;
         match tokio::time::timeout(cfg.timeout, client.close()).await {
             Ok(Ok(_)) => {
                 info!(host=%host,"SSH connection closed successfully");
@@ -260,22 +260,22 @@ impl NetconfYangLibraryFetcher {
             Ok(Ok(c)) => c,
             Ok(Err(err)) => {
                 error!(host=%host,error=%err, "error connecting to device over SSH");
-                return Err((empty, err.into()));
+                return Err(Box::new((empty, err.into())));
             }
             Err(err) => {
                 error!(host=%host,error=%err, "timeout while connecting to device over SSH");
-                return Err((empty, err.into()));
+                return Err(Box::new((empty, err.into())));
             }
         };
 
         let subscription = client
             .get_yang_push_subscription_by_id(subscription_id)
             .await
-            .map_err(|err| (empty.clone(), err.into()))?;
+            .map_err(|err| Box::new((empty.clone(), err.into())))?;
         let router_yang_library = client
             .get_yang_library()
             .await
-            .map_err(|err| (empty.clone(), err.into()))?;
+            .map_err(|err| Box::new((empty.clone(), err.into())))?;
 
         let modules = if let Some(modules) = &subscription.module_version {
             modules.clone().to_vec()
@@ -286,12 +286,12 @@ impl NetconfYangLibraryFetcher {
                         StreamSelectionFilterObjects::ByReference(name) => {
                             // references are resolved in the NETCONF client,
                             // if we reach this point, there must be a misconfigured router,
-                            return Err((
+                            return Err(Box::new((
                                 empty,
                                 YangLibraryCacheError::IoError(std::io::Error::other(format!(
                                     "cannot fetch YANG Library for stream selection filter by reference for {name}"
                                 ))),
-                            ));
+                            )));
                         }
                         StreamSelectionFilterObjects::WithInSubscription(filter) => {
                             (DatastoreName::Running, filter.namespaces())
@@ -300,12 +300,12 @@ impl NetconfYangLibraryFetcher {
                 }
                 Target::Datastore(datastore_target) => match &datastore_target.selection {
                     DatastoreSelectionFilterObjects::ByReference(name) => {
-                        return Err((
+                        return Err(Box::new((
                             empty,
                             YangLibraryCacheError::IoError(std::io::Error::other(format!(
                                 "cannot fetch YANG Library for datastore selection filter by reference for {name}"
                             ))),
-                        ));
+                        )));
                     }
                     DatastoreSelectionFilterObjects::WithInSubscription(filter) => {
                         (datastore_target.datastore.clone(), filter.namespaces())
@@ -314,7 +314,7 @@ impl NetconfYangLibraryFetcher {
             };
             let mut ret = Vec::with_capacity(namespaces.len());
             for (_prefix, namespace) in namespaces {
-                let module = router_yang_library.find_module_by_datastore_and_ns(&ds_name, namespace).ok_or_else(|| (empty.clone(), YangLibraryCacheError::IoError(std::io::Error::other(format!("module with namespace {namespace} not found in YANG Library for datastore {ds_name}")))))?;
+                let module = router_yang_library.find_module_by_datastore_and_ns(&ds_name, namespace).ok_or_else(|| Box::new((empty.clone(), YangLibraryCacheError::IoError(std::io::Error::other(format!("module with namespace {namespace} not found in YANG Library for datastore {ds_name}"))))))?;
                 ret.push(YangPushModuleVersion::new(
                     module.name().into(),
                     module.revision().map(|x| x.into()),
@@ -332,7 +332,7 @@ impl NetconfYangLibraryFetcher {
         let (yang_lib, schemas) = client
             .load_from_modules(&module_names, &PermissiveVersionChecker)
             .await
-            .map_err(|err| (empty.clone(), err.into()))?;
+            .map_err(|err| Box::new((empty.clone(), err.into())))?;
         match tokio::time::timeout(cfg.timeout, client.close()).await {
             Ok(Ok(_)) => {
                 info!(host=%host,"SSH connection closed successfully");
@@ -343,12 +343,12 @@ impl NetconfYangLibraryFetcher {
             }
         }
         let subscription_target = subscription.target.try_into().map_err(|err| {
-            (
+            Box::new((
                 empty,
                 YangLibraryCacheError::IoError(std::io::Error::other(format!(
                     "invalid subscription target: {err}"
                 ))),
-            )
+            ))
         })?;
         let subscription_info = SubscriptionInfo::new(
             collector,
@@ -507,7 +507,6 @@ pub(crate) mod tests {
             }
         }
 
-        #[allow(clippy::result_large_err)]
         fn get_from_cache(&self, subscription_info: SubscriptionInfo) -> FetcherResult {
             info!(
                 peer=%subscription_info.peer(),
@@ -534,15 +533,14 @@ pub(crate) mod tests {
                             target=%subscription_info.target(),
                             "YANG Library not found in cache"
                         );
-                        (
+                        Box::new((
                             subscription_info.clone(),
                             YangLibraryCacheError::IoError(std::io::Error::other("not found")),
-                        )
+                        ))
                     })?;
             Ok((subscription_info, yang_lib, schemas))
         }
 
-        #[allow(clippy::result_large_err)]
         fn get_from_cache_by_id(&self, subscription_info: SubscriptionInfo) -> FetcherResult {
             let collector = subscription_info.collector();
             let interface = subscription_info.interface();
@@ -568,10 +566,10 @@ pub(crate) mod tests {
                 *counts.entry(subscription_info.clone()).or_default() += 1;
             }
             if subscription_info.is_empty() {
-                return Err((
+                return Err(Box::new((
                     subscription_info,
                     YangLibraryCacheError::IoError(std::io::Error::other("not found")),
-                ));
+                )));
             }
             let (yang_lib, schemas) =
                 self.yang_libs
@@ -585,10 +583,10 @@ pub(crate) mod tests {
                             target=%subscription_info.target(),
                             "YANG Library not found in cache"
                         );
-                        (
+                        Box::new((
                             subscription_info.clone(),
                             YangLibraryCacheError::IoError(std::io::Error::other("not found")),
-                        )
+                        ))
                     })?;
             Ok((subscription_info, yang_lib, schemas))
         }
@@ -657,20 +655,18 @@ mod retry_tests {
         "127.0.0.1:0".parse().unwrap()
     }
 
-    #[allow(clippy::result_large_err)]
     fn make_ok() -> FetcherResult {
         let info = SubscriptionInfo::new_empty(collector(), None, dummy_peer(), 1);
         let yang_lib = YangLibrary::new("test-content-id".into(), vec![], vec![], vec![]);
         Ok((info, yang_lib, HashMap::new()))
     }
 
-    #[allow(clippy::result_large_err)]
     fn make_err(msg: &'static str) -> FetcherResult {
         let info = SubscriptionInfo::new_empty(collector(), None, dummy_peer(), 1);
-        Err((
+        Err(Box::new((
             info,
             YangLibraryCacheError::IoError(std::io::Error::other(msg)),
-        ))
+        )))
     }
 
     /// A single attempt that succeeds immediately — no retries should happen.
