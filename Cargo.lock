@@ -2456,6 +2456,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "libyang5-sys"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d2af2bd5e6a586aee12e07735a223e232969686ac4ac5b7af639e555ec4a1e1"
+dependencies = [
+ "cmake",
+ "pkg-config",
+]
+
+[[package]]
 name = "libz-sys"
 version = "1.1.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3059,7 +3069,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-test",
- "yang4",
+ "yang5",
 ]
 
 [[package]]
@@ -6576,6 +6586,20 @@ dependencies = [
  "bitflags",
  "libc",
  "libyang4-sys",
+ "log",
+ "num-derive",
+ "num-traits",
+]
+
+[[package]]
+name = "yang5"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1da35149085196bd35c11637c084c0723157c05d97766033cec6d90db535bd19"
+dependencies = [
+ "bitflags",
+ "libc",
+ "libyang5-sys",
  "log",
  "num-derive",
  "num-traits",
