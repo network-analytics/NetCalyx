@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2025-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -160,13 +161,20 @@ impl<'a> YangParser<'a> {
                 self.expect_char(';')?;
             } else if self.match_keyword("revision") {
                 self.skip_whitespace_and_comments();
-                let rev = self
+                let parsed_rev = self
                     .read_string_or_identifier()
                     .ok_or("Expected revision date")?;
-                // Only keep the first (latest) revision
-                if revision.is_none() {
-                    revision = Some(rev);
-                }
+
+                // RFC 7950 recommends listing revisions newest-first, but does
+                // not require it, and some modules (e.g. vendor deviation
+                // modules) list them oldest-first instead. Compare revision
+                // date strings (YYYY-MM-DD sorts lexicographically in
+                // chronological order) and keep the latest one seen so far,
+                // rather than assuming the first one encountered is latest.
+                revision = Some(match revision {
+                    Some(existing_rev) if existing_rev >= parsed_rev => existing_rev,
+                    _ => parsed_rev,
+                });
                 // Skip the revision body
                 self.skip_whitespace_and_comments();
                 if self.peek_char() == Some('{') {
@@ -887,6 +895,60 @@ mod tests {
         );
         assert_eq!(metadata.prefix, Some("ypot".to_string()));
         assert_eq!(metadata.revision, Some("2025-02-24".to_string()));
+    }
+
+    #[test]
+    fn test_extract_metadata_multiple_revisions_newest_last() {
+        // Most YANG modules list revisions newest-first, but this is only a
+        // convention, not a requirement (RFC 7950). Some modules (e.g. vendor
+        // deviation modules) list revisions oldest-first. Ensure the parser
+        // picks the actual latest revision regardless of statement order.
+        let yang = r#"
+            module cisco-xr-ietf-udp-notif-transport-deviations {
+              namespace "http://cisco.com/ns/yang/cisco-xr-ietf-udp-notif-transport-deviations";
+              prefix xr-unt-d;
+
+              revision 2025-01-20 {
+                description "Initial version.";
+              }
+              revision 2026-03-17 {
+                description "Add deviations for DTLS parameter configuration.";
+              }
+            }
+        "#;
+
+        let metadata = extract_yang_metadata(yang).unwrap();
+        assert_eq!(
+            metadata.name,
+            "cisco-xr-ietf-udp-notif-transport-deviations"
+        );
+        assert_eq!(metadata.revision, Some("2026-03-17".to_string()));
+    }
+
+    #[test]
+    fn test_extract_metadata_multiple_revisions_newest_first() {
+        // The conventional (RFC 7950 recommended) ordering: newest revision
+        // listed first. Ensure this common case still resolves correctly.
+        let yang = r#"
+            module cisco-xr-ietf-udp-notif-transport-deviations {
+              namespace "http://cisco.com/ns/yang/cisco-xr-ietf-udp-notif-transport-deviations";
+              prefix xr-unt-d;
+
+              revision 2026-03-17 {
+                description "Add deviations for DTLS parameter configuration.";
+              }
+              revision 2025-01-20 {
+                description "Initial version.";
+              }
+            }
+        "#;
+
+        let metadata = extract_yang_metadata(yang).unwrap();
+        assert_eq!(
+            metadata.name,
+            "cisco-xr-ietf-udp-notif-transport-deviations"
+        );
+        assert_eq!(metadata.revision, Some("2026-03-17".to_string()));
     }
 
     #[test]
