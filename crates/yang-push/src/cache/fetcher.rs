@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2025-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -168,7 +169,7 @@ impl NetconfYangLibraryFetcher {
         let config = NetconfSshConnectConfig::new(
             auth,
             host,
-            Some(collector),
+            None,
             interface,
             announce_caps,
             ssh_handler,
@@ -241,7 +242,7 @@ impl NetconfYangLibraryFetcher {
         let config = NetconfSshConnectConfig::new(
             auth,
             host,
-            Some(collector),
+            None,
             interface.clone().map(String::from),
             announce_caps,
             ssh_handler,
