@@ -165,10 +165,11 @@ jobs:
         run: cargo clippy --locked --tests --all-features
 
   coverage:
-    # use llvm-cov to build and collect coverage and outputs in a format that is compatible with
-    # codecov.io
     runs-on: ubuntu-latest
     name: ubuntu / stable / coverage
+    permissions:
+      contents: read
+      code-quality: write
     env:
       TRYBUILD: overwrite
       NETCALYX_CUSTOM_XML_PATHS: ""
@@ -191,13 +192,14 @@ jobs:
         if: hashFiles('Cargo.lock') == ''
         run: cargo generate-lockfile
       - name: cargo llvm-cov
-        run: cargo llvm-cov --locked --all-features --lcov --output-path lcov.info
-      - name: Upload to codecov.io
-        uses: codecov/codecov-action@v7
+        run: cargo llvm-cov --locked --all-features --cobertura --output-path coverage.xml
+      - name: Upload coverage report
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/upload-code-coverage@v1
         with:
-          fail_ci_if_error: true
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          file: coverage.xml
+          language: Rust
+          label: code-coverage/llvm-cov
 
   # Define version and release information for use across jobs
   #
