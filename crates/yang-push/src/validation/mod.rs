@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2025-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,8 +29,8 @@
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let (rx, tx, cache_cmd_tx) = /* channel setup */;
 //! let (join_handle, handle) = ValidationActorHandle::new(
-//!     1000,  // max packets cached per peer
-//!     100,   // max packets cached per subscription
+//!     1000,  // max packets buffered per peer
+//!     100,   // max packets buffered per subscription
 //!     rx,    // incoming UDP-Notif packets
 //!     tx,    // validated packets output
 //!     cache_cmd_tx,  // cache lookup commands
@@ -50,9 +51,9 @@
 //! 2. **Decode**: Extract subscription ID and notification type
 //! 3. **Bootstrap**: `SubscriptionStarted` notifications trigger YANG library
 //!    lookups via the cache actor
-//! 4. **Cache or Validate**:
+//! 4. **Buffer or Validate**:
 //!    - If YANG schema available: Validate and forward
-//!    - If schema pending: Cache packet until schema arrives
+//!    - If schema pending: Buffer packet until schema arrives
 //!    - If schema unavailable: Forward unvalidated with empty subscription info
 //! 5. **Forward**: Send validated/unvalidated packets downstream
 //!
@@ -62,19 +63,19 @@
 //! of YANG schema retrieval:
 //!
 //! - **Peer Level**: Groups all subscriptions from the same source IP
-//!   - Enforces `max_cached_packets_per_peer` limit across all subscriptions
+//!   - Enforces `max_buffered_packets_per_peer` limit across all subscriptions
 //!   - Prevents a single peer from consuming excessive memory
 //!
 //! - **Subscription Level**: Per-subscription state including:
 //!   - `SubscriptionInfo`: Metadata from `SubscriptionStarted`
 //!   - `yang4::Context`: Loaded YANG schemas for validation
 //!   - Buffered packets waiting for schema retrieval
-//!   - Enforces `max_cached_packets_per_subscription` limit
+//!   - Enforces `max_buffered_packets_per_subscription` limit
 //!
-//! Packets arriving before schemas are loaded are cached and reprocessed
+//! Packets arriving before schemas are loaded are buffered and reprocessed
 //! when the cache actor responds with YANG library references.
 //!
-//! ### Cache Limits
+//! ### Buffer Limits
 //!
 //! Two configurable limits prevent memory exhaustion:
 //! - **Per-subscription limit**: protects against slow schema retrieval
@@ -127,6 +128,7 @@ use netcalyx_udp_notif_pkt::notification::{NotificationVariant, SubscriptionStar
 use netcalyx_udp_notif_pkt::raw::UdpNotifPacket;
 use netcalyx_udp_notif_service::{OTL_UDP_NOTIF_PUBLISHER_ID_KEY, UdpNotifRequest};
 use rustc_hash::FxHashMap;
+use std::collections::VecDeque;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -138,12 +140,13 @@ struct CachedSubscription {
     cached_content_id: Option<ContentId>,
     subscription_info: SubscriptionInfo,
     yang_ctx: Option<yang4::context::Context>,
-    cached_packets: Vec<Arc<UdpNotifRequest>>,
+    buffered_packets: Vec<Arc<UdpNotifRequest>>,
 }
 
 #[derive(Debug, Default)]
 struct CachedPeerSubscriptions {
     subscriptions: FxHashMap<SubscriptionId, CachedSubscription>,
+    total_buffered: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -153,9 +156,9 @@ pub struct ValidationStats {
     pub messages_decoding_fail: opentelemetry::metrics::Counter<u64>,
     pub cache_request_by_subscription_info: opentelemetry::metrics::Counter<u64>,
     pub cache_request_by_subscription_id: opentelemetry::metrics::Counter<u64>,
-    pub cached_packets: opentelemetry::metrics::Gauge<u64>,
-    pub cache_drop: opentelemetry::metrics::Counter<u64>,
-    pub cache_drain: opentelemetry::metrics::Counter<u64>,
+    pub buffered_packets: opentelemetry::metrics::Gauge<u64>,
+    pub buffer_drop: opentelemetry::metrics::Counter<u64>,
+    pub buffer_drain: opentelemetry::metrics::Counter<u64>,
     pub cache_yang_ctx_created: opentelemetry::metrics::Counter<u64>,
     pub cache_yang_ctx_invalid: opentelemetry::metrics::Counter<u64>,
     pub cache_yang_ctx_empty: opentelemetry::metrics::Counter<u64>,
@@ -187,20 +190,20 @@ impl ValidationStats {
             .with_description("Number of cache requests by subscription info (from subscription-start or subscription-modified messages) to retrieve the schemas for YANG-Push subscriptions")
             .build();
         let cache_request_by_subscription_id = meter
-            .u64_counter("netcalyx.collector.yang_push.validation.messages.cache.requests.by.subscription_info")
+            .u64_counter("netcalyx.collector.yang_push.validation.messages.cache.requests.by.subscription_id")
             .with_description("Number of cache requests by Subscription ID to retrieve the schemas for YANG-Push subscriptions")
             .build();
-        let cached_packets = meter
-            .u64_gauge("netcalyx.collector.yang_push.validation.cache.packets")
-            .with_description("Number of Yang Push message cached")
+        let buffered_packets = meter
+            .u64_gauge("netcalyx.collector.yang_push.validation.buffer.packets")
+            .with_description("Number of Yang Push messages currently buffered waiting for schemas")
             .build();
-        let cache_drop = meter
-            .u64_counter("netcalyx.collector.yang_push.validation.cache.drop")
-            .with_description("Number of Yang Push messages dropped because of cache is full")
+        let buffer_drop = meter
+            .u64_counter("netcalyx.collector.yang_push.validation.buffer.drop")
+            .with_description("Number of Yang Push messages dropped because the buffer is full")
             .build();
-        let cache_drain = meter
-            .u64_counter("netcalyx.collector.yang_push.validation.cache.drain")
-            .with_description("Number of Yang Push messages popped out of the cache and send is going to the validation step")
+        let buffer_drain = meter
+            .u64_counter("netcalyx.collector.yang_push.validation.buffer.drain")
+            .with_description("Number of Yang Push messages popped out of the buffer and sent to the validation step")
             .build();
         let cache_yang_ctx_created = meter
             .u64_counter("netcalyx.collector.yang_push.validation.cache.yang.ctx.created")
@@ -244,9 +247,9 @@ impl ValidationStats {
             messages_decoding_fail,
             cache_request_by_subscription_info,
             cache_request_by_subscription_id,
-            cached_packets,
-            cache_drop,
-            cache_drain,
+            buffered_packets,
+            buffer_drop,
+            buffer_drain,
             cache_yang_ctx_created,
             cache_yang_ctx_invalid,
             cache_yang_ctx_empty,
@@ -277,8 +280,8 @@ enum ValidationActorCommand {
 }
 
 struct ValidationActor {
-    max_cached_packets_per_peer: usize,
-    max_cached_packets_per_subscription: usize,
+    max_buffered_packets_per_peer: usize,
+    max_buffered_packets_per_subscription: usize,
     peer_cache: FxHashMap<IpAddr, CachedPeerSubscriptions>,
     cmd_rx: mpsc::Receiver<ValidationActorCommand>,
     rx: async_channel::Receiver<Arc<UdpNotifRequest>>,
@@ -286,6 +289,10 @@ struct ValidationActor {
     cache_cmd_tx: async_channel::Sender<CacheLookupCommand>,
     cache_tx: async_channel::Sender<CacheResponse>,
     cache_rx: async_channel::Receiver<CacheResponse>,
+    /// Packets buffered while their subscription waits for schemas to arrive,
+    /// then drained in pending_packets once the cache responds. They are
+    /// processed one at a time
+    pending_packets: VecDeque<Arc<UdpNotifRequest>>,
     stats: ValidationStats,
 }
 
@@ -310,9 +317,12 @@ impl ValidationActor {
                     target=%subscription_info.target(),
                     "Subscription changed, removing from cache to allow a new fetch schemas request"
                 );
-                cached_peer_subscriptions
+                if let Some(removed) = cached_peer_subscriptions
                     .subscriptions
-                    .remove(&subscription_info.id());
+                    .remove(&subscription_info.id())
+                {
+                    cached_peer_subscriptions.total_buffered -= removed.buffered_packets.len();
+                }
             }
             // clear peer if there are no subscriptions left
             if cached_peer_subscriptions.subscriptions.is_empty() {
@@ -404,7 +414,7 @@ impl ValidationActor {
         }
     }
 
-    fn cache_packet(
+    fn buffer_packet(
         &mut self,
         subscription_info: SubscriptionInfo,
         message: Arc<UdpNotifRequest>,
@@ -416,11 +426,46 @@ impl ValidationActor {
         let mut peer_tags = Self::peer_tags_from_packet(peer, packet);
         let subscription_id = subscription_info.id();
         let peer_cache = self.peer_cache.entry(peer.ip()).or_default();
-        let total_cached_packets = peer_cache
+
+        let sub_buffered_packets = peer_cache
             .subscriptions
-            .values()
-            .map(|x| x.cached_packets.len())
-            .sum::<usize>();
+            .get(&subscription_id)
+            .map(|s| s.buffered_packets.len())
+            .unwrap_or(0);
+        if sub_buffered_packets > self.max_buffered_packets_per_subscription {
+            // drop the new packet, since the buffer is full
+            warn!(
+                peer=%peer,
+                message_id,
+                publisher_id,
+                subscription_id,
+                subscription_target=%subscription_info.target(),
+                router_content_id=subscription_info.content_id(),
+                "Buffer full for subscription, dropping new packet"
+            );
+            peer_tags.push(opentelemetry::KeyValue::new(
+                OTL_CACHE_DROP_REASON_KEY,
+                OTL_CACHE_DROP_REASON_SUBSCRIPTION_CACHE_FULL,
+            ));
+            self.stats.buffer_drop.add(1, &peer_tags);
+            return false;
+        }
+        if peer_cache.total_buffered > self.max_buffered_packets_per_peer {
+            warn!(
+                peer=%peer,
+                message_id,
+                publisher_id,
+                subscription_id,
+                subscription_target=%subscription_info.target(),
+                router_content_id=subscription_info.content_id(),
+                "Buffer full for peer, dropping new packet");
+            peer_tags.push(opentelemetry::KeyValue::new(
+                OTL_CACHE_DROP_REASON_KEY,
+                OTL_CACHE_DROP_REASON_PEER_CACHE_FULL,
+            ));
+            self.stats.buffer_drop.add(1, &peer_tags);
+            return false;
+        }
         let subscription_cache =
             peer_cache
                 .subscriptions
@@ -429,42 +474,8 @@ impl ValidationActor {
                     cached_content_id: None,
                     subscription_info: subscription_info.clone(),
                     yang_ctx: None,
-                    cached_packets: Vec::new(),
+                    buffered_packets: Vec::new(),
                 });
-        if subscription_cache.cached_packets.len() > self.max_cached_packets_per_subscription {
-            // drop the new packet, since the cache is full
-            warn!(
-                peer=%peer,
-                message_id,
-                publisher_id,
-                subscription_id,
-                subscription_target=%subscription_info.target(),
-                router_content_id=subscription_info.content_id(),
-                "Cache full for subscription, dropping new packet"
-            );
-            peer_tags.push(opentelemetry::KeyValue::new(
-                OTL_CACHE_DROP_REASON_KEY,
-                OTL_CACHE_DROP_REASON_SUBSCRIPTION_CACHE_FULL,
-            ));
-            self.stats.cache_drop.add(1, &peer_tags);
-            return false;
-        }
-        if total_cached_packets > self.max_cached_packets_per_peer {
-            warn!(
-                peer=%peer,
-                message_id,
-                publisher_id,
-                subscription_id,
-                subscription_target=%subscription_info.target(),
-                router_content_id=subscription_info.content_id(),
-                "Cache full for peer, dropping new packet");
-            peer_tags.push(opentelemetry::KeyValue::new(
-                OTL_CACHE_DROP_REASON_KEY,
-                OTL_CACHE_DROP_REASON_PEER_CACHE_FULL,
-            ));
-            self.stats.cache_drop.add(1, &peer_tags);
-            return false;
-        }
         trace!(
             peer=%peer,
             message_id,
@@ -472,12 +483,13 @@ impl ValidationActor {
             subscription_id,
             subscription_target=%subscription_info.target(),
             router_content_id=subscription_info.content_id(),
-            "Cached UDP-Notif packet"
+            "Buffered UDP-Notif packet"
         );
+        subscription_cache.buffered_packets.push(message);
+        peer_cache.total_buffered += 1;
         self.stats
-            .cached_packets
-            .record(total_cached_packets as u64, &peer_tags);
-        subscription_cache.cached_packets.push(message);
+            .buffered_packets
+            .record(peer_cache.total_buffered as u64, &peer_tags);
         true
     }
 
@@ -549,7 +561,7 @@ impl ValidationActor {
                         "Decoded UDP-Notif payload, starting the validation step"
                     );
                 }
-                self.stats.messages_received.add(1, &peer_tags);
+                self.stats.messages_decoding_success.add(1, &peer_tags);
                 Ok(decoded)
             }
             Err(err) => {
@@ -564,19 +576,23 @@ impl ValidationActor {
                     OTL_YANG_PUSH_DECODE_ERROR_ID_KEY,
                     format!("{err}"),
                 ));
-                self.stats.messages_received.add(1, &peer_tags);
                 self.stats.messages_decoding_fail.add(1, &peer_tags);
                 Err(())
             }
         }
     }
 
+    /// Core per-packet handler, called for every incoming UDP-Notif message and
+    /// for every packet drained from the per-subscription buffer once schemas
+    /// arrive.
     async fn process_udp_notif_msg(
         &mut self,
         message: Arc<UdpNotifRequest>,
     ) -> Result<(), ValidationActorError> {
         let peer = message.peer_address();
         let packet = message.packet();
+
+        // Step 1: decode the raw UDP-Notif payload.
         let decoded = match self.decode_message(peer, packet) {
             Ok(decoded) => decoded,
             // Decoding errors are logged in the [Self::decode_message], and packets are dropped
@@ -591,6 +607,10 @@ impl ValidationActor {
         let message_id = decoded.message_id();
         let publisher_id = decoded.publisher_id();
         let is_legacy = matches!(decoded.payload(), UdpNotifPayload::NotificationLegacy(_));
+
+        // Step 2: resolve subscription info.
+        // Returns None if the packet was buffered (schemas not ready yet);
+        // in that case we stop here and wait for the cache to respond.
         let extract_sub_info = self
             .extract_subscription_info(Arc::clone(&message), peer, &decoded)
             .await?;
@@ -600,6 +620,8 @@ impl ValidationActor {
             return Ok(());
         };
         Self::extend_peer_targs_with_subscription_info(&subscription_info, &mut peer_tags);
+
+        // Step 3: validate against YANG schemas if available, skip otherwise.
         let peer_cache = self.peer_cache.entry(peer.ip()).or_default();
         let subscription_cache = peer_cache
             .subscriptions
@@ -608,7 +630,7 @@ impl ValidationActor {
                 cached_content_id: None,
                 subscription_info: subscription_info.clone(),
                 yang_ctx: None,
-                cached_packets: Vec::new(),
+                buffered_packets: Vec::new(),
             });
         let cached_content_id = if let Some(cached_content_id) =
             subscription_cache.cached_content_id.clone()
@@ -629,6 +651,7 @@ impl ValidationActor {
                 self.stats.validation_invalid.add(1, &peer_tags);
                 return Ok(());
             }
+            self.stats.validation_success.add(1, &peer_tags);
             Some(cached_content_id)
         } else {
             trace!(
@@ -645,6 +668,7 @@ impl ValidationActor {
             None
         };
 
+        // Step 4: forward to the enrichment actor.
         self.tx
             .send((
                 cached_content_id.clone(),
@@ -833,14 +857,31 @@ impl ValidationActor {
                         );
                         ValidationActorError::CacheLookupSendError
                     })?;
-                self.cache_packet(subscription_info.clone(), message);
+                self.buffer_packet(subscription_info.clone(), message);
                 Ok(None)
             }
             None => {
-                let subscription_id = decoded
-                    .payload()
-                    .notification_contents()
-                    .map(|x| x.subscription_id());
+                let notif_contents = decoded.payload().notification_contents();
+                // A subscription-started/modified that reached here failed to
+                // build SubscriptionInfo (e.g. missing module version). It will
+                // fail identically every time, so buffering it and re-fetching
+                // would loop forever. Drop it permanently.
+                if matches!(
+                    notif_contents,
+                    Some(NotificationVariant::SubscriptionStarted(_))
+                        | Some(NotificationVariant::SubscriptionModified(_))
+                ) {
+                    warn!(
+                        peer=%peer,
+                        message_id,
+                        publisher_id,
+                        notification_type,
+                        "Malformed subscription started/modified (no usable subscription info), dropping packet"
+                    );
+                    self.stats.validation_malformed.add(1, &peer_tags);
+                    return Ok(None);
+                }
+                let subscription_id = notif_contents.map(|x| x.subscription_id());
                 if let Some(subscription_id) = subscription_id {
                     debug!(
                         peer=%peer,
@@ -851,7 +892,7 @@ impl ValidationActor {
                         "Received UDP-Notif packet without subscription info, \
                         caching the packet and looking up subscription info in cache");
                     self.stats
-                        .cache_request_by_subscription_info
+                        .cache_request_by_subscription_id
                         .add(1, &peer_tags);
                     let subscription_info = SubscriptionInfo::new_empty(
                         collector,
@@ -869,7 +910,7 @@ impl ValidationActor {
                         })
                         .await
                         .map_err(|_| ValidationActorError::CacheLookupSendError)?;
-                    self.cache_packet(subscription_info.clone(), message);
+                    self.buffer_packet(subscription_info.clone(), message);
                     return Ok(None);
                 }
                 warn!(
@@ -885,7 +926,7 @@ impl ValidationActor {
         }
     }
 
-    async fn process_cache_response(
+    fn process_cache_response(
         &mut self,
         response: CacheResponse,
     ) -> Result<(), ValidationActorError> {
@@ -968,13 +1009,17 @@ impl ValidationActor {
             subscription_cache.cached_content_id = None;
             subscription_cache.yang_ctx = None;
         }
-        let cached_packets = std::mem::take(&mut subscription_cache.cached_packets);
-        for message in cached_packets {
+        let buffered_packets = std::mem::take(&mut subscription_cache.buffered_packets);
+        let drained = buffered_packets.len();
+        // Update the per-peer counter while we still hold the peer_cache borrow.
+        peer_cache.total_buffered -= drained;
+        let remaining = peer_cache.total_buffered;
+        for message in buffered_packets {
             let peer = message.peer_address();
             let packet = message.packet();
             let mut peer_tags = Self::peer_tags_from_packet(peer, packet);
             Self::extend_peer_targs_with_subscription_info(&subscription_info, &mut peer_tags);
-            self.stats.cache_drain.add(1, &peer_tags);
+            self.stats.buffer_drain.add(1, &peer_tags);
             trace!(
                 peer=%peer,
                 message_id=packet.message_id(),
@@ -983,10 +1028,13 @@ impl ValidationActor {
                 router_content_id=subscription_info.content_id(),
                 subscription_target=%subscription_info.target(),
                 cached_content_id,
-                "Packet popped out of the cache and being processed by the validation step"
+                "Packet popped out of the buffer and queued for the validation step"
             );
-            self.process_udp_notif_msg(message).await?;
+            self.pending_packets.push_back(message);
         }
+        self.stats
+            .buffered_packets
+            .record(remaining as u64, &otl_tags);
         Ok(())
     }
 
@@ -1059,9 +1107,39 @@ impl ValidationActor {
                         }
                     }
                 }
+                msg = self.cache_rx.recv() => {
+                    match msg {
+                        Ok(response) => {
+                            if let Err(err) = self.process_cache_response(response) {
+                                let err_msg = "Yang Push validation actor cache response processing unrecoverable error, shutting down";
+                                warn!(error=%err, err_msg);
+                                return Ok(err_msg.to_string());
+                            }
+                        }
+                        Err(error) => {
+                            let err_msg = "Yang Push validation actor cache receiver channel closed unexpectedly, shutting down";
+                            warn!(error=%error, err_msg);
+                            return Ok(err_msg.to_string());
+                        }
+                    }
+                }
+                Some(message) = async { self.pending_packets.pop_front() }, if !self.pending_packets.is_empty() => {
+                    if let Err(err) = self.process_udp_notif_msg(message).await {
+                        let err_msg = "Yang Push validation actor cached packet processing unrecoverable error, shutting down";
+                        warn!(error=%err, err_msg);
+                        return Ok(err_msg.to_string());
+                    }
+                }
                 msg = self.rx.recv() => {
                     match msg {
                         Ok(msg) => {
+                            self.stats.messages_received.add(
+                                1,
+                                &Self::peer_tags_from_packet(
+                                    msg.peer_address(),
+                                    msg.packet(),
+                                ),
+                            );
                             if let Err(err) = self.process_udp_notif_msg(msg).await {
                                 let err_msg = "Yang Push validation actor UDP-Notif processing unrecoverable error, shutting down";
                                 warn!(error=%err, err_msg);
@@ -1070,22 +1148,6 @@ impl ValidationActor {
                         }
                         Err(error) => {
                             let err_msg = "Yang Push validation actor UDP Notif receiver channel closed unexpectedly, shutting down";
-                            warn!(error=%error, err_msg);
-                            return Ok(err_msg.to_string());
-                        }
-                    }
-                }
-                msg = self.cache_rx.recv() => {
-                    match msg {
-                        Ok(response) => {
-                            if let Err(err) = self.process_cache_response(response).await {
-                                let err_msg = "Yang Push validation actor cache response processing unrecoverable error, shutting down";
-                                warn!(error=%err, err_msg);
-                                return Ok(err_msg.to_string());
-                            }
-                        }
-                        Err(error) => {
-                            let err_msg = "Yang Push validation actor cache receiver channel closed unexpectedly, shutting down";
                             warn!(error=%error, err_msg);
                             return Ok(err_msg.to_string());
                         }
@@ -1112,8 +1174,8 @@ pub struct ValidationActorHandle {
 impl ValidationActorHandle {
     pub fn new(
         buffer_size: usize,
-        max_cached_packets_per_peer: usize,
-        max_cached_packets_per_subscription: usize,
+        max_buffered_packets_per_peer: usize,
+        max_buffered_packets_per_subscription: usize,
         rx: async_channel::Receiver<Arc<UdpNotifRequest>>,
         tx: async_channel::Sender<(Option<ContentId>, SubscriptionInfo, UdpNotifPacketDecoded)>,
         cache_cmd_tx: async_channel::Sender<CacheLookupCommand>,
@@ -1132,8 +1194,8 @@ impl ValidationActorHandle {
             either::Either::Right(stats) => stats,
         };
         let actor = ValidationActor {
-            max_cached_packets_per_peer,
-            max_cached_packets_per_subscription,
+            max_buffered_packets_per_peer,
+            max_buffered_packets_per_subscription,
             peer_cache: FxHashMap::default(),
             cmd_rx,
             rx,
@@ -1141,6 +1203,7 @@ impl ValidationActorHandle {
             cache_cmd_tx,
             cache_tx,
             cache_rx,
+            pending_packets: VecDeque::new(),
             stats,
         };
         let handle = ValidationActorHandle { cmd_tx };
@@ -1385,6 +1448,175 @@ mod tests {
         }
 
         // Shutdown actor
+        handle.shutdown().await.unwrap();
+        caching_handle.shutdown().await.unwrap();
+        caching_join_handle.await.unwrap().unwrap();
+    }
+
+    /// Regression test for the cache-drain deadlock: when schemas arrive and a
+    /// large buffer of packets is drained while the downstream is
+    /// backpressured, the actor must keep draining cache_rx/rx (process
+    /// packets one-at-a-time) instead of blocking inside
+    /// process_cache_response. A slow consumer with a tiny buffer would
+    /// previously freeze the actor; here all packets flow.
+    #[tokio::test]
+    async fn test_validation_actor_drains_under_backpressure() {
+        let (caching_join_handle, caching_handle, subscription_info, _fetcher_count) =
+            setup_actor_with_empty_cache();
+
+        let (udp_notif_tx, udp_notif_rx) = async_channel::bounded(50);
+        // Tiny downstream buffer forces backpressure during the drain.
+        let (validated_tx, validated_rx) = async_channel::bounded(1);
+
+        let (_join_handle, handle) = ValidationActorHandle::new(
+            100,
+            10000,
+            1000,
+            udp_notif_rx,
+            validated_tx,
+            caching_handle.request_tx(),
+            either::Right(ValidationStats::new(opentelemetry::global::meter(
+                "test_meter",
+            ))),
+        )
+        .expect("Failed to spawn validation actor");
+
+        let peer = subscription_info.peer();
+        let payload = serde_json::json!({
+            "ietf-yp-notification:envelope": {
+                "event-time": "2025-09-23T14:12:16.024Z",
+                "contents": {
+                    "ietf-subscribed-notifications:subscription-started": {
+                        "id": 1,
+                        "ietf-yang-push:datastore": "ietf-datastores:operational",
+                        "ietf-yang-push:datastore-xpath-filter": "/ietf-interfaces:interfaces",
+                        "transport": "ietf-udp-notif-transport:udp-notif",
+                        "encoding": "encode-json",
+                        "purpose": "test subscription",
+                        "ietf-distributed-notif:message-publisher-id": [16843789],
+                        "ietf-yang-push-revision:module-version": [
+                            {"name": "ietf-interfaces", "revision": "2018-02-20"}
+                        ],
+                        "ietf-yang-push-revision:yang-library-content-id": "test-content-id-1",
+                        "ietf-yang-push:periodic": {"period": 6000}
+                    }
+                }
+            }
+        });
+        let bytes = serde_json::to_vec(&payload).unwrap();
+
+        const N: usize = 200;
+        // Produce concurrently with consumption so the tiny downstream buffer
+        // never deadlocks the producer; the point is that the actor keeps
+        // draining its input/cache channels under backpressure.
+        let producer = tokio::spawn(async move {
+            for i in 0..N {
+                udp_notif_tx
+                    .send(Arc::new(UdpNotifRequest::new(
+                        SocketAddr::from(([127, 0, 0, 1], 10000)),
+                        None,
+                        peer,
+                        UdpNotifPacket::new(
+                            MediaType::YangDataJson,
+                            10,
+                            i as u32,
+                            HashMap::new(),
+                            Bytes::from(bytes.clone()),
+                        ),
+                    )))
+                    .await
+                    .unwrap();
+            }
+            udp_notif_tx
+        });
+
+        // Slow consumer: every packet must still be forwarded without the actor
+        // freezing on input or cache channels.
+        for _ in 0..N {
+            tokio::time::timeout(Duration::from_secs(5), validated_rx.recv())
+                .await
+                .expect("actor stalled: deadlock under backpressure")
+                .unwrap();
+        }
+
+        let udp_notif_tx = producer.await.unwrap();
+        // Input channel fully drained → actor never stopped consuming.
+        assert!(udp_notif_tx.is_empty());
+
+        handle.shutdown().await.unwrap();
+        caching_handle.shutdown().await.unwrap();
+        caching_join_handle.await.unwrap().unwrap();
+    }
+
+    /// Regression test for the cache-drain livelock: a SubscriptionStarted that
+    /// is missing its module version can never build SubscriptionInfo. Such a
+    /// packet must be dropped, not buffered and re-fetched forever. We send
+    /// only the malformed packet; if it were re-buffered the actor would
+    /// spin and nothing would shut down cleanly.
+    #[tokio::test]
+    async fn test_validation_actor_malformed_subscription_started_dropped() {
+        let (caching_join_handle, caching_handle, subscription_info, fetcher_count) =
+            setup_actor_with_empty_cache();
+
+        let (udp_notif_tx, udp_notif_rx) = async_channel::bounded(100);
+        let (validated_tx, validated_rx) = async_channel::bounded(100);
+
+        let (_join_handle, handle) = ValidationActorHandle::new(
+            100,
+            1000,
+            100,
+            udp_notif_rx,
+            validated_tx,
+            caching_handle.request_tx(),
+            either::Right(ValidationStats::new(opentelemetry::global::meter(
+                "test_meter",
+            ))),
+        )
+        .expect("Failed to spawn validation actor");
+
+        // SubscriptionStarted WITHOUT module-version → build_subscription_info
+        // returns None → must be dropped permanently.
+        let peer = subscription_info.peer();
+        let payload = serde_json::json!({
+            "ietf-yp-notification:envelope": {
+                "event-time": "2025-09-23T14:12:16.024Z",
+                "contents": {
+                    "ietf-subscribed-notifications:subscription-started": {
+                        "id": 103,
+                        "ietf-yang-push:datastore": "ietf-datastores:operational",
+                        "ietf-yang-push:datastore-xpath-filter": "/ietf-hardware:hardware",
+                        "transport": "ietf-udp-notif-transport:udp-notif",
+                        "encoding": "encode-json",
+                        "ietf-yang-push:periodic": {"period": 6000}
+                    }
+                }
+            }
+        });
+        let bytes = serde_json::to_vec(&payload).unwrap();
+        udp_notif_tx
+            .send(Arc::new(UdpNotifRequest::new(
+                SocketAddr::from(([127, 0, 0, 1], 10000)),
+                None,
+                peer,
+                UdpNotifPacket::new(
+                    MediaType::YangDataJson,
+                    10,
+                    1,
+                    HashMap::new(),
+                    Bytes::from(bytes),
+                ),
+            )))
+            .await
+            .unwrap();
+
+        // Nothing should be forwarded; packet is dropped, no fetch is triggered.
+        let res = tokio::time::timeout(Duration::from_millis(300), validated_rx.recv()).await;
+        assert!(res.is_err(), "malformed packet must not be forwarded");
+        assert!(
+            fetcher_count.lock().unwrap().is_empty(),
+            "malformed packet must not trigger a schema fetch / re-buffer loop"
+        );
+
         handle.shutdown().await.unwrap();
         caching_handle.shutdown().await.unwrap();
         caching_join_handle.await.unwrap().unwrap();
