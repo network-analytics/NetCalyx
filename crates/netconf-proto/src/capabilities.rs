@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2025-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -132,6 +133,7 @@ impl FromStr for Capability {
                         "http" => UrlScheme::Http,
                         "https" => UrlScheme::Https,
                         "ftp" => UrlScheme::Ftp,
+                        "ftps" => UrlScheme::Ftps,
                         "sftp" => UrlScheme::Sftp,
                         "file" => UrlScheme::File,
                         "scp" => UrlScheme::Scp,
@@ -435,6 +437,9 @@ pub enum UrlScheme {
 
     #[strum(serialize = "ftp")]
     Ftp,
+
+    #[strum(serialize = "ftps")]
+    Ftps,
 
     #[strum(serialize = "sftp")]
     Sftp,
