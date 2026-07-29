@@ -192,12 +192,12 @@ jobs:
         run: cargo generate-lockfile
       - name: cargo llvm-cov
         run: cargo llvm-cov --locked --all-features --lcov --output-path lcov.info
-      - name: Upload to codecov.io
-        uses: codecov/codecov-action@v7
-        with:
-          fail_ci_if_error: true
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+#      - name: Upload to codecov.io
+#        uses: codecov/codecov-action@v7
+#        with:
+#          fail_ci_if_error: true
+#        env:
+#          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   # Define version and release information for use across jobs
   #
