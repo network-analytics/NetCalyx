@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2024-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -120,7 +121,7 @@ use crate::{
 use bytes::{Bytes, BytesMut};
 use futures_util::StreamExt;
 use futures_util::stream::SplitSink;
-use netcalyx_udp_notif_pkt::codec::UdpPacketCodec;
+use netcalyx_udp_notif_pkt::codec::{ReassemblyEventCounts, UdpPacketCodec};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -130,6 +131,12 @@ use tokio::task::JoinHandle;
 use tokio_util::codec::{BytesCodec, Decoder};
 use tokio_util::udp::UdpFramed;
 use tracing::{debug, error, info, trace, warn};
+
+/// How long a peer can go completely silent before its per-peer
+/// [`UdpPacketCodec`] (and any reassembly buffer still pending in it) is
+/// dropped automatically, independent of the external [`ActorCommand::PurgeUnusedPeers`]
+/// command.
+const AUTO_PEER_PURGE_INTERVAL: Duration = Duration::from_secs(600);
 
 /// Commands that can be sent to the [UdpNotifActor].
 #[derive(Debug, Clone, strum_macros::Display)]
@@ -143,23 +150,6 @@ pub(crate) enum ActorCommand {
     PurgePeer(SocketAddr, mpsc::Sender<Option<ActorId>>),
     LocalAddr(mpsc::Sender<(ActorId, SocketAddr)>),
     GetPeers(mpsc::Sender<(ActorId, Vec<SocketAddr>)>),
-}
-
-/// This struct keeps track of the usage of a peer. It stores
-/// the number of packets received from the peer since last_set time.
-#[derive(Debug)]
-struct PeerUsage {
-    last_set: Instant,
-    current_count: usize,
-}
-
-impl Default for PeerUsage {
-    fn default() -> Self {
-        Self {
-            last_set: Instant::now(),
-            current_count: 0,
-        }
-    }
 }
 
 /// Errors that can occur in the `UdpNotifActor`.
@@ -200,7 +190,8 @@ struct UdpNotifActor {
     /// How long to keep an incomplete reassembly buffer before discarding it,
     /// forwarded to each new per-peer [`UdpPacketCodec`].
     reassembly_timeout: Duration,
-    peers_usage: HashMap<SocketAddr, PeerUsage>,
+    /// Last time a datagram was received from each peer.
+    peers_usage: HashMap<SocketAddr, Instant>,
     clients: HashMap<SocketAddr, UdpPacketCodec>,
     stats: UdpNotifCollectorStats,
 }
@@ -330,7 +321,11 @@ impl UdpNotifActor {
         });
         let result = codec.decode(&mut buf);
 
-        // Update gauge tracking incomplete-messages current queue depth.
+        // Track activity for every received datagram (so peers stuck
+        // mid-reassembly are still visible to `purge_unused_peers`
+        // instead of lingering forever.
+        self.peers_usage.insert(addr, Instant::now());
+
         let peer_attrs = [
             opentelemetry::KeyValue::new("netcalyx.udp-notif.actor", format!("{}", self.actor_id)),
             opentelemetry::KeyValue::new("network.peer.address", format!("{}", addr.ip())),
@@ -339,45 +334,10 @@ impl UdpNotifActor {
                 opentelemetry::Value::I64(addr.port().into()),
             ),
         ];
-        self.stats
-            .reassembly_incomplete_messages
-            .record(codec.incomplete_messages_count() as u64, &peer_attrs);
 
-        // Drain reassembly events
+        let incomplete_count = codec.incomplete_messages_count();
         let reassembly_events = codec.take_reassembly_events();
-        if reassembly_events.timeout_evictions > 0 {
-            debug!(
-                peer=%addr,
-                evicted=reassembly_events.timeout_evictions,
-                "[Actor {}-{}] evicted timed-out reassembly buffers",
-                self.actor_id, self.socket_addr,
-            );
-            self.stats
-                .reassembly_timeout_evictions
-                .add(reassembly_events.timeout_evictions, &peer_attrs);
-        }
-        if reassembly_events.duplicate_drops > 0 {
-            debug!(
-                peer=%addr,
-                dropped=reassembly_events.duplicate_drops,
-                "[Actor {}-{}] dropped duplicate segments",
-                self.actor_id, self.socket_addr,
-            );
-            self.stats
-                .reassembly_duplicate_drops
-                .add(reassembly_events.duplicate_drops, &peer_attrs);
-        }
-        if reassembly_events.max_segments_exceeded > 0 {
-            debug!(
-                peer=%addr,
-                aborted=reassembly_events.max_segments_exceeded,
-                "[Actor {}-{}] aborted reassembly buffers exceeding the max segment count",
-                self.actor_id, self.socket_addr,
-            );
-            self.stats
-                .reassembly_max_segments_exceeded
-                .add(reassembly_events.max_segments_exceeded, &peer_attrs);
-        }
+        self.report_reassembly_events(addr, &peer_attrs, incomplete_count, reassembly_events);
 
         match result {
             Ok(Some(pkt)) => {
@@ -421,6 +381,54 @@ impl UdpNotifActor {
                 );
                 None
             }
+        }
+    }
+
+    /// Report the current incomplete-buffer gauge and drain-counter deltas
+    /// for a single peer's codec, called after every [`Self::decode_pkt`].
+    fn report_reassembly_events(
+        &self,
+        addr: SocketAddr,
+        peer_attrs: &[opentelemetry::KeyValue],
+        incomplete_count: usize,
+        reassembly_events: ReassemblyEventCounts,
+    ) {
+        self.stats
+            .reassembly_incomplete_messages
+            .record(incomplete_count as u64, peer_attrs);
+
+        if reassembly_events.timeout_evictions > 0 {
+            debug!(
+                peer=%addr,
+                evicted=reassembly_events.timeout_evictions,
+                "[Actor {}-{}] evicted timed-out reassembly buffers",
+                self.actor_id, self.socket_addr,
+            );
+            self.stats
+                .reassembly_timeout_evictions
+                .add(reassembly_events.timeout_evictions, peer_attrs);
+        }
+        if reassembly_events.duplicate_drops > 0 {
+            debug!(
+                peer=%addr,
+                dropped=reassembly_events.duplicate_drops,
+                "[Actor {}-{}] dropped duplicate segments",
+                self.actor_id, self.socket_addr,
+            );
+            self.stats
+                .reassembly_duplicate_drops
+                .add(reassembly_events.duplicate_drops, peer_attrs);
+        }
+        if reassembly_events.max_segments_exceeded > 0 {
+            debug!(
+                peer=%addr,
+                aborted=reassembly_events.max_segments_exceeded,
+                "[Actor {}-{}] aborted reassembly buffers exceeding the max segment count",
+                self.actor_id, self.socket_addr,
+            );
+            self.stats
+                .reassembly_max_segments_exceeded
+                .add(reassembly_events.max_segments_exceeded, peer_attrs);
         }
     }
 
@@ -603,8 +611,7 @@ impl UdpNotifActor {
         if let Some((peer, msg)) = next {
             let message_id = msg.message_id();
             let publisher_id = msg.publisher_id();
-            let usage = self.peers_usage.entry(peer).or_default();
-            usage.current_count += 1;
+            // Peer activity is already tracked per-datagram in `decode_pkt`.
             // Clean the closed subscribers
             self.subscribers.retain(|id, tx| {
                 if tx.is_closed() {
@@ -763,43 +770,7 @@ impl UdpNotifActor {
         dur: Duration,
         ret_tx: mpsc::Sender<Vec<SocketAddr>>,
     ) -> bool {
-        let mut cleared_peers = vec![];
-        info!(
-            "[Actor {}-{}] removing peers that were inactive for {:?}",
-            self.actor_id, self.socket_addr, dur
-        );
-        let now = Instant::now();
-        self.peers_usage.retain(|peer, usage| {
-            let since = now.duration_since(usage.last_set);
-            if since > dur && usage.current_count == 0 {
-                info!(
-                    "[Actor {}-{}] removing peer {} which has not been used for the past {:?}",
-                    self.actor_id, self.socket_addr, peer, dur
-                );
-                cleared_peers.push(*peer);
-                false
-            } else if since > dur && usage.current_count > 0 {
-                usage.last_set = now;
-                usage.current_count = 0;
-                debug!(
-                    "[Actor {}-{}] keeping peer {} and resetting counters for it",
-                    self.actor_id, self.socket_addr, peer
-                );
-                true
-            } else {
-                debug!(
-                    "[Actor {}-{}] keeping peer {} that was used {} times since {:?}",
-                    self.actor_id, self.socket_addr, usage.current_count, peer, since
-                );
-                true
-            }
-        });
-        info!(
-            "[Actor {}-{}] removed {} inactive peers",
-            self.actor_id,
-            self.socket_addr,
-            cleared_peers.len()
-        );
+        let cleared_peers = self.purge_unused_peers(dur);
         if let Err(_err) = ret_tx.send(cleared_peers).await {
             error!(
                 "[Actor {}-{}] communicating back the list of removed peers",
@@ -807,6 +778,77 @@ impl UdpNotifActor {
             );
         }
         false
+    }
+
+    /// Removes peers that haven't sent any datagram for `dur`, freeing their
+    /// per-peer [`UdpPacketCodec`]. This is the only place peers/codecs are
+    /// dropped for being idle, so it also frees memory for a peer that
+    /// stops sending mid-reassembly: once a peer has been silent longer than
+    /// `dur` (which should always be well above `reassembly_timeout`), any
+    /// reassembly buffer it left behind is already unreassemblable, so
+    /// discarding the whole codec is safe.
+    fn purge_unused_peers(&mut self, dur: Duration) -> Vec<SocketAddr> {
+        let mut cleared_peers = vec![];
+        info!(
+            "[Actor {}-{}] removing peers that were inactive for {:?}",
+            self.actor_id, self.socket_addr, dur
+        );
+        let now = Instant::now();
+        self.peers_usage.retain(|peer, last_set| {
+            let since = now.duration_since(*last_set);
+            if since > dur {
+                info!(
+                    "[Actor {}-{}] removing peer {} which has not been used for the past {:?}",
+                    self.actor_id, self.socket_addr, peer, dur
+                );
+                cleared_peers.push(*peer);
+                false
+            } else {
+                debug!(
+                    "[Actor {}-{}] keeping peer {} that was used {:?} ago",
+                    self.actor_id, self.socket_addr, peer, since
+                );
+                true
+            }
+        });
+        for peer in &cleared_peers {
+            if let Some(codec) = self.clients.remove(peer) {
+                let incomplete_count = codec.incomplete_messages_count();
+                if incomplete_count > 0 {
+                    // The codec is being dropped, so zero out its gauge now
+                    let peer_attrs = [
+                        opentelemetry::KeyValue::new(
+                            "netcalyx.udp-notif.actor",
+                            format!("{}", self.actor_id),
+                        ),
+                        opentelemetry::KeyValue::new(
+                            "network.peer.address",
+                            format!("{}", peer.ip()),
+                        ),
+                        opentelemetry::KeyValue::new(
+                            "network.peer.port",
+                            opentelemetry::Value::I64(peer.port().into()),
+                        ),
+                    ];
+                    self.stats
+                        .reassembly_incomplete_messages
+                        .record(0, &peer_attrs);
+                    debug!(
+                        peer=%peer,
+                        pending = incomplete_count,
+                        "[Actor {}-{}] discarding pending reassembly buffer(s) for purged idle peer",
+                        self.actor_id, self.socket_addr,
+                    );
+                }
+            }
+        }
+        info!(
+            "[Actor {}-{}] removed {} inactive peers",
+            self.actor_id,
+            self.socket_addr,
+            cleared_peers.len()
+        );
+        cleared_peers
     }
 
     async fn handle_local_addr(&self, tx: mpsc::Sender<(ActorId, SocketAddr)>) -> bool {
@@ -875,6 +917,11 @@ impl UdpNotifActor {
         })?;
         let framed = UdpFramed::new(socket, BytesCodec::default());
         let (_tx, mut stream): (SplitSink<_, (Bytes, _)>, _) = framed.split();
+
+        // Purges peers idle for longer than AUTO_PEER_PURGE_INTERVAL
+        let mut peer_purge_interval = tokio::time::interval(AUTO_PEER_PURGE_INTERVAL);
+        peer_purge_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
         loop {
             tokio::select! {
                 biased; // Prioritize command messages
@@ -884,6 +931,9 @@ impl UdpNotifActor {
                         Ok(false) => {}
                         Err(err) => return Err(err),
                     }
+                }
+                _ = peer_purge_interval.tick() => {
+                    self.purge_unused_peers(AUTO_PEER_PURGE_INTERVAL);
                 }
                 next = stream.next() => {
                     match next {
@@ -1359,19 +1409,21 @@ mod tests {
         tokio::task::yield_now().await;
         send_data(listening_socket, &socket, &mut data).await;
 
-        // Wait for a short duration to simulate inactivity
-        tokio::time::sleep(Duration::from_millis(200)).await;
-
-        // Purge unused peers
-        let duration = Duration::from_millis(100);
-        let purged_peers = handle.purge_unused_peers(duration).await.unwrap();
+        // The peer hasn't been idle long enough yet, so it should be kept
+        let purged_peers = handle
+            .purge_unused_peers(Duration::from_secs(5))
+            .await
+            .unwrap();
         assert_eq!(purged_peers.len(), 0);
 
         // Wait for a short duration to simulate inactivity
         tokio::time::sleep(Duration::from_millis(200)).await;
 
-        // Second round the peer should be purged
-        let purged_peers = handle.purge_unused_peers(duration).await.unwrap();
+        // Once idle longer than the given duration, the peer should be purged
+        let purged_peers = handle
+            .purge_unused_peers(Duration::from_millis(100))
+            .await
+            .unwrap();
         assert_eq!(purged_peers.len(), 1);
         assert_eq!(purged_peers[0], socket.local_addr().unwrap());
     }

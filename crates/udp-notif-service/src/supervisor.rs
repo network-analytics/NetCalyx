@@ -632,15 +632,17 @@ mod test {
             let mut buf = generate_udp_notif_data(Bytes::from_static(b"test data"));
             send_data(addr.1, &socket, &mut buf).await;
         }
-        tokio::time::sleep(Duration::from_millis(200)).await;
 
+        // The peers haven't been idle long enough yet, so none should be purged
         let purged_peers = handle
-            .purge_unused_peers(Duration::from_millis(100))
+            .purge_unused_peers(Duration::from_secs(5))
             .await
             .expect("failed to purge unused peers");
         assert!(purged_peers.is_empty());
 
         tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Once idle longer than the given duration, all peers should be purged
         let purged_peers = handle
             .purge_unused_peers(Duration::from_millis(100))
             .await
