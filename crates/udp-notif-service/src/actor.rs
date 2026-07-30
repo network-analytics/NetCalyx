@@ -134,8 +134,8 @@ use tracing::{debug, error, info, trace, warn};
 
 /// How long a peer can go completely silent before its per-peer
 /// [`UdpPacketCodec`] (and any reassembly buffer still pending in it) is
-/// dropped automatically, independent of the external [`ActorCommand::PurgeUnusedPeers`]
-/// command.
+/// dropped automatically, independent of the external
+/// [`ActorCommand::PurgeUnusedPeers`] command.
 const AUTO_PEER_PURGE_INTERVAL: Duration = Duration::from_secs(600);
 
 /// Commands that can be sent to the [UdpNotifActor].
@@ -611,7 +611,7 @@ impl UdpNotifActor {
         if let Some((peer, msg)) = next {
             let message_id = msg.message_id();
             let publisher_id = msg.publisher_id();
-            // Peer activity is already tracked per-datagram in `decode_pkt`.
+
             // Clean the closed subscribers
             self.subscribers.retain(|id, tx| {
                 if tx.is_closed() {
