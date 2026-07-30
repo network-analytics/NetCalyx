@@ -1,6 +1,7 @@
 # NetCalyx
 
-[<img alt="github" src="https://img.shields.io/badge/github-netcalyx/netcalyx-8da0cb??style=for-the-badge&labelColor=555555&logo=github" height="20">](https://github.com/network-analytics/NetCalyx)
+[<img alt="github" src="https://img.shields.io/badge/github-network--analytics/netcalyx-8da0cb??style=for-the-badge&labelColor=555555&logo=github" height="20">](https://github.com/network-analytics/NetCalyx)
+[<img alt="CI" src="https://img.shields.io/github/actions/workflow/status/network-analytics/NetCalyx/ci.yml?branch=main&style=for-the-badge&labelColor=555555&logo=githubactions" height="20">](https://github.com/network-analytics/NetCalyx/actions/workflows/ci.yml)
 
 > **NetCalyx** is a fork of [NetGauze](https://github.com/NetGauze/NetGauze),
 > licensed under Apache-2.0. See [NOTICE](NOTICE) for attribution and
