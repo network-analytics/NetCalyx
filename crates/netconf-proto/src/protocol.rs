@@ -324,7 +324,7 @@ impl XmlSerialize for Rpc {
 }
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone, Serialize, Deserialize, strum_macros::Display)]
-pub enum YangSchemaFormat {
+pub enum GetSchemaFormat {
     #[strum(serialize = "xsd")]
     Xsd,
 
@@ -341,17 +341,17 @@ pub enum YangSchemaFormat {
     Rnc,
 }
 
-impl<'a> XmlDeserialize<'a, YangSchemaFormat> for YangSchemaFormat {
+impl<'a> XmlDeserialize<'a, GetSchemaFormat> for GetSchemaFormat {
     fn xml_deserialize(parser: &mut XmlParser<'a, impl io::BufRead>) -> Result<Self, ParsingError> {
         parser.skip_text()?;
         parser.open(Some(NETCONF_MONITORING_NS), "format")?;
         let value_str = parser.tag_string()?;
         let value = match value_str.as_ref().trim() {
-            "xsd" => YangSchemaFormat::Xsd,
-            "yang" => YangSchemaFormat::Yang,
-            "yin" => YangSchemaFormat::Yin,
-            "rng" => YangSchemaFormat::Rng,
-            "rnc" => YangSchemaFormat::Rnc,
+            "xsd" => GetSchemaFormat::Xsd,
+            "yang" => GetSchemaFormat::Yang,
+            "yin" => GetSchemaFormat::Yin,
+            "rng" => GetSchemaFormat::Rng,
+            "rnc" => GetSchemaFormat::Rnc,
             _ => {
                 return Err(ParsingError::InvalidValue(format!(
                     "unknown YANG schema format `{value_str}`"
@@ -363,7 +363,7 @@ impl<'a> XmlDeserialize<'a, YangSchemaFormat> for YangSchemaFormat {
     }
 }
 
-impl XmlSerialize for YangSchemaFormat {
+impl XmlSerialize for GetSchemaFormat {
     fn xml_serialize<T: io::Write>(
         &self,
         writer: &mut XmlWriter<T>,
@@ -842,7 +842,7 @@ pub enum WellKnownOperation {
         /// The data modeling language of the schema.  If this parameter is not
         /// present, and more than one formats of the schema exists on the
         /// server, a 'data-not-unique' error is returned, as described above.
-        format: Option<YangSchemaFormat>,
+        format: Option<GetSchemaFormat>,
     },
 }
 
@@ -983,7 +983,7 @@ impl WellKnownOperation {
             None
         };
 
-        let format = match YangSchemaFormat::xml_deserialize(parser) {
+        let format = match GetSchemaFormat::xml_deserialize(parser) {
             Ok(format) => Some(format),
             Err(ParsingError::WrongToken { expecting, .. }) if expecting == "<format>" => None,
             Err(err) => return Err(err),
@@ -1002,7 +1002,7 @@ impl WellKnownOperation {
         writer: &mut XmlWriter<T>,
         identifier: &str,
         version: &Option<Box<str>>,
-        format: &Option<YangSchemaFormat>,
+        format: &Option<GetSchemaFormat>,
     ) -> Result<(), quick_xml::Error> {
         let mut ns_added = false;
         if writer.get_namespace_prefix(NETCONF_MONITORING_NS).is_none() {
@@ -3148,7 +3148,7 @@ mod tests {
         let get_schema = WellKnownOperation::GetSchema {
             identifier: "foo".into(),
             version: Some("1.0".into()),
-            format: Some(YangSchemaFormat::Yang),
+            format: Some(GetSchemaFormat::Yang),
         };
         test_xml_value(get_schema_str, get_schema)?;
         Ok(())
@@ -3168,7 +3168,7 @@ mod tests {
             RpcOperation::WellKnown(WellKnownOperation::GetSchema {
                 identifier: "foo".into(),
                 version: Some("1.0".into()),
-                format: Some(YangSchemaFormat::Yang),
+                format: Some(GetSchemaFormat::Yang),
             }),
         );
         test_xml_value(get_schema_str, get_schema)?;
