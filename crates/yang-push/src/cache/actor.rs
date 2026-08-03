@@ -223,11 +223,13 @@ use crate::{
 };
 use futures_util::StreamExt;
 use futures_util::stream::FuturesUnordered;
+use netcalyx_netconf_proto::yang_module_cache::YangModuleCache;
 use netcalyx_netconf_proto::yang_push::types::SubscriptionId;
 use rustc_hash::FxHashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::{JoinError, JoinHandle};
@@ -245,10 +247,15 @@ pub struct CachingStats {
     pub device_fetch_queue: opentelemetry::metrics::Gauge<u64>,
     pub device_fetch_succeeded: opentelemetry::metrics::Counter<u64>,
     pub device_fetch_failed: opentelemetry::metrics::Counter<u64>,
+    // Observable instruments that read from YangModuleCache atomics.
+    // Held here to keep the OTel callbacks registered for the lifetime of the actor.
+    _yang_module_cache_hits: opentelemetry::metrics::ObservableCounter<u64>,
+    _yang_module_cache_misses: opentelemetry::metrics::ObservableCounter<u64>,
+    _yang_module_cache_size: opentelemetry::metrics::ObservableGauge<u64>,
 }
 
 impl CachingStats {
-    pub fn new(meter: opentelemetry::metrics::Meter) -> Self {
+    pub fn new(meter: opentelemetry::metrics::Meter, module_cache: &YangModuleCache) -> Self {
         let requests_received = meter
             .u64_counter("netcalyx.collector.yang_push.caching.requests.received")
             .with_description("Number of requests received by the YANG library cache actor")
@@ -283,6 +290,41 @@ impl CachingStats {
             .u64_counter("netcalyx.collector.yang_push.caching.device.fetch.response.failed")
             .with_description("Number of device fetch requests initiated by the YANG library cache actor and failed")
             .build();
+
+        let stats = module_cache.stats().clone();
+        let _yang_module_cache_hits = {
+            let s = Arc::clone(&stats);
+            meter
+                .u64_observable_counter("netcalyx.collector.yang_push.caching.yang_module_cache.hits")
+                .with_description("Number of get-schema RPCs avoided because the YANG module was already in the shared cache")
+                .with_callback(move |counter| {
+                    counter.observe(s.hits.load(Ordering::Relaxed), &[]);
+                })
+                .build()
+        };
+        let _yang_module_cache_misses = {
+            let s = Arc::clone(&stats);
+            meter
+                .u64_observable_counter("netcalyx.collector.yang_push.caching.yang_module_cache.misses")
+                .with_description("Number of get-schema RPCs issued because the YANG module was not yet in the shared cache")
+                .with_callback(move |counter| {
+                    counter.observe(s.misses.load(Ordering::Relaxed), &[]);
+                })
+                .build()
+        };
+        let _yang_module_cache_size = {
+            let s = Arc::clone(&stats);
+            meter
+                .u64_observable_gauge("netcalyx.collector.yang_push.caching.yang_module_cache.size")
+                .with_description(
+                    "Number of distinct YANG modules currently held in the shared module cache",
+                )
+                .with_callback(move |gauge| {
+                    gauge.observe(s.size.load(Ordering::Relaxed), &[]);
+                })
+                .build()
+        };
+
         Self {
             requests_received,
             pending_cache_requests,
@@ -292,6 +334,9 @@ impl CachingStats {
             device_fetch_queue,
             device_fetch_succeeded,
             device_fetch_failed,
+            _yang_module_cache_hits,
+            _yang_module_cache_misses,
+            _yang_module_cache_size,
         }
     }
 }
@@ -1225,6 +1270,7 @@ impl CacheActorHandle {
         schema_cache: either::Either<YangLibraryCache, PathBuf>,
         fetcher: F,
         fetcher_timeout: Duration,
+        global_module_cache: YangModuleCache,
         stats: either::Either<opentelemetry::metrics::Meter, CachingStats>,
     ) -> Result<(JoinHandle<Result<String, CacheActorCacheError>>, Self), CacheActorHandleError>
     {
@@ -1235,7 +1281,7 @@ impl CacheActorHandle {
             either::Either::Right(root_path) => YangLibraryCache::from_disk(root_path)?,
         };
         let stats = match stats {
-            either::Either::Left(meter) => CachingStats::new(meter),
+            either::Either::Left(meter) => CachingStats::new(meter, &global_module_cache),
             either::Either::Right(stats) => stats,
         };
 
@@ -1370,6 +1416,7 @@ pub(crate) mod tests {
             either::Right(cache_dir.path().to_path_buf()),
             fetcher,
             Duration::from_secs(1),
+            YangModuleCache::new(),
             either::Either::Left(opentelemetry::global::meter("test-meter")),
         )
         .expect("Failed to create cache actor");
@@ -1412,6 +1459,7 @@ pub(crate) mod tests {
             either::Right(cache_dir.path().to_path_buf()),
             fetcher,
             Duration::from_secs(1),
+            YangModuleCache::new(),
             either::Either::Left(opentelemetry::global::meter("test-meter")),
         )
         .expect("Failed to create cache actor");

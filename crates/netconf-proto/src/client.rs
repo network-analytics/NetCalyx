@@ -17,10 +17,11 @@
 use crate::capabilities::{Capability, NetconfVersion};
 use crate::codec::{SshCodec, SshCodecError};
 use crate::protocol::{
-    Filter, Hello, NetConfMessage, Rpc, RpcOperation, RpcReply, RpcReplyContent, RpcResponse,
-    WellKnownOperation, WellKnownRpcResponse, YangSchemaFormat,
+    Filter, GetSchemaFormat, Hello, NetConfMessage, Rpc, RpcOperation, RpcReply, RpcReplyContent,
+    RpcResponse, WellKnownOperation, WellKnownRpcResponse,
 };
 use crate::xml_utils::{ParsingError, XmlDeserialize};
+use crate::yang_module_cache::YangModuleCache;
 use crate::yang_push::SUBSCRIBED_NOTIFICATIONS_NS;
 use crate::yang_push::filters::Filters;
 use crate::yang_push::subscription::{DatastoreSelectionFilterObjects, Subscription, Target};
@@ -149,10 +150,11 @@ pub struct NetconfSshConnectConfig<H> {
     announce_caps: HashSet<Capability>,
     handler: H,
     config: Arc<russh::client::Config>,
+    module_cache: YangModuleCache,
 }
 
 impl<H: russh::client::Handler> NetconfSshConnectConfig<H> {
-    pub const fn new(
+    pub fn new(
         auth: SshAuth,
         peer_address: SocketAddr,
         local_address: Option<SocketAddr>,
@@ -169,7 +171,13 @@ impl<H: russh::client::Handler> NetconfSshConnectConfig<H> {
             announce_caps,
             handler,
             config,
+            module_cache: YangModuleCache::new(),
         }
+    }
+
+    pub fn with_module_cache(mut self, module_cache: YangModuleCache) -> Self {
+        self.module_cache = module_cache;
+        self
     }
 
     pub const fn auth(&self) -> &SshAuth {
@@ -286,7 +294,13 @@ where
         config.peer_address
     );
     let stream = channel.into_stream();
-    NetConfSshClient::connect(config.peer_address, stream, config.announce_caps).await
+    NetConfSshClient::connect(
+        config.peer_address,
+        stream,
+        config.announce_caps,
+        config.module_cache,
+    )
+    .await
 }
 
 pub struct NetConfSshClient<T> {
@@ -312,6 +326,11 @@ pub struct NetConfSshClient<T> {
     /// making multiple requests to the device to get the filters when
     /// processing multiple subscriptions
     yang_push_filters: Option<Filters>,
+
+    /// Global YANG module cache shared across all sessions that use the same
+    /// [`YangModuleCache`] instance. Populated transparently by
+    /// [`get_yang_module`](Self::get_yang_module); callers see no difference.
+    module_cache: YangModuleCache,
 }
 
 impl<T> NetConfSshClient<T> {
@@ -339,6 +358,10 @@ impl<T> NetConfSshClient<T> {
 
     pub fn yang_library(&self) -> Option<Arc<YangLibrary>> {
         self.yang_library.as_ref().map(Arc::clone)
+    }
+
+    pub fn module_cache(&self) -> &YangModuleCache {
+        &self.module_cache
     }
 }
 
@@ -393,6 +416,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> NetConfSshClient<T> {
         peer: SocketAddr,
         stream: T,
         announce_caps: HashSet<Capability>,
+        module_cache: YangModuleCache,
     ) -> Result<Self, NetConfSshClientError> {
         let framed = Framed::new(stream, SshCodec::default());
         let (framed, session_id, peer_caps) = Self::exchange_hello(framed, announce_caps).await?;
@@ -405,6 +429,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> NetConfSshClient<T> {
             next_message_id,
             yang_library: None,
             yang_push_filters: None,
+            module_cache,
         })
     }
 
@@ -481,20 +506,37 @@ impl<T: AsyncRead + AsyncWrite + Unpin> NetConfSshClient<T> {
         Ok(())
     }
 
-    /// Get YANG schema from the device
-    pub async fn get_schema(
+    /// Fetch a YANG module from the device via the NETCONF `get-schema` RPC,
+    /// consulting the shared module cache first.
+    ///
+    /// Caching requires a `version`: the shared cache is keyed by
+    /// `(name, revision)`, so only modules that carry a revision are cached.
+    /// When `version` is `Some`, a cache hit skips the RPC entirely and a miss
+    /// populates the cache for all future calls.  When `version` is `None` the
+    /// module is fetched straight from the device on every call, bypassing the
+    /// cache.
+    pub async fn get_yang_module(
         &mut self,
         name: &str,
         version: Option<&str>,
-    ) -> Result<Box<str>, NetConfSshClientError> {
+    ) -> Result<Arc<str>, NetConfSshClientError> {
+        if let Some(version) = version
+            && let Some(cached) = self.module_cache.get(name, version)
+        {
+            trace!(
+                "[{}] yang module cache hit for `{name}` revision {version}",
+                self.peer
+            );
+            return Ok(cached);
+        }
         debug!(
-            "[{}] Getting a YANG schema with name `{name}` and version {version:?}",
+            "[{}] Getting a YANG module with name `{name}` and version {version:?}",
             self.peer
         );
         let rpc = RpcOperation::WellKnown(WellKnownOperation::GetSchema {
             identifier: name.into(),
             version: version.map(Into::into),
-            format: Some(YangSchemaFormat::Yang),
+            format: Some(GetSchemaFormat::Yang),
         });
         let message_id = self.rpc(rpc).await?;
         let rpc_reply = self.rpc_reply().await?;
@@ -510,7 +552,13 @@ impl<T: AsyncRead + AsyncWrite + Unpin> NetConfSshClient<T> {
             if let RpcResponse::WellKnown(WellKnownRpcResponse::YangSchema { schema }) =
                 rpc_response
             {
-                return Ok(schema);
+                let arc: Arc<str> = Arc::from(schema.as_ref());
+                // Only versioned modules are cached; the cache is keyed by
+                // `(name, revision)`.
+                if let Some(version) = version {
+                    self.module_cache.insert(name, version, Arc::clone(&arc));
+                }
+                return Ok(arc);
             } else {
                 unreachable!()
             }
@@ -615,7 +663,9 @@ impl<T: AsyncRead + AsyncWrite + Unpin> NetConfSshClient<T> {
             visited.insert(module.name().to_string());
 
             // Fetch the YANG schema
-            let schema = self.get_schema(module.name(), module.revision()).await?;
+            let schema = self
+                .get_yang_module(module.name(), module.revision())
+                .await?;
             // Parse dependencies from schema
             let deps = extract_yang_dependencies(&schema).map_err(|error| {
                 NetConfSshClientError::YangSchemaParsingError {
@@ -684,17 +734,22 @@ impl<T: AsyncRead + AsyncWrite + Unpin> NetConfSshClient<T> {
             match module {
                 ModuleType::Full(module) => {
                     builder
-                        .add_module(module, schema, checker)
+                        .add_module(module, Box::from(schema.as_ref()), checker)
                         .map_err(NetConfSshClientError::DependencyError)?;
                 }
                 ModuleType::FullSubmodule(module_name, submodule) => {
                     builder
-                        .add_submodule_for_module(module_name.as_ref(), submodule, schema, checker)
+                        .add_submodule_for_module(
+                            module_name.as_ref(),
+                            submodule,
+                            Box::from(schema.as_ref()),
+                            checker,
+                        )
                         .map_err(NetConfSshClientError::DependencyError)?;
                 }
                 ModuleType::ImportOnly(module) => {
                     builder
-                        .add_import_only_module(module, schema, checker)
+                        .add_import_only_module(module, Box::from(schema.as_ref()), checker)
                         .map_err(NetConfSshClientError::DependencyError)?;
                 }
                 ModuleType::ImportOnlySubmodule(module_name, submodule) => {
@@ -702,7 +757,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> NetConfSshClient<T> {
                         .add_submodule_for_import_only_module(
                             module_name.as_ref(),
                             submodule,
-                            schema,
+                            Box::from(schema.as_ref()),
                             checker,
                         )
                         .map_err(NetConfSshClientError::DependencyError)?;

@@ -29,6 +29,7 @@
 use crate::cache::storage::{SubscriptionInfo, YangLibraryCacheError};
 use netcalyx_netconf_proto::capabilities::{Capability, NetconfVersion};
 use netcalyx_netconf_proto::client::{NetconfSshConnectConfig, SshAuth, SshHandler, connect};
+use netcalyx_netconf_proto::yang_module_cache::YangModuleCache;
 use netcalyx_netconf_proto::yang_push::filters::StreamSelectionFilterObjects;
 use netcalyx_netconf_proto::yang_push::subscription::{
     DatastoreSelectionFilterObjects, Target, YangPushModuleVersion,
@@ -87,6 +88,7 @@ struct FetchConfig {
     client_config: Arc<russh::client::Config>,
     default_port: u16,
     timeout: std::time::Duration,
+    module_cache: YangModuleCache,
 }
 
 #[derive(Clone, Copy)]
@@ -130,6 +132,7 @@ impl NetconfYangLibraryFetcher {
         default_port: u16,
         default_timeout: std::time::Duration,
         retry_cfg: RetryConfig,
+        global_module_cache: YangModuleCache,
     ) -> Self {
         Self {
             fetch_cfg: FetchConfig {
@@ -138,6 +141,7 @@ impl NetconfYangLibraryFetcher {
                 client_config: Arc::new(client_config),
                 default_port,
                 timeout: default_timeout,
+                module_cache: global_module_cache,
             },
             retry_cfg,
         }
@@ -174,7 +178,8 @@ impl NetconfYangLibraryFetcher {
             announce_caps,
             ssh_handler,
             Arc::clone(&cfg.client_config),
-        );
+        )
+        .with_module_cache(cfg.module_cache.clone());
 
         let mut client = match tokio::time::timeout(cfg.timeout, connect(config)).await {
             Ok(Ok(c)) => c,
@@ -247,7 +252,8 @@ impl NetconfYangLibraryFetcher {
             announce_caps,
             ssh_handler,
             Arc::clone(&cfg.client_config),
-        );
+        )
+        .with_module_cache(cfg.module_cache.clone());
         // Empty subscription info returned in case of errors to keep track of peer and
         // subscription ID
         let empty = SubscriptionInfo::new_empty(
