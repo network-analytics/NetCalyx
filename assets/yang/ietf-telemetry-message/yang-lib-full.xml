@@ -22,8 +22,7 @@
     <module>
       <name>ietf-yang-push-telemetry-message</name>
       <revision>2025-10-19</revision>
-      <namespace>
-        urn:ietf:params:xml:ns:yang:ietf-yang-push-telemetry-message</namespace>
+      <namespace>urn:ietf:params:xml:ns:yang:ietf-yang-push-telemetry-message</namespace>
     </module>
 
     <!-- ============================================================ -->
@@ -48,8 +47,7 @@
     <module>
       <name>ietf-notification-capabilities</name>
       <revision>2022-02-17</revision>
-      <namespace>
-        urn:ietf:params:xml:ns:yang:ietf-notification-capabilities</namespace>
+      <namespace>urn:ietf:params:xml:ns:yang:ietf-notification-capabilities</namespace>
     </module>
 
     <!-- YANG Push subscription model, imported by
@@ -81,8 +79,7 @@
     <module>
       <name>ietf-subscribed-notifications</name>
       <revision>2019-09-09</revision>
-      <namespace>
-        urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications</namespace>
+      <namespace>urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications</namespace>
       <!-- We are permissive with the features for testing purposes -->
       <feature>encode-json</feature>
       <feature>encode-xml</feature>
@@ -138,8 +135,7 @@
     <module>
       <name>ietf-subscribed-notif-receivers</name>
       <revision>2024-02-01</revision>
-      <namespace>
-        urn:ietf:params:xml:ns:yang:ietf-subscribed-notif-receivers</namespace>
+      <namespace>urn:ietf:params:xml:ns:yang:ietf-subscribed-notif-receivers</namespace>
     </module>
     <module>
       <name>ietf-udp-client</name>
