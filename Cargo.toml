@@ -24,24 +24,24 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-netcalyx-pcap-reader = { version = "0.12.1", path = "crates/pcap-reader" }
-netcalyx-bgp-pkt = { version = "0.12.1", path = "crates/bgp-pkt" }
-netcalyx-bgp-speaker = { version = "0.12.1", path = "crates/bgp-speaker" }
-netcalyx-bmp-service = { version = "0.12.1", path = "crates/bmp-service" }
-netcalyx-bmp-pkt = { version = "0.12.1", path = "crates/bmp-pkt" }
-netcalyx-iana = { version = "0.12.1", path = "crates/iana" }
-netcalyx-ipfix-code-generator = { version = "0.12.1", path = "crates/ipfix-code-generator" }
-netcalyx-flow-pkt = { version = "0.12.1", path = "crates/flow-pkt" }
-netcalyx-flow-service = { version = "0.12.1", path = "crates/flow-service" }
-netcalyx-locate = { version = "0.12.1", path = "crates/locate" }
-netcalyx-parse-utils = { version = "0.12.1", path = "crates/parse-utils" }
-netcalyx-serde-macros = { version = "0.12.1", path = "crates/serde-macros" }
-netcalyx-udp-notif-pkt = { version = "0.12.1", path = "crates/udp-notif-pkt" }
-netcalyx-udp-notif-service = { version = "0.12.1", path = "crates/udp-notif-service" }
-netcalyx-analytics = { version = "0.12.1", path = "crates/analytics" }
-netcalyx-yang-push = { version = "0.12.1", path = "crates/yang-push" }
-netcalyx-pcap-decoder = { version = "0.12.1", path = "crates/pcap-decoder" }
-netcalyx-netconf-proto = { version = "0.12.1", path = "crates/netconf-proto" }
+netcalyx-pcap-reader = { version = "0.2.0", path = "crates/pcap-reader" }
+netcalyx-bgp-pkt = { version = "0.2.0", path = "crates/bgp-pkt" }
+netcalyx-bgp-speaker = { version = "0.2.0", path = "crates/bgp-speaker" }
+netcalyx-bmp-service = { version = "0.2.0", path = "crates/bmp-service" }
+netcalyx-bmp-pkt = { version = "0.2.0", path = "crates/bmp-pkt" }
+netcalyx-iana = { version = "0.2.0", path = "crates/iana" }
+netcalyx-ipfix-code-generator = { version = "0.2.0", path = "crates/ipfix-code-generator" }
+netcalyx-flow-pkt = { version = "0.2.0", path = "crates/flow-pkt" }
+netcalyx-flow-service = { version = "0.2.0", path = "crates/flow-service" }
+netcalyx-locate = { version = "0.2.0", path = "crates/locate" }
+netcalyx-parse-utils = { version = "0.2.0", path = "crates/parse-utils" }
+netcalyx-serde-macros = { version = "0.2.0", path = "crates/serde-macros" }
+netcalyx-udp-notif-pkt = { version = "0.2.0", path = "crates/udp-notif-pkt" }
+netcalyx-udp-notif-service = { version = "0.2.0", path = "crates/udp-notif-service" }
+netcalyx-analytics = { version = "0.2.0", path = "crates/analytics" }
+netcalyx-yang-push = { version = "0.2.0", path = "crates/yang-push" }
+netcalyx-pcap-decoder = { version = "0.2.0", path = "crates/pcap-decoder" }
+netcalyx-netconf-proto = { version = "0.2.0", path = "crates/netconf-proto" }
 thiserror = "2.0"
 async-channel = "2.5"
 libc = { version = "0.2" }
