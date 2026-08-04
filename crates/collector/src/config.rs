@@ -233,7 +233,8 @@ pub struct UdpNotifConfig {
     #[serde(default = "default_reassembly_max_segments")]
     pub reassembly_max_segments: u16,
 
-    /// How long to keep an incomplete reassembly buffer before discarding it.
+    /// How long (seconds) to keep an incomplete reassembly buffer before
+    /// discarding it
     #[serde(default = "default_reassembly_timeout")]
     #[serde_as(as = "serde_with::DurationSeconds<u64>")]
     pub reassembly_timeout: Duration,

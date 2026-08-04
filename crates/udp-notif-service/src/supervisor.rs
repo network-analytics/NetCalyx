@@ -82,7 +82,8 @@ pub struct SupervisorConfig {
     /// Maximum number of segments per reassembly buffer for each per-peer
     /// codec.
     pub reassembly_max_segments: u16,
-    /// How long to keep an incomplete reassembly buffer before discarding it.
+    /// How long (seconds) to keep an incomplete reassembly buffer before
+    /// discarding it.
     pub reassembly_timeout: Duration,
 }
 
