@@ -1,6 +1,6 @@
 [package]
 name = "netcalyx-fuzz"
-version = "0.12.1"
+version = "0.2.0"
 publish = false
 edition = "2024"
 authors = ["NetCalyx Authors"]
