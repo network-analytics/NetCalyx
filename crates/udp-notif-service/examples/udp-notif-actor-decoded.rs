@@ -1,5 +1,4 @@
 // Copyright (C) 2026-present The NetCalyx Authors.
-// Copyright (C) 2024-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,7 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use netcalyx_udp_notif_service::supervisor::{SupervisorConfig, UdpNotifSupervisorHandle};
+use netcalyx_udp_notif_pkt::decoded::UdpNotifPacketDecoded;
+use netcalyx_udp_notif_service::actor::ActorHandle;
 use std::time::Duration;
 use tracing::{error, info};
 
@@ -32,7 +32,6 @@ pub fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> 
     let num_worker_threads = std::env::var("NUM_WORKERS")
         .unwrap_or("4".to_string())
         .parse()?;
-    let config = SupervisorConfig::default();
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(num_worker_threads)
         .enable_all()
@@ -40,42 +39,47 @@ pub fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> 
 
     runtime.block_on(async move {
         init_tracing();
-        let (supervisor_join_handle, handler) =
-            UdpNotifSupervisorHandle::new(config, opentelemetry::global::meter("example")).await;
+        let socket_addr = "0.0.0.0:9999".parse().unwrap();
+        let actor_id = 1;
+        let cmd_buffer_size = 10;
+        let (join_handle, handler) = ActorHandle::new(
+            actor_id,
+            socket_addr,
+            None,
+            cmd_buffer_size,
+            Duration::from_millis(500),
+            netcalyx_udp_notif_pkt::codec::DEFAULT_MAX_SEGMENTS,
+            netcalyx_udp_notif_pkt::codec::DEFAULT_REASSEMBLY_TIMEOUT,
+            either::Either::Left(opentelemetry::global::meter("example")),
+        )
+        .await?;
         let (pkt_rx, subscriptions) = handler.subscribe(10).await?;
         for subscription in &subscriptions {
             info!("subscribed to {:?}", subscription);
         }
         tokio::spawn(async move {
             while let Ok(pkt) = pkt_rx.recv().await {
-                info!("received packet: {:?}", pkt);
+                let addr = pkt.peer_address();
+                match UdpNotifPacketDecoded::try_from(pkt.packet()) {
+                    Ok(decoded) => println!("{}", serde_json::to_string(&decoded).unwrap()),
+                    Err(err) => error!(%addr, error = %err, "failed to decode UDP-Notif payload"),
+                }
             }
         });
 
         // Purge old entries periodically
-        let handler_clone = handler.clone();
         let cleanup_task = tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(60));
             loop {
                 interval.tick().await;
-                handler_clone
+                handler
                     .purge_unused_peers(Duration::from_secs(60))
                     .await
-                    .expect("failed to purge unused peers");
+                    .expect("failed purge unused_peers");
             }
         });
-
-        tokio::select! {
-            _ = tokio::signal::ctrl_c() => {
-                info!("termination signal received, gracefully shutting down actors");
-                cleanup_task.abort();
-                let _ = handler.shutdown().await;
-            }
-            _ = supervisor_join_handle => {
-                error!("unexpected supervisor shutdown");
-                cleanup_task.abort();
-            }
-        }
+        let _ = tokio::join!(join_handle).0?;
+        cleanup_task.abort();
         Ok::<(), Box<dyn std::error::Error + Send + Sync + 'static>>(())
     })
 }

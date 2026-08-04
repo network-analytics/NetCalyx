@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2024-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -194,10 +195,7 @@ fn test_udp_notif_pcap(overwrite: bool, pcap_path: PathBuf) {
                             "dump": hexdump,
                         }
                     );
-                    (
-                        ret,
-                        Err(format!("Packet was not valid UDP-Notif massage: {err}")),
-                    )
+                    (ret, Err(format!("UDP-Notif codec error: {err}")))
                 }
             };
             if let Some(file) = json_file.as_mut() {

@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2024-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -63,6 +64,7 @@ use crate::actor::{ActorCommand, ActorHandle, UdpNotifActorError, UdpNotifCollec
 use crate::{
     ActorId, SubscriberId, Subscription, UdpNotifReceiver, UdpNotifSender, create_udp_notif_channel,
 };
+use netcalyx_udp_notif_pkt::codec::{DEFAULT_MAX_SEGMENTS, DEFAULT_REASSEMBLY_TIMEOUT};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -77,6 +79,12 @@ pub struct SupervisorConfig {
     pub binding_addresses: Vec<BindingAddress>,
     pub cmd_buffer_size: usize,
     pub subscriber_timeout: Duration,
+    /// Maximum number of segments per reassembly buffer for each per-peer
+    /// codec.
+    pub reassembly_max_segments: u16,
+    /// How long (seconds) to keep an incomplete reassembly buffer before
+    /// discarding it.
+    pub reassembly_timeout: Duration,
 }
 
 /// Configuration to a given listening address
@@ -99,6 +107,8 @@ impl Default for SupervisorConfig {
             }],
             cmd_buffer_size: 100,
             subscriber_timeout: Duration::from_secs(1),
+            reassembly_max_segments: DEFAULT_MAX_SEGMENTS,
+            reassembly_timeout: DEFAULT_REASSEMBLY_TIMEOUT,
         }
     }
 }
@@ -297,6 +307,8 @@ impl UdpNotifSupervisorHandle {
                     binding_address.interface.clone(),
                     10,
                     config.subscriber_timeout,
+                    config.reassembly_max_segments,
+                    config.reassembly_timeout,
                     either::Either::Right(stats.clone()),
                 )
                 .await;
@@ -517,6 +529,8 @@ mod test {
             ],
             cmd_buffer_size: 10,
             subscriber_timeout: Duration::from_secs(1),
+            reassembly_max_segments: DEFAULT_MAX_SEGMENTS,
+            reassembly_timeout: DEFAULT_REASSEMBLY_TIMEOUT,
         }
     }
 
@@ -620,15 +634,17 @@ mod test {
             let mut buf = generate_udp_notif_data(Bytes::from_static(b"test data"));
             send_data(addr.1, &socket, &mut buf).await;
         }
-        tokio::time::sleep(Duration::from_millis(200)).await;
 
+        // The peers haven't been idle long enough yet, so none should be purged
         let purged_peers = handle
-            .purge_unused_peers(Duration::from_millis(100))
+            .purge_unused_peers(Duration::from_secs(5))
             .await
             .expect("failed to purge unused peers");
         assert!(purged_peers.is_empty());
 
         tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Once idle longer than the given duration, all peers should be purged
         let purged_peers = handle
             .purge_unused_peers(Duration::from_millis(100))
             .await

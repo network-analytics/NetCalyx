@@ -87,6 +87,14 @@ pub(crate) const fn default_ansi_log() -> bool {
     false
 }
 
+pub(crate) const fn default_reassembly_max_segments() -> u16 {
+    netcalyx_udp_notif_pkt::codec::DEFAULT_MAX_SEGMENTS
+}
+
+pub(crate) const fn default_reassembly_timeout() -> Duration {
+    netcalyx_udp_notif_pkt::codec::DEFAULT_REASSEMBLY_TIMEOUT
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CollectorConfig {
     #[serde(default)]
@@ -221,6 +229,16 @@ pub struct UdpNotifConfig {
     #[serde(default = "default_cmd_size_buffer")]
     pub cmd_buffer_size: usize,
 
+    /// Maximum number of segments per reassembly buffer per peer.
+    #[serde(default = "default_reassembly_max_segments")]
+    pub reassembly_max_segments: u16,
+
+    /// How long (seconds) to keep an incomplete reassembly buffer before
+    /// discarding it
+    #[serde(default = "default_reassembly_timeout")]
+    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
+    pub reassembly_timeout: Duration,
+
     pub listeners: Vec<Binding>,
 
     /// Location of the cached YANG schemas
@@ -243,6 +261,8 @@ impl UdpNotifConfig {
             binding_addresses: self.listeners.iter().cloned().map(|x| x.into()).collect(),
             subscriber_timeout: self.subscriber_timeout,
             cmd_buffer_size: self.cmd_buffer_size,
+            reassembly_max_segments: self.reassembly_max_segments,
+            reassembly_timeout: self.reassembly_timeout,
         }
     }
 }
