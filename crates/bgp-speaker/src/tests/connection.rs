@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2024-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -331,7 +332,13 @@ async fn test_open_sent_tcp_connection_fails() -> io::Result<()> {
     Ok(())
 }
 
-#[tokio::test]
+// Uses a paused/virtual clock (instead of real timers) so the keepalive and
+// hold timers - which are armed to fire at the same virtual instant when
+// `keepalive_timer_duration == hold_time / 3` - resolve deterministically.
+// With real time, OS scheduler jitter (observed on macOS CI runners) could
+// make the hold timer fire one keepalive tick early, breaking the expected
+// mock I/O write sequence.
+#[tokio::test(start_paused = true)]
 #[tracing_test::traced_test]
 async fn test_open_confirm_hold_timer_expires() -> io::Result<()> {
     let hold_time_seconds = 3;
