@@ -181,9 +181,10 @@ const CACHE_LOOKUP_BY_SUBSCRIPTION_ID: &str = "subscription_id";
 /// fetch failed or timed out. Packets are forwarded unvalidated.
 ///
 /// `schema_fetch_pending` is set to `true` when a `LookupBySubscriptionInfo`
-/// request is sent and cleared to `false` when the cache actor responds,
-/// regardless of whether a schema was found. While it is `true`, duplicate
-/// SubscriptionStarted packets are buffered rather than forwarded unvalidated.
+/// or `LookupBySubscriptionId` request is sent and cleared to `false` when
+/// the cache actor responds, regardless of whether a schema was found. While
+/// it is `true`, duplicate packets for the same subscription are buffered
+/// rather than forwarded unvalidated.
 #[derive(Debug)]
 struct CachedSubscription {
     cached_content_id: Option<ContentId>,
