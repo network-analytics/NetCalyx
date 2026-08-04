@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2025-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,9 +22,9 @@
 //! JSON format.
 
 use crate::publishers::kafka_yang::YangConverter;
+use crate::yang_push::enrichment::EnrichedNotification;
 use netcalyx_yang_push::ContentId;
 use netcalyx_yang_push::cache::storage::{SubscriptionInfo, YangLibraryReference};
-use netcalyx_yang_push::model::telemetry::TelemetryMessageWrapper;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, strum_macros::Display)]
@@ -81,12 +82,7 @@ impl TelemetryYangConverter {
     }
 }
 
-impl
-    YangConverter<
-        (Option<ContentId>, SubscriptionInfo, TelemetryMessageWrapper),
-        TelemetryYangConverterError,
-    > for TelemetryYangConverter
-{
+impl YangConverter<EnrichedNotification, TelemetryYangConverterError> for TelemetryYangConverter {
     fn subject_prefix(&self) -> Option<&str> {
         self.subject_prefix.as_deref()
     }
@@ -103,38 +99,27 @@ impl
         self.extension_yang_lib_ref.as_ref()
     }
 
-    fn content_id(
-        &self,
-        input: &(Option<ContentId>, SubscriptionInfo, TelemetryMessageWrapper),
-    ) -> Option<ContentId> {
-        input.0.clone()
+    fn content_id(&self, input: &EnrichedNotification) -> Option<ContentId> {
+        input.cached_content_id.clone()
     }
 
-    fn get_key(
-        &self,
-        input: &(Option<ContentId>, SubscriptionInfo, TelemetryMessageWrapper),
-    ) -> Option<serde_json::Value> {
-        let (_, subscription_info, _) = input;
-        let ip = subscription_info.peer().ip();
+    fn get_key(&self, input: &EnrichedNotification) -> Option<serde_json::Value> {
+        let ip = input.subscription_info.peer_ip();
         Some(serde_json::Value::String(ip.to_string()))
     }
 
     fn serialize_json(
         &self,
-        input: (Option<ContentId>, SubscriptionInfo, TelemetryMessageWrapper),
+        input: EnrichedNotification,
     ) -> Result<Vec<u8>, TelemetryYangConverterError> {
-        let telemetry_message_wrapper = input.2;
-        serde_json::to_vec(&telemetry_message_wrapper).map_err(Into::into)
+        serde_json::to_vec(&input.message).map_err(Into::into)
     }
 
-    fn subscription_info(
-        &self,
-        input: &(Option<ContentId>, SubscriptionInfo, TelemetryMessageWrapper),
-    ) -> Option<SubscriptionInfo> {
-        if input.1.is_empty() {
+    fn subscription_info(&self, input: &EnrichedNotification) -> Option<SubscriptionInfo> {
+        if input.subscription_info.is_empty() {
             None
         } else {
-            Some(input.1.clone())
+            Some(input.subscription_info.clone())
         }
     }
 }
@@ -145,14 +130,13 @@ mod tests {
     use chrono::TimeZone;
     use netcalyx_netconf_proto::yang_push::identities::{Encoding, Transport};
     use netcalyx_netconf_proto::yang_push::subscription::YangPushModuleVersion;
+    use netcalyx_udp_notif_service::SessionInfo;
     use netcalyx_yang_push::model::telemetry::*;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
     fn create_test_subscription_info(ip: IpAddr) -> SubscriptionInfo {
         SubscriptionInfo::new(
-            SocketAddr::from(([127, 0, 0, 1], 10000)),
-            None,
-            SocketAddr::new(ip, 8080),
+            ip,
             1,
             netcalyx_udp_notif_pkt::notification::Target::new_datastore(
                 "ietf-datastores:operational".to_string(),
@@ -223,7 +207,16 @@ mod tests {
         let sub_info = create_test_subscription_info(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
         let msg = create_test_telemetry_message_wrapper();
 
-        let input = (content_id.clone(), sub_info, msg);
+        let input = EnrichedNotification {
+            cached_content_id: content_id.clone(),
+            subscription_info: sub_info,
+            session: SessionInfo::new(
+                SocketAddr::from(([127, 0, 0, 1], 0)),
+                None,
+                SocketAddr::from(([127, 0, 0, 1], 0)),
+            ),
+            message: msg,
+        };
         assert_eq!(converter.content_id(&input), content_id);
     }
 
@@ -234,7 +227,16 @@ mod tests {
         let sub_info = create_test_subscription_info(ip);
         let msg = create_test_telemetry_message_wrapper();
 
-        let input = (None, sub_info, msg);
+        let input = EnrichedNotification {
+            cached_content_id: None,
+            subscription_info: sub_info,
+            session: SessionInfo::new(
+                SocketAddr::from(([127, 0, 0, 1], 0)),
+                None,
+                SocketAddr::from(([127, 0, 0, 1], 0)),
+            ),
+            message: msg,
+        };
         let key = converter.get_key(&input).unwrap();
         assert_eq!(key, serde_json::Value::String("192.168.1.1".to_string()));
     }
@@ -246,7 +248,16 @@ mod tests {
         let sub_info = create_test_subscription_info(ip);
         let msg = create_test_telemetry_message_wrapper();
 
-        let input = (None, sub_info, msg);
+        let input = EnrichedNotification {
+            cached_content_id: None,
+            subscription_info: sub_info,
+            session: SessionInfo::new(
+                SocketAddr::from(([127, 0, 0, 1], 0)),
+                None,
+                SocketAddr::from(([127, 0, 0, 1], 0)),
+            ),
+            message: msg,
+        };
         let key = converter.get_key(&input).unwrap();
         assert_eq!(key, serde_json::Value::String("2001:db8::1".to_string()));
     }
@@ -259,7 +270,16 @@ mod tests {
         let expected = serde_json::to_value(&msg).unwrap();
 
         // Call serialize_json to serialize into bytes
-        let input = (None, sub_info, msg);
+        let input = EnrichedNotification {
+            cached_content_id: None,
+            subscription_info: sub_info,
+            session: SessionInfo::new(
+                SocketAddr::from(([127, 0, 0, 1], 0)),
+                None,
+                SocketAddr::from(([127, 0, 0, 1], 0)),
+            ),
+            message: msg,
+        };
         let result = converter.serialize_json(input);
         assert!(result.is_ok());
 

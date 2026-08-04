@@ -36,12 +36,13 @@ use crate::yang_push::{
 };
 use chrono::Utc;
 use netcalyx_udp_notif_pkt::decoded::{UdpNotifPacketDecoded, UdpNotifPayload};
-use netcalyx_udp_notif_service::OTL_UDP_NOTIF_PUBLISHER_ID_KEY;
+use netcalyx_udp_notif_service::{OTL_UDP_NOTIF_PUBLISHER_ID_KEY, SessionInfo};
 use netcalyx_yang_push::cache::storage::SubscriptionInfo;
 use netcalyx_yang_push::model::telemetry::{
     EventType, Label, Manifest, NetworkOperatorMetadata, SessionProtocol, TelemetryMessage,
     TelemetryMessageMetadata, TelemetryMessageWrapper, YangPushSubscriptionMetadata,
 };
+use netcalyx_yang_push::validation::ValidatedNotification;
 use netcalyx_yang_push::{
     ContentId, OTL_YANG_PUSH_CACHED_CONTENT_ID_KEY, OTL_YANG_PUSH_SUBSCRIPTION_ID_KEY,
     OTL_YANG_PUSH_SUBSCRIPTION_ROUTER_CONTENT_ID_KEY, OTL_YANG_PUSH_SUBSCRIPTION_TARGET_KEY,
@@ -150,15 +151,31 @@ impl YangPushEnrichmentStats {
     }
 }
 
+/// The output of the enrichment stage: a `TelemetryMessage` assembled from a
+/// validated UDP-Notif packet, together with the subscription identity and
+/// transport session that produced it.
+///
+/// - `cached_content_id`: the YANG schema fingerprint used for validation, or
+///   `None` when the packet was forwarded unvalidated.
+/// - `subscription_info`: subscription identity (peer IP, target, modules…).
+/// - `session`: transport session context (collector, interface, full peer
+///   `SocketAddr`) — available for logging, routing, and Kafka key selection.
+/// - `message`: the enriched telemetry message ready for publishing.
+#[derive(Debug)]
+pub struct EnrichedNotification {
+    pub cached_content_id: Option<ContentId>,
+    pub subscription_info: SubscriptionInfo,
+    pub session: SessionInfo,
+    pub message: TelemetryMessageWrapper,
+}
+
 /// Actor responsible for enriching YANG-Push notifications.
 /// Sends enriched TelemetryMessage objects.
 struct YangPushEnrichmentActor {
     cmd_rx: mpsc::Receiver<YangPushEnrichmentActorCommand>,
     enrichment_rx: async_channel::Receiver<EnrichmentOperation>,
-    validated_rx:
-        async_channel::Receiver<(Option<ContentId>, SubscriptionInfo, UdpNotifPacketDecoded)>,
-    enriched_tx:
-        async_channel::Sender<(Option<ContentId>, SubscriptionInfo, TelemetryMessageWrapper)>,
+    validated_rx: async_channel::Receiver<ValidatedNotification>,
+    enriched_tx: async_channel::Sender<EnrichedNotification>,
     labels: HashMap<IpAddr, HashMap<String, WeightedLabel>>,
     manifest: Manifest,
     stats: YangPushEnrichmentStats,
@@ -168,16 +185,8 @@ impl YangPushEnrichmentActor {
     fn new(
         cmd_rx: mpsc::Receiver<YangPushEnrichmentActorCommand>,
         enrichment_rx: async_channel::Receiver<EnrichmentOperation>,
-        validated_rx: async_channel::Receiver<(
-            Option<ContentId>,
-            SubscriptionInfo,
-            UdpNotifPacketDecoded,
-        )>,
-        enriched_tx: async_channel::Sender<(
-            Option<ContentId>,
-            SubscriptionInfo,
-            TelemetryMessageWrapper,
-        )>,
+        validated_rx: async_channel::Receiver<ValidatedNotification>,
+        enriched_tx: async_channel::Sender<EnrichedNotification>,
         manifest: Manifest,
         stats: YangPushEnrichmentStats,
     ) -> Self {
@@ -340,12 +349,13 @@ impl YangPushEnrichmentActor {
         &mut self,
         content_id: Option<&ContentId>,
         subscription_info: &SubscriptionInfo,
+        session: &SessionInfo,
         decoded_packet: &UdpNotifPacketDecoded,
     ) -> Result<TelemetryMessageWrapper, YangPushEnrichmentActorError> {
         if decoded_packet.notification_type().is_none() {
             return Err(YangPushEnrichmentActorError::NotificationWithoutContent);
         }
-        let peer = subscription_info.peer();
+        let peer_ip = subscription_info.peer_ip();
         let message_id = decoded_packet.message_id();
         let publisher_id = decoded_packet.publisher_id();
         let notification_type = decoded_packet
@@ -355,7 +365,7 @@ impl YangPushEnrichmentActor {
 
         let labels: Option<Vec<Label>> = self
             .labels
-            .get(&peer.ip())
+            .get(&peer_ip)
             .map(|l_map| l_map.values().cloned().map(|wl| wl.label).collect());
 
         // Match on the wrapper and process the notification content
@@ -378,17 +388,17 @@ impl YangPushEnrichmentActor {
             EventType::Log,
             None,                      // we don't set sequence numbers for now
             SessionProtocol::YangPush, // only option at the moment
-            peer.ip(),
-            Some(peer.port()),
-            None,
-            None,
+            peer_ip,
+            Some(session.peer().port()),
+            Some(session.collector().ip()),
+            Some(session.collector().port()),
             subscription_metadata,
         );
 
         // Re-serialize the UDP-Notif payload into JSON
         let json_payload = serde_json::to_value(decoded_packet.payload()).map_err(|err| {
             error!(
-                peer=%peer,
+                peer_ip=%peer_ip,
                 message_id,
                 publisher_id,
                 subscription_id=subscription_info.id(),
@@ -444,17 +454,13 @@ impl YangPushEnrichmentActor {
                 msg = self.validated_rx.recv() => {
                     match msg {
                         Ok(msg) => {
-                            let (content_id, subscription_info, pkt) = msg;
-                            let peer = subscription_info.peer();
+                            let ValidatedNotification { cached_content_id: content_id, subscription_info, session, packet: pkt } = msg;
+                            let peer_ip = subscription_info.peer_ip();
                             let publisher_id = pkt.publisher_id();
                             let peer_tags = [
                                 opentelemetry::KeyValue::new(
                                     "network.peer.address",
-                                    format!("{}", peer.ip()),
-                                ),
-                                opentelemetry::KeyValue::new(
-                                    "network.peer.port",
-                                    opentelemetry::Value::I64(peer.port().into()),
+                                    format!("{peer_ip}"),
                                 ),
                                 opentelemetry::KeyValue::new(
                                     OTL_UDP_NOTIF_PUBLISHER_ID_KEY,
@@ -480,9 +486,14 @@ impl YangPushEnrichmentActor {
                             self.stats.received_messages.add(1, &peer_tags);
 
                             // Process the payload and send the enriched TelemetryMessage
-                            match self.process_decoded_udp_notif_packet(content_id.as_ref(), &subscription_info, &pkt) {
+                            match self.process_decoded_udp_notif_packet(content_id.as_ref(), &subscription_info, &session, &pkt) {
                                 Ok(telemetry_message) => {
-                                    if let Err(err) = self.enriched_tx.send((content_id, subscription_info, telemetry_message)).await {
+                                    if let Err(err) = self.enriched_tx.send(EnrichedNotification {
+                                        cached_content_id: content_id,
+                                        subscription_info,
+                                        session,
+                                        message: telemetry_message,
+                                    }).await {
                                         error!("YangPushEnrichmentActor send error: {err}");
                                         self.stats.send_error.add(1, &peer_tags);
                                     } else {
@@ -519,18 +530,13 @@ impl std::error::Error for YangPushEnrichmentActorHandleError {}
 pub struct YangPushEnrichmentActorHandle {
     cmd_send: mpsc::Sender<YangPushEnrichmentActorCommand>,
     enrichment_tx: async_channel::Sender<EnrichmentOperation>,
-    enriched_rx:
-        async_channel::Receiver<(Option<ContentId>, SubscriptionInfo, TelemetryMessageWrapper)>,
+    enriched_rx: async_channel::Receiver<EnrichedNotification>,
 }
 
 impl YangPushEnrichmentActorHandle {
     pub fn new(
         buffer_size: usize,
-        validated_rx: async_channel::Receiver<(
-            Option<ContentId>,
-            SubscriptionInfo,
-            UdpNotifPacketDecoded,
-        )>,
+        validated_rx: async_channel::Receiver<ValidatedNotification>,
         manifest: Manifest,
         stats: either::Either<opentelemetry::metrics::Meter, YangPushEnrichmentStats>,
     ) -> (JoinHandle<anyhow::Result<String>>, Self) {
@@ -565,10 +571,7 @@ impl YangPushEnrichmentActorHandle {
             .map_err(|_| YangPushEnrichmentActorHandleError::SendError)
     }
 
-    pub fn subscribe(
-        &self,
-    ) -> async_channel::Receiver<(Option<ContentId>, SubscriptionInfo, TelemetryMessageWrapper)>
-    {
+    pub fn subscribe(&self) -> async_channel::Receiver<EnrichedNotification> {
         self.enriched_rx.clone()
     }
 }
@@ -625,7 +628,7 @@ mod tests {
 
     #[allow(clippy::type_complexity)]
     fn create_actor_handle() -> (
-        async_channel::Sender<(Option<ContentId>, SubscriptionInfo, UdpNotifPacketDecoded)>,
+        async_channel::Sender<ValidatedNotification>,
         Manifest,
         JoinHandle<anyhow::Result<String>>,
         YangPushEnrichmentActorHandle,
@@ -655,7 +658,7 @@ mod tests {
     }
 
     fn create_subscription_started(
-        peer: SocketAddr,
+        peer_ip: IpAddr,
         id: SubscriptionId,
     ) -> (SubscriptionInfo, serde_json::Value, UdpNotifPacketDecoded) {
         let payload = json!({
@@ -679,7 +682,6 @@ mod tests {
             }
         });
 
-        let collector = SocketAddr::from(([127, 0, 0, 1], 10000));
         let packet = UdpNotifPacket::new(
             MediaType::YangDataJson,
             1234,
@@ -690,9 +692,7 @@ mod tests {
 
         let decoded: UdpNotifPacketDecoded = (&packet).try_into().unwrap();
         let subscription_info = SubscriptionInfo::new(
-            collector,
-            None,
-            peer,
+            peer_ip,
             id,
             Target::new_datastore(
                 DatastoreName::Operational.to_string(),
@@ -722,21 +722,30 @@ mod tests {
     async fn test_process_payload_empty_subscription() {
         // Set up the enrichment actor and input test data
         let (msgs_tx, test_manifest, join_handle, actor_handle) = create_actor_handle();
-        let collector = SocketAddr::from(([127, 0, 0, 1], 10000));
-        let peer = SocketAddr::from(([127, 0, 0, 1], 12345));
-        let (_subscription_info, json_payload, decoded) = create_subscription_started(peer, 1);
-        let empty_subscription_info = SubscriptionInfo::new_empty(collector, None, peer, 1);
+        let peer_ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+        let (_subscription_info, json_payload, decoded) = create_subscription_started(peer_ip, 1);
+        let empty_subscription_info = SubscriptionInfo::new_empty(peer_ip, 1);
 
         msgs_tx
-            .send((
-                Some(empty_subscription_info.content_id().clone()),
-                empty_subscription_info.clone(),
-                decoded.clone(),
-            ))
+            .send(ValidatedNotification {
+                cached_content_id: Some(empty_subscription_info.content_id().clone()),
+                subscription_info: empty_subscription_info.clone(),
+                session: SessionInfo::new(
+                    SocketAddr::from(([127, 0, 0, 1], 10000)),
+                    None,
+                    SocketAddr::new(peer_ip, 0),
+                ),
+                packet: decoded.clone(),
+            })
             .await
             .expect("Failed to send message to the actor");
         tokio::task::yield_now().await;
-        let (received_content_id, received_subscription_info, received_enriched) = actor_handle
+        let EnrichedNotification {
+            cached_content_id: received_content_id,
+            subscription_info: received_subscription_info,
+            message: received_enriched,
+            ..
+        } = actor_handle
             .enriched_rx
             .recv()
             .await
@@ -756,9 +765,9 @@ mod tests {
                 None,
                 SessionProtocol::YangPush,
                 IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-                Some(12345),
-                None,
-                None,
+                Some(0),
+                Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
+                Some(10000),
                 None,
             ),
             Some(test_manifest.clone()),
@@ -785,19 +794,29 @@ mod tests {
     async fn test_process_payload_envelope() {
         // Set up the enrichment actor and input test data
         let (msgs_tx, test_manifest, join_handle, actor_handle) = create_actor_handle();
-        let peer = SocketAddr::from(([127, 0, 0, 1], 12345));
-        let (subscription_info, json_payload, decoded) = create_subscription_started(peer, 1);
+        let peer_ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+        let (subscription_info, json_payload, decoded) = create_subscription_started(peer_ip, 1);
 
         msgs_tx
-            .send((
-                Some(subscription_info.content_id().clone()),
-                subscription_info.clone(),
-                decoded.clone(),
-            ))
+            .send(ValidatedNotification {
+                cached_content_id: Some(subscription_info.content_id().clone()),
+                subscription_info: subscription_info.clone(),
+                session: SessionInfo::new(
+                    SocketAddr::from(([127, 0, 0, 1], 10000)),
+                    None,
+                    SocketAddr::new(peer_ip, 0),
+                ),
+                packet: decoded.clone(),
+            })
             .await
             .expect("Failed to send message to the actor");
         tokio::task::yield_now().await;
-        let (received_content_id, received_subscription_info, received_enriched) = actor_handle
+        let EnrichedNotification {
+            cached_content_id: received_content_id,
+            subscription_info: received_subscription_info,
+            message: received_enriched,
+            ..
+        } = actor_handle
             .enriched_rx
             .recv()
             .await
@@ -818,9 +837,9 @@ mod tests {
                 None,
                 SessionProtocol::YangPush,
                 IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-                Some(12345),
-                None,
-                None,
+                Some(0),
+                Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
+                Some(10000),
                 Some(expected_metadata),
             ),
             Some(test_manifest.clone()),
@@ -845,8 +864,7 @@ mod tests {
     #[test]
     fn test_process_payload_envelope_without_content() {
         let mut actor = create_actor();
-        let collector = SocketAddr::from(([127, 0, 0, 1], 10000));
-        let peer = SocketAddr::from(([127, 0, 0, 1], 12345));
+        let peer_ip = IpAddr::from([127, 0, 0, 1]);
 
         // Create a UdpNotifPayload without content
         let payload = json!({
@@ -867,11 +885,17 @@ mod tests {
             Bytes::from(payload),
         );
 
-        let subscription_info = SubscriptionInfo::new_empty(collector, None, peer, 1);
+        let subscription_info = SubscriptionInfo::new_empty(peer_ip, 1);
         // Attempt to decode the packet (should succeed)
         let decoded: UdpNotifPacketDecoded = (&packet).try_into().unwrap();
+        let session = SessionInfo::new(
+            SocketAddr::from(([127, 0, 0, 1], 10000)),
+            None,
+            SocketAddr::new(peer_ip, 0),
+        );
 
-        let result = actor.process_decoded_udp_notif_packet(None, &subscription_info, &decoded);
+        let result =
+            actor.process_decoded_udp_notif_packet(None, &subscription_info, &session, &decoded);
 
         assert_eq!(
             result,
