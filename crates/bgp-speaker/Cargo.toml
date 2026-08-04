@@ -43,7 +43,7 @@ arbitrary_ext = { workspace = true, optional = true }
 fuzz = ["arbitrary", "arbitrary_ext"]
 
 [dev-dependencies]
-tokio = { workspace = true, default-features = false, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, default-features = false, features = ["macros", "rt-multi-thread", "test-util"] }
 tokio-test = { workspace = true }
 tracing-test = { workspace = true }
 clap = { workspace = true, features = ["derive"] }

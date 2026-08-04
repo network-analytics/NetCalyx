@@ -1,3 +1,19 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
+// Copyright (C) 2024-present The NetGauze Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+// implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use netcalyx_bgp_pkt::iana::RouteRefreshSubcode;
 
 use netcalyx_bgp_pkt::capabilities::{
@@ -2715,7 +2731,9 @@ async fn test_open_confirm_automatic_stop() -> Result<(), FsmStateError<SocketAd
     Ok(())
 }
 
-#[tokio::test]
+// See test_established_hold_timer_expires for why this needs paused/virtual
+// time: keepalive and hold timers can be armed to fire at the same instant.
+#[tokio::test(start_paused = true)]
 #[tracing_test::traced_test]
 async fn test_open_confirm_hold_timer_expires() -> Result<(), FsmStateError<SocketAddr>> {
     let hold_time = 3;
@@ -3801,7 +3819,13 @@ async fn test_established_automatic_stop() -> Result<(), FsmStateError<SocketAdd
     Ok(())
 }
 
-#[tokio::test]
+// Uses a paused/virtual clock (instead of real timers) so the keepalive and
+// hold timers - which are armed to fire at the same virtual instant when
+// `keepalive_timer_duration == hold_time / 3` - resolve deterministically.
+// With real time, OS scheduler jitter (observed on macOS CI runners) could
+// make the hold timer fire one keepalive tick early, breaking the expected
+// mock I/O write sequence.
+#[tokio::test(start_paused = true)]
 #[tracing_test::traced_test]
 async fn test_established_hold_timer_expires() -> Result<(), FsmStateError<SocketAddr>> {
     let hold_time = 3;
