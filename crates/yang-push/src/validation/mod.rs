@@ -193,6 +193,23 @@ struct CachedSubscription {
     schema_fetch_pending: bool,
 }
 
+impl CachedSubscription {
+    fn new(subscription_info: SubscriptionInfo) -> Self {
+        Self {
+            cached_content_id: None,
+            subscription_info,
+            yang_ctx: None,
+            buffered_packets: Vec::new(),
+            schema_fetch_pending: false,
+        }
+    }
+}
+
+// TODO: entries here are never evicted by TTL/idleness (only replaced when a
+// subscription's SubscriptionStarted info changes via
+// `check_subscription_new`). A peer churning through many subscription IDs can
+// grow this map unboundedly; consider a purge mechanism similar to
+// `UdpNotifSupervisorHandle::purge_unused_peers`.
 #[derive(Debug, Default)]
 struct CachedPeerSubscriptions {
     subscriptions: FxHashMap<SubscriptionId, CachedSubscription>,
@@ -535,17 +552,10 @@ impl ValidationActor {
             self.stats.dropped.add(1, &peer_tags);
             return false;
         }
-        let subscription_cache =
-            peer_cache
-                .subscriptions
-                .entry(subscription_id)
-                .or_insert(CachedSubscription {
-                    cached_content_id: None,
-                    subscription_info: subscription_info.clone(),
-                    yang_ctx: None,
-                    buffered_packets: Vec::new(),
-                    schema_fetch_pending: false,
-                });
+        let subscription_cache = peer_cache
+            .subscriptions
+            .entry(subscription_id)
+            .or_insert_with(|| CachedSubscription::new(subscription_info.clone()));
         trace!(
             peer=%peer,
             message_id,
@@ -710,13 +720,7 @@ impl ValidationActor {
         let subscription_cache = peer_cache
             .subscriptions
             .entry(subscription_info.id())
-            .or_insert(CachedSubscription {
-                cached_content_id: None,
-                subscription_info: subscription_info.clone(),
-                yang_ctx: None,
-                buffered_packets: Vec::new(),
-                schema_fetch_pending: false,
-            });
+            .or_insert_with(|| CachedSubscription::new(subscription_info.clone()));
         let cached_content_id = if let Some(cached_content_id) =
             subscription_cache.cached_content_id.clone()
             && let Some(yang_ctx) = subscription_cache.yang_ctx.as_ref()
@@ -987,6 +991,15 @@ impl ValidationActor {
                     CACHE_LOOKUP_BY_SUBSCRIPTION_INFO,
                 ));
                 self.stats.cache_lookups.add(1, &peer_tags);
+
+                // Mark the fetch as in-flight
+                self.peer_cache
+                    .entry(peer.ip())
+                    .or_default()
+                    .subscriptions
+                    .entry(subscription_info.id())
+                    .or_insert_with(|| CachedSubscription::new(subscription_info.clone()))
+                    .schema_fetch_pending = true;
                 self.cache_cmd_tx
                     .send(CacheLookupCommand::LookupBySubscriptionInfo(
                         subscription_info.clone(),
@@ -1007,15 +1020,6 @@ impl ValidationActor {
                         ValidationActorError::CacheLookupSendError
                     })?;
                 self.buffer_packet(subscription_info.clone(), message);
-
-                // Mark the fetch as in-flight so any duplicate that arrives before the
-                // cache responds is buffered rather than forwarded unvalidated.
-                if let Some(peer_subs) = self.peer_cache.get_mut(&peer.ip())
-                    && let Some(sub_cache) =
-                        peer_subs.subscriptions.get_mut(&subscription_info.id())
-                {
-                    sub_cache.schema_fetch_pending = true;
-                }
                 Ok(None)
             }
             None => {
@@ -1064,6 +1068,15 @@ impl ValidationActor {
                         peer,
                         subscription_id,
                     );
+
+                    // Mark the fetch as in-flight
+                    self.peer_cache
+                        .entry(peer.ip())
+                        .or_default()
+                        .subscriptions
+                        .entry(subscription_info.id())
+                        .or_insert_with(|| CachedSubscription::new(subscription_info.clone()))
+                        .schema_fetch_pending = true;
                     self.cache_cmd_tx
                         .send(CacheLookupCommand::LookupBySubscriptionId {
                             collector,
@@ -1073,7 +1086,18 @@ impl ValidationActor {
                             tx: self.cache_tx.clone(),
                         })
                         .await
-                        .map_err(|_| ValidationActorError::CacheLookupSendError)?;
+                        .map_err(|error| {
+                            warn!(
+                                peer=%peer,
+                                message_id,
+                                publisher_id,
+                                subscription_id,
+                                notification_type,
+                                error=%error,
+                                "Error sending lookup by subscription id request to the cache"
+                            );
+                            ValidationActorError::CacheLookupSendError
+                        })?;
                     self.buffer_packet(subscription_info.clone(), message);
                     return Ok(None);
                 }
