@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2025-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -430,7 +431,7 @@ where
             return if let Some(default_schema_id) = self.default_schema_id {
                 if let Some(subscription_info) = subscription_info {
                     warn!(
-                        peer=%subscription_info.peer(),
+                        peer_ip=%subscription_info.peer_ip(),
                         subscription_id=subscription_info.id(),
                         router_content_id=subscription_info.content_id(),
                         target=%subscription_info.target(),
@@ -449,7 +450,7 @@ where
             } else {
                 if let Some(subscription_info) = subscription_info {
                     warn!(
-                        peer=%subscription_info.peer(),
+                        peer_ip=%subscription_info.peer_ip(),
                         subscription_id=subscription_info.id(),
                         router_content_id=subscription_info.content_id(),
                         target=%subscription_info.target(),
@@ -470,7 +471,7 @@ where
         if let Some(&schema_id) = self.schema_id_cache.get(id) {
             if let Some(subscription_info) = subscription_info {
                 trace!(
-                    peer=%subscription_info.peer(),
+                    peer_ip=%subscription_info.peer_ip(),
                     subscription_id=subscription_info.id(),
                     router_content_id=subscription_info.content_id(),
                     target=%subscription_info.target(),
@@ -495,10 +496,10 @@ where
 
         if let Err(err) = self
             .cache_req_tx
-            .send(CacheLookupCommand::LookupByContentIdOneShot(
-                id.to_string(),
-                response_tx,
-            ))
+            .send(CacheLookupCommand::LookupByContentIdOneShot {
+                content_id: id.to_string(),
+                tx: response_tx,
+            })
             .await
         {
             warn!("Failed to request schema for content_id: {}", id);

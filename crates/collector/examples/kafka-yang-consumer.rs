@@ -46,7 +46,7 @@ use schema_registry_client::rest::schema_registry_client::{Client, SchemaRegistr
 use serde_json::json;
 use shadow_rs::shadow;
 use std::collections::{HashMap, HashSet};
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
 use tokio::signal;
 use tracing::{debug, error, info, trace, warn};
 use yang5::context::Context;
@@ -845,12 +845,8 @@ async fn main() -> Result<()> {
     let sr_client = SchemaRegistryClient::new(sr_config);
 
     // Create placeholder subscription info (reused for all schemas)
-    let subscription_info = SubscriptionInfo::new_empty(
-        SocketAddr::new(IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)), 0),
-        None,
-        SocketAddr::new(IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)), 0),
-        0,
-    );
+    let subscription_info =
+        SubscriptionInfo::new_empty(IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)), 0);
 
     // Create YANG context cache
     let mut yang_ctx_cache = YangContextCache::new();

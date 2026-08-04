@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2024-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,7 +25,7 @@ use crate::publishers::http::{HttpPublisherActorHandle, Message};
 use crate::publishers::kafka_avro::KafkaAvroPublisherActorHandle;
 use crate::publishers::kafka_json::KafkaJsonPublisherActorHandle;
 use crate::publishers::kafka_yang::KafkaYangPublisherActorHandle;
-use crate::yang_push::enrichment::YangPushEnrichmentActorHandle;
+use crate::yang_push::enrichment::{EnrichedNotification, YangPushEnrichmentActorHandle};
 
 use futures_util::StreamExt;
 use futures_util::stream::FuturesUnordered;
@@ -36,11 +37,9 @@ use netcalyx_flow_service::flow_supervisor::FlowCollectorsSupervisorActorHandle;
 use netcalyx_udp_notif_pkt::raw::MediaType;
 use netcalyx_udp_notif_service::UdpNotifRequest;
 use netcalyx_udp_notif_service::supervisor::UdpNotifSupervisorHandle;
-use netcalyx_yang_push::ContentId;
 use netcalyx_yang_push::cache::actor::CacheActorHandle;
 use netcalyx_yang_push::cache::fetcher::{NetconfYangLibraryFetcher, RetryConfig};
-use netcalyx_yang_push::cache::storage::SubscriptionInfo;
-use netcalyx_yang_push::model::telemetry::{Manifest, TelemetryMessageWrapper};
+use netcalyx_yang_push::model::telemetry::Manifest;
 use netcalyx_yang_push::validation::ValidationActorHandle;
 use shadow_rs::shadow;
 use std::net::IpAddr;
@@ -926,10 +925,10 @@ fn serialize_udp_notif(
 }
 
 fn serialize_telemetry_json(
-    input: (Option<ContentId>, SubscriptionInfo, TelemetryMessageWrapper),
+    input: EnrichedNotification,
     _writer_id: String,
 ) -> Result<(Option<serde_json::Value>, serde_json::Value), UdpNotifSerializationError> {
-    let tmw = input.2;
+    let tmw = input.message;
     let ip = tmw.message().telemetry_message_metadata().export_address();
     let value = serde_json::to_value(tmw)?;
     let key = serde_json::Value::String(ip.to_string());
@@ -1054,6 +1053,7 @@ mod tests {
     use super::*;
     use bytes::Bytes;
     use netcalyx_udp_notif_pkt::raw::UdpNotifPacket;
+    use netcalyx_udp_notif_service::SessionInfo;
     use std::collections::HashMap;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
@@ -1070,7 +1070,10 @@ mod tests {
             Bytes::from(&[0xffu8, 0xffu8][..]),
         );
 
-        let request = Arc::new(UdpNotifRequest::new(collector, None, peer, pkt));
+        let request = Arc::new(UdpNotifRequest::new(
+            SessionInfo::new(collector, None, peer),
+            pkt,
+        ));
         let serialized = serialize_udp_notif(request.clone(), writer_id.clone());
         assert!(matches!(
             serialized,
@@ -1112,12 +1115,13 @@ mod tests {
             }
         );
         let request_invalid = Arc::new(UdpNotifRequest::new(
-            collector,
-            None,
-            peer,
+            SessionInfo::new(collector, None, peer),
             pkt_invalid_json,
         ));
-        let request_good = Arc::new(UdpNotifRequest::new(collector, None, peer, pkt));
+        let request_good = Arc::new(UdpNotifRequest::new(
+            SessionInfo::new(collector, None, peer),
+            pkt,
+        ));
         let result_invalid = serialize_udp_notif(request_invalid, writer_id.clone());
         let serialized =
             serialize_udp_notif(request_good, writer_id.clone()).expect("failed to serialize json");
@@ -1168,12 +1172,13 @@ mod tests {
         );
 
         let request_invalid = Arc::new(UdpNotifRequest::new(
-            collector,
-            None,
-            peer,
+            SessionInfo::new(collector, None, peer),
             pkt_invalid_utf8,
         ));
-        let request_good = Arc::new(UdpNotifRequest::new(collector, None, peer, pkt));
+        let request_good = Arc::new(UdpNotifRequest::new(
+            SessionInfo::new(collector, None, peer),
+            pkt,
+        ));
         let result_invalid = serialize_udp_notif(request_invalid, writer_id.clone());
         let serialized =
             serialize_udp_notif(request_good, writer_id.clone()).expect("failed to serialize json");
@@ -1226,8 +1231,14 @@ mod tests {
             }
         );
 
-        let request_invalid = Arc::new(UdpNotifRequest::new(collector, None, peer, pkt_invalid));
-        let request_good = Arc::new(UdpNotifRequest::new(collector, None, peer, pkt));
+        let request_invalid = Arc::new(UdpNotifRequest::new(
+            SessionInfo::new(collector, None, peer),
+            pkt_invalid,
+        ));
+        let request_good = Arc::new(UdpNotifRequest::new(
+            SessionInfo::new(collector, None, peer),
+            pkt,
+        ));
         let result_invalid = serialize_udp_notif(request_invalid, writer_id.clone());
         let serialized =
             serialize_udp_notif(request_good, writer_id.clone()).expect("failed to serialize json");
