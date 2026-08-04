@@ -130,7 +130,7 @@ use netcalyx_netconf_proto::yang_push::types::SubscriptionId;
 use netcalyx_udp_notif_pkt::decoded::{UdpNotifPacketDecoded, UdpNotifPayload};
 use netcalyx_udp_notif_pkt::notification::{NotificationVariant, SubscriptionStartedModified};
 use netcalyx_udp_notif_pkt::raw::UdpNotifPacket;
-use netcalyx_udp_notif_service::{OTL_UDP_NOTIF_PUBLISHER_ID_KEY, UdpNotifRequest};
+use netcalyx_udp_notif_service::{OTL_UDP_NOTIF_PUBLISHER_ID_KEY, SessionInfo, UdpNotifRequest};
 use rustc_hash::FxHashMap;
 use std::collections::VecDeque;
 use std::net::{IpAddr, SocketAddr};
@@ -433,13 +433,34 @@ enum ValidationActorCommand {
     Shutdown,
 }
 
+/// The output of the validation stage: a decoded UDP-Notif packet together
+/// with the subscription identity, transport session, and the locally-computed
+/// schema fingerprint used for validation.
+///
+/// - `cached_content_id`: the SHA-256 fingerprint of the YANG library that was
+///   used to validate the packet, or `None` when the packet was forwarded
+///   without validation (schema unavailable or fetch failed).
+/// - `subscription_info`: subscription identity — what this data stream is
+///   about.
+/// - `session`: transport session context — collector Socket Address,
+///   interface/VRF and peer Socket Address
+/// - `packet`: the decoded UDP-Notif payload ready for enrichment and
+///   publishing.
+#[derive(Debug)]
+pub struct ValidatedNotification {
+    pub cached_content_id: Option<ContentId>,
+    pub subscription_info: SubscriptionInfo,
+    pub session: SessionInfo,
+    pub packet: UdpNotifPacketDecoded,
+}
+
 struct ValidationActor {
     max_buffered_packets_per_peer: usize,
     max_buffered_packets_per_subscription: usize,
     peer_cache: FxHashMap<IpAddr, CachedPeerSubscriptions>,
     cmd_rx: mpsc::Receiver<ValidationActorCommand>,
     rx: async_channel::Receiver<Arc<UdpNotifRequest>>,
-    tx: async_channel::Sender<(Option<ContentId>, SubscriptionInfo, UdpNotifPacketDecoded)>,
+    tx: async_channel::Sender<ValidatedNotification>,
     cache_cmd_tx: async_channel::Sender<CacheLookupCommand>,
     cache_tx: async_channel::Sender<CacheResponse>,
     cache_rx: async_channel::Receiver<CacheResponse>,
@@ -494,8 +515,6 @@ impl ValidationActor {
     fn get_subscription_info(
         &mut self,
         peer: SocketAddr,
-        collector: SocketAddr,
-        interface: Option<String>,
         decoded: &UdpNotifPacketDecoded,
     ) -> Option<(SubscriptionInfo, Option<Option<String>>)> {
         let message_id = decoded.message_id();
@@ -519,14 +538,9 @@ impl ValidationActor {
             subscription_started,
         ) = notif_contents
         {
-            let subscription_info = if let Some(subscription_info) = self.build_subscription_info(
-                peer,
-                collector,
-                interface,
-                message_id,
-                publisher_id,
-                subscription_started,
-            ) {
+            let subscription_info = if let Some(subscription_info) =
+                self.build_subscription_info(peer, message_id, publisher_id, subscription_started)
+            {
                 subscription_info
             } else {
                 warn!(
@@ -756,6 +770,7 @@ impl ValidationActor {
     ) -> Result<(), ValidationActorError> {
         let peer = message.peer_address();
         let packet = message.packet();
+        let session = message.session().clone();
 
         // Step 1: decode the raw UDP-Notif payload.
         let decoded = match self.decode_message(peer, packet, !is_reprocessed) {
@@ -844,11 +859,12 @@ impl ValidationActor {
 
         // Step 4: forward to the enrichment actor.
         self.tx
-            .send((
-                cached_content_id.clone(),
-                subscription_info.clone(),
-                decoded,
-            ))
+            .send(ValidatedNotification {
+                cached_content_id: cached_content_id.clone(),
+                subscription_info: subscription_info.clone(),
+                session,
+                packet: decoded,
+            })
             .await
             .map_err(|_| {
                 warn!(
@@ -998,8 +1014,6 @@ impl ValidationActor {
         peer: SocketAddr,
         decoded: &UdpNotifPacketDecoded,
     ) -> Result<Option<SubscriptionInfo>, ValidationActorError> {
-        let collector = message.collector_address();
-        let interface = message.collector_interface();
         let packet = message.packet();
         let mut peer_tags = Self::peer_tags_from_packet(peer, packet);
         let message_id = decoded.message_id();
@@ -1009,7 +1023,7 @@ impl ValidationActor {
             .map(|x| x.to_string())
             .unwrap_or("UNKNOWN".to_string());
 
-        match self.get_subscription_info(peer, collector, interface.map(String::from), decoded) {
+        match self.get_subscription_info(peer, decoded) {
             Some((subscription_info, cached_content_id)) => {
                 Self::extend_peer_tags_with_subscription_info(&subscription_info, &mut peer_tags);
 
@@ -1077,6 +1091,7 @@ impl ValidationActor {
                 self.cache_cmd_tx
                     .send(CacheLookupCommand::LookupBySubscriptionInfo(
                         subscription_info.clone(),
+                        message.session().clone(),
                         self.cache_tx.clone(),
                     ))
                     .await
@@ -1136,12 +1151,7 @@ impl ValidationActor {
                         <&str>::from(CacheLookupBy::SubscriptionId),
                     ));
                     self.stats.cache_lookups.add(1, &peer_tags);
-                    let subscription_info = SubscriptionInfo::new_empty(
-                        collector,
-                        interface.map(String::from),
-                        peer,
-                        subscription_id,
-                    );
+                    let subscription_info = SubscriptionInfo::new_empty(peer.ip(), subscription_id);
 
                     // Mark the fetch as in-flight
                     self.peer_cache
@@ -1153,9 +1163,7 @@ impl ValidationActor {
                         .schema_fetch_pending = true;
                     self.cache_cmd_tx
                         .send(CacheLookupCommand::LookupBySubscriptionId {
-                            collector,
-                            interface: interface.map(String::from),
-                            peer,
+                            session: message.session().clone(),
                             subscription_id,
                             tx: self.cache_tx.clone(),
                         })
@@ -1200,24 +1208,18 @@ impl ValidationActor {
         response: CacheResponse,
     ) -> Result<(), ValidationActorError> {
         let (cached_content_id, subscription_info, yang_lib_ref) = response.into();
-        let mut otl_tags = Vec::from([
-            opentelemetry::KeyValue::new(
-                "network.peer.address",
-                format!("{}", subscription_info.peer().ip()),
-            ),
-            opentelemetry::KeyValue::new(
-                "network.peer.port",
-                opentelemetry::Value::I64(subscription_info.peer().port().into()),
-            ),
-        ]);
+        let mut otl_tags = Vec::from([opentelemetry::KeyValue::new(
+            "network.peer.address",
+            format!("{}", subscription_info.peer_ip()),
+        )]);
         Self::extend_peer_tags_with_subscription_info(&subscription_info, &mut otl_tags);
         let peer_cache = if let Some(peer_cache) =
-            self.peer_cache.get_mut(&subscription_info.peer().ip())
+            self.peer_cache.get_mut(&subscription_info.peer_ip())
         {
             peer_cache
         } else {
             warn!(
-                peer=%subscription_info.peer(),
+                peer_ip=%subscription_info.peer_ip(),
                 subscription_id=subscription_info.id(),
                 router_content_id=subscription_info.content_id(),
                 target=%subscription_info.target(),
@@ -1233,7 +1235,7 @@ impl ValidationActor {
             subscription_cache
         } else {
             warn!(
-                peer=%subscription_info.peer(),
+                peer_ip=%subscription_info.peer_ip(),
                 subscription_id=subscription_info.id(),
                 router_content_id=subscription_info.content_id(),
                 target=%subscription_info.target(),
@@ -1260,7 +1262,7 @@ impl ValidationActor {
                 Err(err) => {
                     self.stats.yang_context_failed.add(1, &otl_tags);
                     warn!(
-                        peer=%subscription_info.peer(),
+                        peer_ip=%subscription_info.peer_ip(),
                         subscription_id=subscription_info.id(),
                         router_content_id=subscription_info.content_id(),
                         cached_content_id=yang_lib_ref.content_id(),
@@ -1309,7 +1311,7 @@ impl ValidationActor {
         self.stats
             .cached_peers
             .record(self.peer_cache.len() as u64, &[]);
-        let peer_ip = subscription_info.peer().ip();
+        let peer_ip = subscription_info.peer_ip();
         let peer_sub_count = self
             .peer_cache
             .get(&peer_ip)
@@ -1330,8 +1332,6 @@ impl ValidationActor {
     fn build_subscription_info(
         &self,
         peer: SocketAddr,
-        collector: SocketAddr,
-        interface: Option<String>,
         message_id: u32,
         publisher_id: u32,
         sub_started: &SubscriptionStartedModified,
@@ -1360,9 +1360,7 @@ impl ValidationActor {
         };
 
         Some(SubscriptionInfo::new(
-            collector,
-            interface,
-            peer,
+            peer.ip(),
             sub_started.id(),
             sub_started.target().clone(),
             sub_started.stop_time().cloned(),
@@ -1471,7 +1469,7 @@ impl ValidationActorHandle {
         max_buffered_packets_per_peer: usize,
         max_buffered_packets_per_subscription: usize,
         rx: async_channel::Receiver<Arc<UdpNotifRequest>>,
-        tx: async_channel::Sender<(Option<ContentId>, SubscriptionInfo, UdpNotifPacketDecoded)>,
+        tx: async_channel::Sender<ValidatedNotification>,
         cache_cmd_tx: async_channel::Sender<CacheLookupCommand>,
         stats: either::Either<opentelemetry::metrics::Meter, ValidationStats>,
     ) -> Result<
@@ -1533,7 +1531,7 @@ mod tests {
         SubscriptionInfo,
         Arc<std::sync::Mutex<HashMap<SubscriptionInfo, usize>>>,
         async_channel::Sender<Arc<UdpNotifRequest>>,
-        async_channel::Receiver<(Option<ContentId>, SubscriptionInfo, UdpNotifPacketDecoded)>,
+        async_channel::Receiver<ValidatedNotification>,
         ValidationActorHandle,
     ) {
         let (caching_join_handle, caching_handle, subscription_info, fetcher_count) =
@@ -1568,11 +1566,7 @@ mod tests {
     /// be validated against the loaded context.
     async fn setup_and_load_schema(
         udp_notif_tx: &async_channel::Sender<Arc<UdpNotifRequest>>,
-        validated_rx: &async_channel::Receiver<(
-            Option<ContentId>,
-            SubscriptionInfo,
-            UdpNotifPacketDecoded,
-        )>,
+        validated_rx: &async_channel::Receiver<ValidatedNotification>,
         peer: SocketAddr,
     ) {
         let payload = serde_json::json!({
@@ -1608,9 +1602,7 @@ mod tests {
         let bytes = serde_json::to_vec(&payload).unwrap();
         udp_notif_tx
             .send(Arc::new(UdpNotifRequest::new(
-                SocketAddr::from(([127, 0, 0, 1], 10000)),
-                None,
-                peer,
+                SessionInfo::new(SocketAddr::from(([127, 0, 0, 1], 10000)), None, peer),
                 UdpNotifPacket::new(
                     MediaType::YangDataJson,
                     10,
@@ -1624,7 +1616,10 @@ mod tests {
         // Draining the validated SubscriptionStarted also serves as the
         // synchronisation point: by the time it is forwarded the YANG context
         // is fully loaded and ready for subsequent push-update packets.
-        let (content_id, _, _) = tokio::time::timeout(Duration::from_secs(2), validated_rx.recv())
+        let ValidatedNotification {
+            cached_content_id: content_id,
+            ..
+        } = tokio::time::timeout(Duration::from_secs(2), validated_rx.recv())
             .await
             .expect("timeout waiting for SubscriptionStarted to be validated")
             .unwrap();
@@ -1648,7 +1643,7 @@ mod tests {
         ) = setup_validation_actor();
         assert_eq!(fetcher_count.lock().unwrap().len(), 0);
 
-        let peer = subscription_info.peer();
+        let peer = SocketAddr::new(subscription_info.peer_ip(), 0);
         let payload = serde_json::json!(
             {
                 "ietf-yp-notification:envelope": {
@@ -1693,9 +1688,7 @@ mod tests {
         // Send SubscriptionStarted packet
         udp_notif_tx
             .send(Arc::new(UdpNotifRequest::new(
-                SocketAddr::from(([127, 0, 0, 1], 10000)),
-                None,
-                peer,
+                SessionInfo::new(SocketAddr::from(([127, 0, 0, 1], 10000)), None, peer),
                 subscription_started_packet,
             )))
             .await
@@ -1705,11 +1698,14 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         // Verify packet is validated
-        let (content_id, sub_info, _validated) =
-            tokio::time::timeout(Duration::from_secs(1), validated_rx.recv())
-                .await
-                .expect("timeout waiting for response")
-                .unwrap();
+        let ValidatedNotification {
+            cached_content_id: content_id,
+            subscription_info: sub_info,
+            ..
+        } = tokio::time::timeout(Duration::from_secs(1), validated_rx.recv())
+            .await
+            .expect("timeout waiting for response")
+            .unwrap();
         assert!(content_id.is_some());
         assert!(!sub_info.is_empty());
 
@@ -1742,7 +1738,7 @@ mod tests {
         ) = setup_validation_actor();
         assert_eq!(fetcher_count.lock().unwrap().len(), 0);
 
-        let peer = subscription_info.peer();
+        let peer = SocketAddr::new(subscription_info.peer_ip(), 0);
         let payload = serde_json::json!(
             {
               "ietf-yp-notification:envelope": {
@@ -1787,9 +1783,7 @@ mod tests {
         // Send SubscriptionStarted packet
         udp_notif_tx
             .send(Arc::new(UdpNotifRequest::new(
-                SocketAddr::from(([127, 0, 0, 1], 10000)),
-                None,
-                peer,
+                SessionInfo::new(SocketAddr::from(([127, 0, 0, 1], 10000)), None, peer),
                 subscription_started_packet,
             )))
             .await
@@ -1799,11 +1793,14 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         // Verify packet is not validated
-        let (content_id, sub_info, _validated) =
-            tokio::time::timeout(Duration::from_secs(1), validated_rx.recv())
-                .await
-                .expect("timeout waiting for response")
-                .unwrap();
+        let ValidatedNotification {
+            cached_content_id: content_id,
+            subscription_info: sub_info,
+            ..
+        } = tokio::time::timeout(Duration::from_secs(1), validated_rx.recv())
+            .await
+            .expect("timeout waiting for response")
+            .unwrap();
         assert!(content_id.is_none());
         assert!(!sub_info.is_empty());
 
@@ -1850,7 +1847,7 @@ mod tests {
         )
         .expect("Failed to spawn validation actor");
 
-        let peer = subscription_info.peer();
+        let peer = SocketAddr::new(subscription_info.peer_ip(), 0);
         let payload = serde_json::json!({
             "ietf-yp-notification:envelope": {
                 "event-time": "2026-04-21T13:33:31.007Z",
@@ -1889,9 +1886,7 @@ mod tests {
             for i in 0..N {
                 udp_notif_tx
                     .send(Arc::new(UdpNotifRequest::new(
-                        SocketAddr::from(([127, 0, 0, 1], 10000)),
-                        None,
-                        peer,
+                        SessionInfo::new(SocketAddr::from(([127, 0, 0, 1], 10000)), None, peer),
                         UdpNotifPacket::new(
                             MediaType::YangDataJson,
                             10,
@@ -1943,7 +1938,7 @@ mod tests {
 
         // SubscriptionStarted WITHOUT module-version → build_subscription_info
         // returns None → must be dropped permanently.
-        let peer = subscription_info.peer();
+        let peer = SocketAddr::new(subscription_info.peer_ip(), 0);
         let payload = serde_json::json!({
           "ietf-yp-notification:envelope": {
             "event-time": "2025-09-23T14:12:16.024Z",
@@ -1964,9 +1959,7 @@ mod tests {
         let bytes = serde_json::to_vec(&payload).unwrap();
         udp_notif_tx
             .send(Arc::new(UdpNotifRequest::new(
-                SocketAddr::from(([127, 0, 0, 1], 10000)),
-                None,
-                peer,
+                SessionInfo::new(SocketAddr::from(([127, 0, 0, 1], 10000)), None, peer),
                 UdpNotifPacket::new(
                     MediaType::YangDataJson,
                     10,
@@ -2006,7 +1999,7 @@ mod tests {
             handle,
         ) = setup_validation_actor();
 
-        let peer = subscription_info.peer();
+        let peer = SocketAddr::new(subscription_info.peer_ip(), 0);
         setup_and_load_schema(&udp_notif_tx, &validated_rx, peer).await;
 
         // Send a push-update with ietf-interfaces data.
@@ -2055,9 +2048,7 @@ mod tests {
         let bytes = serde_json::to_vec(&push_update_payload).unwrap();
         udp_notif_tx
             .send(Arc::new(UdpNotifRequest::new(
-                SocketAddr::from(([127, 0, 0, 1], 10000)),
-                None,
-                peer,
+                SessionInfo::new(SocketAddr::from(([127, 0, 0, 1], 10000)), None, peer),
                 UdpNotifPacket::new(
                     MediaType::YangDataJson,
                     10,
@@ -2069,11 +2060,14 @@ mod tests {
             .await
             .unwrap();
 
-        let (content_id, sub_info, _decoded) =
-            tokio::time::timeout(Duration::from_secs(1), validated_rx.recv())
-                .await
-                .expect("timeout: valid push-update was not forwarded")
-                .unwrap();
+        let ValidatedNotification {
+            cached_content_id: content_id,
+            subscription_info: sub_info,
+            ..
+        } = tokio::time::timeout(Duration::from_secs(1), validated_rx.recv())
+            .await
+            .expect("timeout: valid push-update was not forwarded")
+            .unwrap();
         assert!(
             content_id.is_some(),
             "valid push-update must pass strict YANG validation"
@@ -2104,9 +2098,11 @@ mod tests {
         // UnsupportedMediaType.
         udp_notif_tx
             .send(Arc::new(UdpNotifRequest::new(
-                SocketAddr::from(([127, 0, 0, 1], 10000)),
-                None,
-                subscription_info.peer(),
+                SessionInfo::new(
+                    SocketAddr::from(([127, 0, 0, 1], 10000)),
+                    None,
+                    SocketAddr::new(subscription_info.peer_ip(), 0),
+                ),
                 UdpNotifPacket::new(
                     MediaType::YangDataXml,
                     10,
@@ -2148,9 +2144,11 @@ mod tests {
         // YangDataJson with bytes that are not valid JSON → serde_json parse error.
         udp_notif_tx
             .send(Arc::new(UdpNotifRequest::new(
-                SocketAddr::from(([127, 0, 0, 1], 10000)),
-                None,
-                subscription_info.peer(),
+                SessionInfo::new(
+                    SocketAddr::from(([127, 0, 0, 1], 10000)),
+                    None,
+                    SocketAddr::new(subscription_info.peer_ip(), 0),
+                ),
                 UdpNotifPacket::new(
                     MediaType::YangDataJson,
                     10,
@@ -2189,7 +2187,7 @@ mod tests {
             handle,
         ) = setup_validation_actor();
 
-        let peer = subscription_info.peer();
+        let peer = SocketAddr::new(subscription_info.peer_ip(), 0);
         setup_and_load_schema(&udp_notif_tx, &validated_rx, peer).await;
 
         // Push-update with "enabelled" (typo for "enabled"): an unknown YANG node
@@ -2225,9 +2223,7 @@ mod tests {
         let bytes = serde_json::to_vec(&invalid_push_update_payload).unwrap();
         udp_notif_tx
             .send(Arc::new(UdpNotifRequest::new(
-                SocketAddr::from(([127, 0, 0, 1], 10000)),
-                None,
-                peer,
+                SessionInfo::new(SocketAddr::from(([127, 0, 0, 1], 10000)), None, peer),
                 UdpNotifPacket::new(
                     MediaType::YangDataJson,
                     10,
@@ -2269,7 +2265,7 @@ mod tests {
             handle,
         ) = setup_validation_actor();
 
-        let peer = subscription_info.peer();
+        let peer = SocketAddr::new(subscription_info.peer_ip(), 0);
         setup_and_load_schema(&udp_notif_tx, &validated_rx, peer).await;
 
         // Push-update with the mandatory `type` leaf absent from the interface
@@ -2304,9 +2300,7 @@ mod tests {
         let bytes = serde_json::to_vec(&missing_type_payload).unwrap();
         udp_notif_tx
             .send(Arc::new(UdpNotifRequest::new(
-                SocketAddr::from(([127, 0, 0, 1], 10000)),
-                None,
-                peer,
+                SessionInfo::new(SocketAddr::from(([127, 0, 0, 1], 10000)), None, peer),
                 UdpNotifPacket::new(
                     MediaType::YangDataJson,
                     10,
@@ -2326,7 +2320,11 @@ mod tests {
             "libyang limitation apparently addressed: mandatory nodes inside anydata are now \
              enforced; flip this test to assert `res.is_err()` + `logs_contain(\"Failed to validate\")`"
         );
-        let (content_id, sub_info, _decoded) = res.unwrap().unwrap();
+        let ValidatedNotification {
+            cached_content_id: content_id,
+            subscription_info: sub_info,
+            ..
+        } = res.unwrap().unwrap();
         assert!(content_id.is_some());
         assert!(!sub_info.is_empty());
 
@@ -2352,7 +2350,7 @@ mod tests {
             validated_rx,
             handle,
         ) = setup_validation_actor();
-        let peer = subscription_info.peer();
+        let peer = SocketAddr::new(subscription_info.peer_ip(), 0);
 
         let payload = serde_json::json!({
           "ietf-yp-notification:envelope": {
@@ -2388,9 +2386,7 @@ mod tests {
 
         let make_packet = |msg_id: u32| {
             Arc::new(UdpNotifRequest::new(
-                SocketAddr::from(([127, 0, 0, 1], 10000)),
-                None,
-                peer,
+                SessionInfo::new(SocketAddr::from(([127, 0, 0, 1], 10000)), None, peer),
                 UdpNotifPacket::new(
                     MediaType::YangDataJson,
                     10,
@@ -2415,11 +2411,14 @@ mod tests {
         // Regardless of whether the duplicate arrived before or after the cache
         // responded, content_id must be Some (never forwarded unvalidated).
         for i in 1..=2u32 {
-            let (content_id, sub_info, _) =
-                tokio::time::timeout(Duration::from_secs(3), validated_rx.recv())
-                    .await
-                    .unwrap_or_else(|_| panic!("timeout waiting for packet {i}"))
-                    .unwrap();
+            let ValidatedNotification {
+                cached_content_id: content_id,
+                subscription_info: sub_info,
+                ..
+            } = tokio::time::timeout(Duration::from_secs(3), validated_rx.recv())
+                .await
+                .unwrap_or_else(|_| panic!("timeout waiting for packet {i}"))
+                .unwrap();
             assert!(
                 content_id.is_some(),
                 "packet {i}: duplicate SubscriptionStarted must be validated, not forwarded unvalidated"
@@ -2454,7 +2453,7 @@ mod tests {
             validated_rx,
             handle,
         ) = setup_validation_actor();
-        let peer = subscription_info.peer();
+        let peer = SocketAddr::new(subscription_info.peer_ip(), 0);
 
         // Load the schema via the first SubscriptionStarted and drain the result.
         setup_and_load_schema(&udp_notif_tx, &validated_rx, peer).await;
@@ -2498,9 +2497,7 @@ mod tests {
         let bytes = serde_json::to_vec(&payload).unwrap();
         udp_notif_tx
             .send(Arc::new(UdpNotifRequest::new(
-                SocketAddr::from(([127, 0, 0, 1], 10000)),
-                None,
-                peer,
+                SessionInfo::new(SocketAddr::from(([127, 0, 0, 1], 10000)), None, peer),
                 UdpNotifPacket::new(
                     MediaType::YangDataJson,
                     10,
@@ -2513,11 +2510,14 @@ mod tests {
             .unwrap();
 
         // Must be validated immediately using the cached schema.
-        let (content_id, sub_info, _) =
-            tokio::time::timeout(Duration::from_secs(1), validated_rx.recv())
-                .await
-                .expect("timeout: duplicate SubscriptionStarted was not forwarded")
-                .unwrap();
+        let ValidatedNotification {
+            cached_content_id: content_id,
+            subscription_info: sub_info,
+            ..
+        } = tokio::time::timeout(Duration::from_secs(1), validated_rx.recv())
+            .await
+            .expect("timeout: duplicate SubscriptionStarted was not forwarded")
+            .unwrap();
         assert!(
             content_id.is_some(),
             "duplicate SubscriptionStarted after schema loaded must be validated"
@@ -2563,7 +2563,7 @@ mod tests {
             validated_rx,
             handle,
         ) = setup_validation_actor();
-        let peer = subscription_info.peer();
+        let peer = SocketAddr::new(subscription_info.peer_ip(), 0);
 
         // Load the schema for the initial subscription (content-id =
         // "test-content-id-1").
@@ -2603,9 +2603,7 @@ mod tests {
         let bytes = serde_json::to_vec(&changed_payload).unwrap();
         udp_notif_tx
             .send(Arc::new(UdpNotifRequest::new(
-                SocketAddr::from(([127, 0, 0, 1], 10000)),
-                None,
-                peer,
+                SessionInfo::new(SocketAddr::from(([127, 0, 0, 1], 10000)), None, peer),
                 UdpNotifPacket::new(
                     MediaType::YangDataJson,
                     10,
@@ -2622,11 +2620,14 @@ mod tests {
         // buffered during the fetch attempt; after the fetch fails it is forwarded
         // unvalidated. In production the fetch would succeed and content_id would be
         // Some.
-        let (content_id, sub_info, _) =
-            tokio::time::timeout(Duration::from_secs(3), validated_rx.recv())
-                .await
-                .expect("timeout: changed SubscriptionStarted was not forwarded")
-                .unwrap();
+        let ValidatedNotification {
+            cached_content_id: content_id,
+            subscription_info: sub_info,
+            ..
+        } = tokio::time::timeout(Duration::from_secs(3), validated_rx.recv())
+            .await
+            .expect("timeout: changed SubscriptionStarted was not forwarded")
+            .unwrap();
         assert!(
             content_id.is_none(),
             "device fetch failed for new content-id → packet must be forwarded unvalidated"

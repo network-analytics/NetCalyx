@@ -38,38 +38,65 @@ pub type ActorId = u32;
 /// Type alias to that YANG-Push subscription ID as defined in [RFC8641](https://datatracker.ietf.org/doc/html/rfc8641)
 pub type SubscriberId = u32;
 
-/// The UDP-Notif packet and the peer [SocketAddr] that sent it.
+/// Transport session context for a UDP-Notif packet.
+///
+/// - **collector**: The local socket address on which the collector received
+///   the packet.
+/// - **interface**: The network interface or VRF the collector socket is bound
+///   to, if any.
+/// - **peer**: The full remote socket address (IP + source port) of the sending
+///   device.
+#[derive(Debug, Clone, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct SessionInfo {
+    pub collector: SocketAddr,
+    pub interface: Option<Box<str>>,
+    pub peer: SocketAddr,
+}
+
+impl SessionInfo {
+    pub fn new(collector: SocketAddr, interface: Option<Box<str>>, peer: SocketAddr) -> Self {
+        Self {
+            collector,
+            interface,
+            peer,
+        }
+    }
+
+    pub const fn collector(&self) -> SocketAddr {
+        self.collector
+    }
+
+    pub fn interface(&self) -> Option<&str> {
+        self.interface.as_deref()
+    }
+
+    pub const fn peer(&self) -> SocketAddr {
+        self.peer
+    }
+}
+
+/// The UDP-Notif packet together with the transport session it arrived on.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct UdpNotifRequest {
-    collector_address: SocketAddr,
-    collector_interface: Option<Box<str>>,
-    peer_address: SocketAddr,
+    session: SessionInfo,
     packet: UdpNotifPacket,
 }
 
 impl UdpNotifRequest {
-    pub fn new(
-        collector_address: SocketAddr,
-        collector_interface: Option<Box<str>>,
-        peer_address: SocketAddr,
-        packet: UdpNotifPacket,
-    ) -> Self {
-        Self {
-            collector_address,
-            collector_interface,
-            peer_address,
-            packet,
-        }
+    pub fn new(session: SessionInfo, packet: UdpNotifPacket) -> Self {
+        Self { session, packet }
     }
-
+    pub const fn session(&self) -> &SessionInfo {
+        &self.session
+    }
     pub const fn collector_address(&self) -> SocketAddr {
-        self.collector_address
+        self.session.collector
     }
     pub fn collector_interface(&self) -> Option<&str> {
-        self.collector_interface.as_deref()
+        self.session.interface.as_deref()
     }
     pub const fn peer_address(&self) -> SocketAddr {
-        self.peer_address
+        self.session.peer
     }
     pub const fn packet(&self) -> &UdpNotifPacket {
         &self.packet

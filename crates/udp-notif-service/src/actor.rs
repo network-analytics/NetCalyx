@@ -115,8 +115,8 @@
 //! ```
 
 use crate::{
-    ActorId, OTL_UDP_NOTIF_PUBLISHER_ID_KEY, SubscriberId, Subscription, UdpNotifPacket,
-    UdpNotifReceiver, UdpNotifRequest, UdpNotifSender, create_udp_notif_channel,
+    ActorId, OTL_UDP_NOTIF_PUBLISHER_ID_KEY, SessionInfo, SubscriberId, Subscription,
+    UdpNotifPacket, UdpNotifReceiver, UdpNotifRequest, UdpNotifSender, create_udp_notif_channel,
 };
 use bytes::{Bytes, BytesMut};
 use futures_util::StreamExt;
@@ -645,9 +645,11 @@ impl UdpNotifActor {
             );
             let mut send_handlers = vec![];
             let request = Arc::new(UdpNotifRequest::new(
-                self.socket_addr,
-                self.interface_bind.clone().map(String::into_boxed_str),
-                peer,
+                SessionInfo::new(
+                    self.socket_addr,
+                    self.interface_bind.clone().map(String::into_boxed_str),
+                    peer,
+                ),
                 msg,
             ));
             for (id, tx) in &self.subscribers {
@@ -1322,15 +1324,11 @@ mod tests {
 
         // Create references to compare with the received ones
         let ref1 = Ok(Ok(Arc::new(UdpNotifRequest::new(
-            handle.local_addr(),
-            None,
-            local_addr1,
+            SessionInfo::new(handle.local_addr(), None, local_addr1),
             pkt1.clone(),
         ))));
         let ref2 = Ok(Ok(Arc::new(UdpNotifRequest::new(
-            handle.local_addr(),
-            None,
-            local_addr2,
+            SessionInfo::new(handle.local_addr(), None, local_addr2),
             pkt2.clone(),
         ))));
 
