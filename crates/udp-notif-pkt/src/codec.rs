@@ -295,7 +295,8 @@ pub struct UdpPacketCodec {
     incomplete_messages: HashMap<(u32, u32), ReassemblyBuffer>,
     /// Maximum number of segments tolerated per in-progress reassembly buffer.
     max_segments: u16,
-    /// How long to keep an incomplete reassembly buffer before discarding it.
+    /// How long (seconds) to keep an incomplete reassembly buffer before
+    /// discarding it (default: [`DEFAULT_REASSEMBLY_TIMEOUT`], 10 seconds).
     reassembly_timeout: Duration,
     /// Accumulated reassembly event counts since the last call to
     /// [`Self::take_reassembly_events`].
