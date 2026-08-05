@@ -1,10 +1,11 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2025-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//    https://www.apache.org/licenses/LICENSE-2.0
+//    http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -575,6 +576,12 @@ impl<'a, R: io::BufRead> XmlParser<'a, R> {
     /// - The namespace resolution only occurs once (on the first start tag) to
     ///   minimize overhead
     pub fn copy_buffer_till(&mut self, tag: &'_ [u8]) -> Result<Box<str>, ParsingError> {
+        // A self-closing container (e.g. `<data/>`) has no children and thus no
+        // matching end tag to copy up to; scanning would run to EOF. Mirror the
+        // guard used by `collect_xml_sequence` and return empty content.
+        if !self.parent_has_child() {
+            return Ok("".into());
+        }
         let cursor = io::Cursor::new(vec![]);
         let mut writer = quick_xml::writer::Writer::new(cursor);
         let mut wrote_ns = false;
@@ -637,6 +644,13 @@ impl<'a, R: io::BufRead> XmlParser<'a, R> {
         &mut self,
         tag: &'_ [u8],
     ) -> Result<CopiedSubtree, ParsingError> {
+        // Empty/self-closing container: no children, no matching end tag.
+        if !self.parent_has_child() {
+            return Ok(CopiedSubtree {
+                xml: "".into(),
+                namespaces: IndexMap::new(),
+            });
+        }
         let mut writer = quick_xml::writer::Writer::new(io::Cursor::new(Vec::new()));
         let mut namespaces: IndexMap<String, String> = IndexMap::new();
 
@@ -918,6 +932,41 @@ mod tests {
             &Event::Start(BytesStart::new("root"))
         );
         assert_eq!(parser_empty.peek(), &Event::Eof);
+    }
+
+    /// A self-closing container must not make `copy_buffer_till` scan to EOF.
+    #[test]
+    fn test_copy_buffer_till_empty_element() {
+        // self-closing <data/>
+        let mut parser = create_parser(r#"<data/>"#);
+        parser.open(None, "data").expect("open <data/>");
+        assert_eq!(parser.copy_buffer_till(b"data"), Ok("".into()));
+        parser.close().expect("close <data/>");
+
+        // explicit empty <data></data>
+        let mut parser = create_parser(r#"<data></data>"#);
+        parser.open(None, "data").expect("open <data>");
+        assert_eq!(parser.copy_buffer_till(b"data"), Ok("".into()));
+        parser.close().expect("close <data>");
+
+        // non-empty still copies content
+        let mut parser = create_parser(r#"<data><x>1</x></data>"#);
+        parser.open(None, "data").expect("open <data>");
+        let copied = parser.copy_buffer_till(b"data").expect("copy content");
+        assert!(copied.contains("<x>1</x>"), "got `{copied}`");
+    }
+
+    /// Same guard for the namespace-aware variant.
+    #[test]
+    fn test_copy_buffer_till_with_namespaces_empty_element() {
+        let mut parser = create_parser(r#"<filter/>"#);
+        parser.open(None, "filter").expect("open <filter/>");
+        let subtree = parser
+            .copy_buffer_till_with_namespaces(b"filter")
+            .expect("copy empty");
+        assert_eq!(&*subtree.xml, "");
+        assert!(subtree.namespaces.is_empty());
+        parser.close().expect("close <filter/>");
     }
 
     #[test]
