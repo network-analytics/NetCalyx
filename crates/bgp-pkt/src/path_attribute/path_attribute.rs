@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2022-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -315,7 +316,7 @@ impl PathAttributeValue {
 /// +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 /// ```
 #[repr(u8)]
-#[derive(Display, FromRepr, Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[derive(Display, FromRepr, Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "fuzz", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum Origin {
@@ -419,7 +420,7 @@ impl From<AsPath> for Vec<u32> {
 /// +-+-+-+-+-+-+-+-+
 /// ```
 #[repr(u8)]
-#[derive(Display, FromRepr, Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[derive(Display, FromRepr, Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "fuzz", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum AsPathSegmentType {
@@ -595,7 +596,7 @@ impl PathAttributeValueProperties for NextHop {
 /// MAY be used by a BGP speaker's Decision Process to
 /// discriminate among multiple entry points to a neighboring
 /// autonomous system.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "fuzz", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct MultiExitDiscriminator {
@@ -630,7 +631,7 @@ impl PathAttributeValueProperties for MultiExitDiscriminator {
 /// unsigned integer. A BGP speaker uses it to inform its other
 /// internal peers of the advertising speaker's degree of
 /// preference for an advertised route.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "fuzz", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct LocalPreference {
@@ -686,7 +687,7 @@ impl PathAttributeValueProperties for AtomicAggregate {
 /// address of the BGP speaker that formed the aggregate route
 /// (encoded as 4 octets). This SHOULD be the same address as
 /// the one used for the BGP Identifier of the speaker.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "fuzz", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct As2Aggregator {
@@ -707,7 +708,7 @@ impl As2Aggregator {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "fuzz", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct As4Aggregator {

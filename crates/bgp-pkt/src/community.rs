@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2022-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -1067,6 +1068,70 @@ impl ExtendedCommunityProperties for ExtendedCommunityIpv6 {
             Self::TransitiveIpv6(value) => value.transitive(),
             Self::NonTransitiveIpv6(value) => value.transitive(),
             Self::Unknown(value) => value.transitive(),
+        }
+    }
+}
+
+impl std::fmt::Display for ExtendedCommunityIpv6 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TransitiveIpv6(value) => match value {
+                TransitiveIpv6ExtendedCommunity::RouteTarget {
+                    global_admin,
+                    local_admin,
+                } => write!(f, "rt:{global_admin}:{local_admin}"),
+                TransitiveIpv6ExtendedCommunity::RouteOrigin {
+                    global_admin,
+                    local_admin,
+                } => write!(f, "ro:{global_admin}:{local_admin}"),
+                TransitiveIpv6ExtendedCommunity::Ipv6Ifit {
+                    global_admin,
+                    local_admin,
+                } => write!(f, "ifit:{global_admin}:{local_admin}"),
+                TransitiveIpv6ExtendedCommunity::VrfRouteImport {
+                    global_admin,
+                    local_admin,
+                } => write!(f, "vrf-import:{global_admin}:{local_admin}"),
+                TransitiveIpv6ExtendedCommunity::FlowSpecRedirectToIpv6 {
+                    global_admin,
+                    local_admin,
+                } => write!(f, "flowspec-redirect:{global_admin}:{local_admin}"),
+                TransitiveIpv6ExtendedCommunity::FlowSpecRtRedirectToIpv6 {
+                    global_admin,
+                    local_admin,
+                } => write!(f, "flowspec-rt-redirect:{global_admin}:{local_admin}"),
+                TransitiveIpv6ExtendedCommunity::CiscoVpnDistinguisher {
+                    global_admin,
+                    local_admin,
+                } => write!(f, "cisco-vpn:{global_admin}:{local_admin}"),
+                TransitiveIpv6ExtendedCommunity::InterAreaP2MpSegmentedNextHop {
+                    global_admin,
+                    local_admin,
+                } => write!(f, "p2mp-nexthop:{global_admin}:{local_admin}"),
+                TransitiveIpv6ExtendedCommunity::RtDerivedEc {
+                    global_admin,
+                    local_admin,
+                } => write!(f, "rt-derived:{global_admin}:{local_admin}"),
+                TransitiveIpv6ExtendedCommunity::Unassigned {
+                    sub_type,
+                    global_admin,
+                    local_admin,
+                } => write!(f, "unassigned-{sub_type}:{global_admin}:{local_admin}"),
+            },
+            Self::NonTransitiveIpv6(value) => match value {
+                NonTransitiveIpv6ExtendedCommunity::Unassigned {
+                    sub_type,
+                    global_admin,
+                    local_admin,
+                } => write!(f, "unassigned-{sub_type}:{global_admin}:{local_admin}"),
+            },
+            Self::Unknown(value) => {
+                write!(
+                    f,
+                    "unknown:{}:{}:{:x?}",
+                    value.code, value.sub_type, value.value
+                )
+            }
         }
     }
 }
