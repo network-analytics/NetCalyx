@@ -22,6 +22,7 @@ netcalyx-udp-notif-service = { workspace = true }
 netcalyx-netconf-proto = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+strum = { workspace = true }
 strum_macros = { workspace = true }
 chrono = { workspace = true, default-features = true, features = ["serde"] }
 tokio = { workspace = true, default-features = false }
