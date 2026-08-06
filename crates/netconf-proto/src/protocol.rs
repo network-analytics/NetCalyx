@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2025-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -2595,6 +2596,33 @@ mod tests {
             },
         };
         test_xml_value(input_str1, expected1)?;
+        Ok(())
+    }
+
+    /// A `<get>`/`<get-config>` reply whose filter matched nothing comes back
+    /// as a self-closing `<data/>`. This must parse as empty data, not fail
+    /// with `ParsingError::Eof` from scanning past `</rpc-reply>` for a
+    /// non-existent `</data>` end tag.
+    #[test]
+    fn test_rpc_reply_empty_data() -> Result<(), ParsingError> {
+        let expected = RpcReply {
+            message_id: Some("215".into()),
+            reply: RpcReplyContent::ErrorsAndData {
+                errors: vec![],
+                responses: RpcResponse::WellKnown(WellKnownRpcResponse::Data("".into())),
+            },
+        };
+
+        // self-closing form
+        test_xml_value(
+            r#"<rpc-reply message-id="215" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0"><data/></rpc-reply>"#,
+            expected.clone(),
+        )?;
+        // explicit open/close form
+        test_xml_value(
+            r#"<rpc-reply message-id="215" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0"><data></data></rpc-reply>"#,
+            expected,
+        )?;
         Ok(())
     }
 
