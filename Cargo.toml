@@ -67,7 +67,7 @@ strum = "0.28"
 strum_macros = "0.28"
 serde = { version = "1.0" }
 serde_json = "1"
-nom = { version = "7.1" }
+nom = { version = "8.0" }
 reqwest = { version = "0.13", default-features = false }
 roxmltree = "0.21"
 arbitrary = { version = "1" }
