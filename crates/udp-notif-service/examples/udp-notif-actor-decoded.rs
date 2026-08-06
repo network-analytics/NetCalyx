@@ -16,13 +16,14 @@
 use netcalyx_udp_notif_pkt::decoded::UdpNotifPacketDecoded;
 use netcalyx_udp_notif_service::actor::ActorHandle;
 use std::time::Duration;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 fn init_tracing() {
     // Delegate filtering entirely to RUST_LOG so callers can set any level,
     // including TRACE, without recompiling.
     let subscriber = tracing_subscriber::FmtSubscriber::builder()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_writer(std::io::stderr)
         .finish();
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 }
@@ -61,7 +62,13 @@ pub fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> 
             while let Ok(pkt) = pkt_rx.recv().await {
                 let addr = pkt.peer_address();
                 match UdpNotifPacketDecoded::try_from(pkt.packet()) {
-                    Ok(decoded) => println!("{}", serde_json::to_string(&decoded).unwrap()),
+                    Ok(decoded) => match serde_json::to_string(&decoded) {
+                        Ok(json) => println!("{json}"),
+                        Err(err) => {
+                            error!(%addr, error = %err, "failed to serialize decoded packet to JSON");
+                            debug!(%addr, packet = ?decoded, "packet that failed to serialize");
+                        }
+                    },
                     Err(err) => error!(%addr, error = %err, "failed to decode UDP-Notif payload"),
                 }
             }

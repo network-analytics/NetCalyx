@@ -24,13 +24,14 @@ use std::collections::HashMap;
 use tokio::net::UdpSocket;
 use tokio_util::codec::{BytesCodec, Decoder};
 use tokio_util::udp::UdpFramed;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 fn init_tracing() {
     // Delegate filtering entirely to RUST_LOG so callers can set any level,
     // including TRACE, without recompiling.
     let subscriber = tracing_subscriber::FmtSubscriber::builder()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_writer(std::io::stderr)
         .finish();
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 }
@@ -143,9 +144,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
                             );
                         }
                         match UdpNotifPacketDecoded::try_from(&msg) {
-                            Ok(decoded) => {
-                                println!("{}", serde_json::to_string(&decoded).unwrap())
-                            }
+                            Ok(decoded) => match serde_json::to_string(&decoded) {
+                                Ok(json) => println!("{json}"),
+                                Err(err) => {
+                                    error!(%addr, error = %err, "failed to serialize decoded packet to JSON");
+                                    debug!(%addr, packet = ?decoded, "packet that failed to serialize");
+                                }
+                            },
                             Err(err) => {
                                 error!(%addr, error = %err, "failed to decode UDP-Notif payload");
                             }

@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2022-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,6 +20,7 @@ use tower::{ServiceBuilder, service_fn};
 
 use netcalyx_bmp_service::server::{BmpRequest, BmpServer, BmpServerResponse};
 use tower::buffer::Buffer;
+use tracing::{debug, error};
 
 use netcalyx_bmp_service::handle::BmpServerHandle;
 
@@ -28,6 +30,7 @@ fn init_tracing() {
     // configuration options
     let subscriber = tracing_subscriber::FmtSubscriber::builder()
         .with_max_level(tracing::Level::TRACE)
+        .with_writer(std::io::stderr)
         .finish();
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 }
@@ -37,7 +40,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
     init_tracing();
     let local_socket = SocketAddr::from(([0, 0, 0, 0], 33000));
     let print_svc = ServiceBuilder::new().service(service_fn(|x: BmpRequest| async move {
-        println!("Received: {}", serde_json::to_string(&x).unwrap());
+        match serde_json::to_string(&x) {
+            Ok(json) => println!("Received: {json}"),
+            Err(err) => {
+                error!(error = %err, "failed to serialize BMP message to JSON");
+                debug!(packet = ?x, "packet that failed to serialize");
+            }
+        }
         Ok::<Option<BmpServerResponse>, Infallible>(None)
     }));
     let pipeline = ServiceBuilder::new().service(print_svc);

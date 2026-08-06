@@ -16,13 +16,14 @@
 
 use netcalyx_udp_notif_service::actor::ActorHandle;
 use std::time::Duration;
-use tracing::info;
+use tracing::{debug, error, info};
 
 fn init_tracing() {
     // Delegate filtering entirely to RUST_LOG so callers can set any level,
     // including TRACE, without recompiling.
     let subscriber = tracing_subscriber::FmtSubscriber::builder()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_writer(std::io::stderr)
         .finish();
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 }
@@ -59,7 +60,15 @@ pub fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> 
         }
         tokio::spawn(async move {
             while let Ok(pkt) = pkt_rx.recv().await {
-                info!("received packet: {:?}", pkt);
+                let addr = pkt.peer_address();
+                info!(%addr, "[Printer] Received packet");
+                match serde_json::to_string(pkt.packet()) {
+                    Ok(json) => println!("{json}"),
+                    Err(err) => {
+                        error!(%addr, error = %err, "failed to serialize packet to JSON");
+                        debug!(%addr, packet = ?pkt.packet(), "packet that failed to serialize");
+                    }
+                }
             }
         });
 
