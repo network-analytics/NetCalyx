@@ -135,30 +135,52 @@ use rustc_hash::FxHashMap;
 use std::collections::VecDeque;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
+use strum::VariantNames;
 use tokio::sync::mpsc;
 use tracing::{debug, info, trace, warn};
 use yang5::data::{DataFormat, DataOperation, DataParserFlags, DataValidationFlags};
 
-// Attribute values for the `reason` key on the `dropped` counter.
-const DROP_REASON_KEY: &str = "reason";
-const DROP_REASON_DECODE_ERROR: &str = "decode_error";
-const DROP_REASON_BUFFER_FULL_SUBSCRIPTION: &str = "buffer_full_subscription";
-const DROP_REASON_BUFFER_FULL_PEER: &str = "buffer_full_peer";
-const DROP_REASON_VALIDATION_FAILED: &str = "validation_failed";
-const DROP_REASON_INCOMPLETE_SUBSCRIPTION_STARTED: &str = "incomplete_subscription_started";
-const DROP_REASON_NO_SUBSCRIPTION_ID: &str = "no_subscription_id";
-const DROP_REASON_SEND_ERROR: &str = "send_error";
+// Attribute key shared by the `dropped` and `skipped` counters.
+const REASON_KEY: &str = "reason";
 
-// Attribute values for the `reason` key on the `skipped` counter.
-const SKIP_REASON_KEY: &str = "reason";
-const SKIP_REASON_NO_LIBRARY: &str = "no_library";
-const SKIP_REASON_CONTEXT_FAILED: &str = "context_failed";
-const SKIP_REASON_NO_SUBSCRIPTION_INFO: &str = "no_subscription_info";
+/// Attribute values for the `reason` key on the `dropped` counter.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, strum_macros::VariantNames, strum_macros::IntoStaticStr,
+)]
+#[strum(serialize_all = "snake_case")]
+enum DropReason {
+    DecodeError,
+    BufferFullSubscription,
+    BufferFullPeer,
+    ValidationFailed,
+    IncompleteSubscriptionStarted,
+    NoSubscriptionId,
+    SendError,
+}
 
-// Attribute values for the `by` key on the `cache_lookups` counter.
+/// Attribute values for the `reason` key on the `skipped` counter.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, strum_macros::VariantNames, strum_macros::IntoStaticStr,
+)]
+#[strum(serialize_all = "snake_case")]
+enum SkipReason {
+    NoLibrary,
+    ContextFailed,
+    NoSubscriptionInfo,
+}
+
+// Attribute key for the `cache_lookups` counter.
 const CACHE_LOOKUP_BY_KEY: &str = "by";
-const CACHE_LOOKUP_BY_SUBSCRIPTION_INFO: &str = "subscription_info";
-const CACHE_LOOKUP_BY_SUBSCRIPTION_ID: &str = "subscription_id";
+
+/// Attribute values for the `by` key on the `cache_lookups` counter.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, strum_macros::VariantNames, strum_macros::IntoStaticStr,
+)]
+#[strum(serialize_all = "snake_case")]
+enum CacheLookupBy {
+    SubscriptionInfo,
+    SubscriptionId,
+}
 
 /// Per-subscription state held by the validation actor.
 ///
@@ -250,19 +272,18 @@ impl ValidationStats {
             .build();
         let dropped = meter
             .u64_counter("netcalyx.yang_push.validation.dropped")
-            .with_description(
+            .with_description(format!(
                 "Number of YANG-Push messages dropped for any reason, \
-                tagged with reason (decode_error | buffer_full_subscription | \
-                buffer_full_peer | validation_failed | \
-                incomplete_subscription_started | no_subscription_id | send_error)",
-            )
+                tagged with reason ({})",
+                DropReason::VARIANTS.join(" | ")
+            ))
             .build();
         let cache_lookups = meter
             .u64_counter("netcalyx.yang_push.validation.cache.lookups")
-            .with_description(
-                "Number of YANG schema cache lookups issued, \
-                tagged with by (subscription_info | subscription_id)",
-            )
+            .with_description(format!(
+                "Number of YANG schema cache lookups issued, tagged with by ({})",
+                CacheLookupBy::VARIANTS.join(" | ")
+            ))
             .build();
         let buffered = meter
             .u64_gauge("netcalyx.yang_push.validation.buffered")
@@ -296,10 +317,11 @@ impl ValidationStats {
             .build();
         let skipped = meter
             .u64_counter("netcalyx.yang_push.validation.skipped")
-            .with_description(
+            .with_description(format!(
                 "Number of YANG-Push messages forwarded without validation, \
-                tagged with reason (no_library | context_failed | no_subscription_info)",
-            )
+                tagged with reason ({})",
+                SkipReason::VARIANTS.join(" | ")
+            ))
             .build();
         let sent = meter
             .u64_counter("netcalyx.yang_push.validation.sent")
@@ -531,8 +553,8 @@ impl ValidationActor {
                 "Buffer full for subscription, dropping new packet"
             );
             peer_tags.push(opentelemetry::KeyValue::new(
-                DROP_REASON_KEY,
-                DROP_REASON_BUFFER_FULL_SUBSCRIPTION,
+                REASON_KEY,
+                <&str>::from(DropReason::BufferFullSubscription),
             ));
             self.stats.dropped.add(1, &peer_tags);
             return false;
@@ -547,8 +569,8 @@ impl ValidationActor {
                 router_content_id=subscription_info.content_id(),
                 "Buffer full for peer, dropping new packet");
             peer_tags.push(opentelemetry::KeyValue::new(
-                DROP_REASON_KEY,
-                DROP_REASON_BUFFER_FULL_PEER,
+                REASON_KEY,
+                <&str>::from(DropReason::BufferFullPeer),
             ));
             self.stats.dropped.add(1, &peer_tags);
             return false;
@@ -667,8 +689,8 @@ impl ValidationActor {
                     "Failed to decode UDP-Notif payload, dropping packet"
                 );
                 peer_tags.push(opentelemetry::KeyValue::new(
-                    DROP_REASON_KEY,
-                    DROP_REASON_DECODE_ERROR,
+                    REASON_KEY,
+                    <&str>::from(DropReason::DecodeError),
                 ));
                 self.stats.dropped.add(1, &peer_tags);
                 Err(())
@@ -744,13 +766,13 @@ impl ValidationActor {
             Some(cached_content_id)
         } else {
             let skip_reason = if subscription_info.is_empty() {
-                SKIP_REASON_NO_SUBSCRIPTION_INFO
+                SkipReason::NoSubscriptionInfo
             } else if subscription_cache.cached_content_id.is_some() {
                 // Library reference exists but context creation failed
-                SKIP_REASON_CONTEXT_FAILED
+                SkipReason::ContextFailed
             } else {
                 // No library available — device fetch failed
-                SKIP_REASON_NO_LIBRARY
+                SkipReason::NoLibrary
             };
             trace!(
                 peer=%peer,
@@ -760,11 +782,14 @@ impl ValidationActor {
                 router_content_id=subscription_info.content_id(),
                 target=%subscription_info.target(),
                 notification_type,
-                skip_reason,
+                skip_reason = <&str>::from(skip_reason),
                 "No YANG schemas found, skipping validation step",
             );
             let mut skip_tags = peer_tags.clone();
-            skip_tags.push(opentelemetry::KeyValue::new(SKIP_REASON_KEY, skip_reason));
+            skip_tags.push(opentelemetry::KeyValue::new(
+                REASON_KEY,
+                <&str>::from(skip_reason),
+            ));
             self.stats.skipped.add(1, &skip_tags);
             None
         };
@@ -791,8 +816,8 @@ impl ValidationActor {
                 );
                 let mut drop_tags = peer_tags.clone();
                 drop_tags.push(opentelemetry::KeyValue::new(
-                    DROP_REASON_KEY,
-                    DROP_REASON_SEND_ERROR,
+                    REASON_KEY,
+                    <&str>::from(DropReason::SendError),
                 ));
                 self.stats.dropped.add(1, &drop_tags);
                 ValidationActorError::SendError
@@ -857,8 +882,8 @@ impl ValidationActor {
 
                 let mut drop_tags = peer_tags.to_vec();
                 drop_tags.push(opentelemetry::KeyValue::new(
-                    DROP_REASON_KEY,
-                    DROP_REASON_VALIDATION_FAILED,
+                    REASON_KEY,
+                    <&str>::from(DropReason::ValidationFailed),
                 ));
                 stats.dropped.add(1, &drop_tags);
                 return Err(err);
@@ -895,8 +920,8 @@ impl ValidationActor {
                     error=%err, "Failed to validate legacy UDP-Notif payload, dropping packet");
                 let mut drop_tags = peer_tags.to_vec();
                 drop_tags.push(opentelemetry::KeyValue::new(
-                    DROP_REASON_KEY,
-                    DROP_REASON_VALIDATION_FAILED,
+                    REASON_KEY,
+                    <&str>::from(DropReason::ValidationFailed),
                 ));
                 stats.dropped.add(1, &drop_tags);
                 return Err(err);
@@ -989,7 +1014,7 @@ impl ValidationActor {
                 );
                 peer_tags.push(opentelemetry::KeyValue::new(
                     CACHE_LOOKUP_BY_KEY,
-                    CACHE_LOOKUP_BY_SUBSCRIPTION_INFO,
+                    <&str>::from(CacheLookupBy::SubscriptionInfo),
                 ));
                 self.stats.cache_lookups.add(1, &peer_tags);
 
@@ -1042,8 +1067,8 @@ impl ValidationActor {
                         "Incomplete subscription started/modified (no usable subscription info), dropping packet"
                     );
                     peer_tags.push(opentelemetry::KeyValue::new(
-                        DROP_REASON_KEY,
-                        DROP_REASON_INCOMPLETE_SUBSCRIPTION_STARTED,
+                        REASON_KEY,
+                        <&str>::from(DropReason::IncompleteSubscriptionStarted),
                     ));
                     self.stats.dropped.add(1, &peer_tags);
                     return Ok(None);
@@ -1060,7 +1085,7 @@ impl ValidationActor {
                         caching the packet and looking up subscription info in cache");
                     peer_tags.push(opentelemetry::KeyValue::new(
                         CACHE_LOOKUP_BY_KEY,
-                        CACHE_LOOKUP_BY_SUBSCRIPTION_ID,
+                        <&str>::from(CacheLookupBy::SubscriptionId),
                     ));
                     self.stats.cache_lookups.add(1, &peer_tags);
                     let subscription_info = SubscriptionInfo::new_empty(
@@ -1110,8 +1135,8 @@ impl ValidationActor {
                     "Received UDP-Notif packet without subscription info nor subscription ID, dropping packet"
                 );
                 peer_tags.push(opentelemetry::KeyValue::new(
-                    DROP_REASON_KEY,
-                    DROP_REASON_NO_SUBSCRIPTION_ID,
+                    REASON_KEY,
+                    <&str>::from(DropReason::NoSubscriptionId),
                 ));
                 self.stats.dropped.add(1, &peer_tags);
                 Ok(None)
