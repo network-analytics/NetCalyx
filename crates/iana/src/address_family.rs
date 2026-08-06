@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2022-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -217,7 +218,7 @@ impl TryFrom<u16> for AddressFamily {
 /// assert_eq!(undefined, Err(UndefinedSubsequentAddressFamily(0)));
 /// ```
 #[repr(u8)]
-#[derive(FromRepr, Display, Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[derive(FromRepr, Display, Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Hash)]
 #[cfg_attr(feature = "fuzz", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum SubsequentAddressFamily {
