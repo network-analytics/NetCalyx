@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use tokio::net::UdpSocket;
 use tokio_util::codec::{BytesCodec, Decoder};
 use tokio_util::udp::UdpFramed;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use netcalyx_udp_notif_pkt::codec::UdpPacketCodec;
 
@@ -29,6 +29,7 @@ fn init_tracing() {
     // including TRACE, without recompiling.
     let subscriber = tracing_subscriber::FmtSubscriber::builder()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_writer(std::io::stderr)
         .finish();
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 }
@@ -53,7 +54,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
                     .or_insert(UdpPacketCodec::default())
                     .decode(&mut buf);
                 match result {
-                    Ok(Some(msg)) => println!("{}", serde_json::to_string(&msg).unwrap()),
+                    Ok(Some(msg)) => match serde_json::to_string(&msg) {
+                        Ok(json) => println!("{json}"),
+                        Err(err) => {
+                            error!(%addr, error = %err, "failed to serialize packet to JSON");
+                            debug!(%addr, packet = ?msg, "packet that failed to serialize");
+                        }
+                    },
                     Ok(None) => info!("message incomplete or too short to decode"),
                     Err(err) => error!("error decoding packet: {:?}", err),
                 }
