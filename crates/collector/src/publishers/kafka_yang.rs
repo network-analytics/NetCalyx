@@ -36,10 +36,13 @@ use netcalyx_netconf_proto::yanglib::{
     DependencyError, PermissiveVersionChecker, SchemaConstructionError, SchemaLoadingError,
     YangLibrary,
 };
-use netcalyx_yang_push::ContentId;
 use netcalyx_yang_push::cache::actor::CacheLookupCommand;
 use netcalyx_yang_push::cache::storage::{
     SubscriptionInfo, YangLibraryCacheError, YangLibraryReference,
+};
+use netcalyx_yang_push::{
+    ContentId, OTL_YANG_PUSH_SUBSCRIPTION_ID_KEY, OTL_YANG_PUSH_SUBSCRIPTION_ROUTER_CONTENT_ID_KEY,
+    OTL_YANG_PUSH_SUBSCRIPTION_TARGET_KEY,
 };
 use rdkafka::config::{ClientConfig, FromClientConfigAndContext};
 use rdkafka::error::{KafkaError, RDKafkaErrorCode};
@@ -49,6 +52,7 @@ use schema_registry_client::rest::schema_registry_client::{Client, SchemaRegistr
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
+use strum::VariantNames;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, trace, warn};
@@ -116,6 +120,68 @@ where
 
 // --- telemetry ---
 
+/// Build OTel tags (peer address + subscription context) for schema
+/// lookup metrics, when subscription info is available
+fn subscription_info_tags(
+    subscription_info: Option<&SubscriptionInfo>,
+) -> Vec<opentelemetry::KeyValue> {
+    let Some(subscription_info) = subscription_info else {
+        return Vec::new();
+    };
+    vec![
+        opentelemetry::KeyValue::new(
+            "network.peer.address",
+            subscription_info.peer_ip().to_string(),
+        ),
+        opentelemetry::KeyValue::new(
+            OTL_YANG_PUSH_SUBSCRIPTION_ID_KEY,
+            opentelemetry::Value::I64(subscription_info.id().into()),
+        ),
+        opentelemetry::KeyValue::new(
+            OTL_YANG_PUSH_SUBSCRIPTION_TARGET_KEY,
+            format!("{}", subscription_info.target()),
+        ),
+        opentelemetry::KeyValue::new(
+            OTL_YANG_PUSH_SUBSCRIPTION_ROUTER_CONTENT_ID_KEY,
+            subscription_info.content_id().to_string(),
+        ),
+    ]
+}
+
+// Attribute key shared by the `schema_registration_errors` and
+// `schema_fallbacks` counters.
+const REASON_KEY: &str = "reason";
+
+/// Attribute values for the `reason` key on the `schema_registration_errors`
+/// counter.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, strum_macros::VariantNames, strum_macros::IntoStaticStr,
+)]
+#[strum(serialize_all = "snake_case")]
+enum SchemaRegistrationErrorReason {
+    CacheLookupSendFailed,
+    LoadSchemasFailed,
+    YangLibraryFailed,
+    ModuleSetBuilderFailed,
+    ExtendYangLibFailed,
+    RegisterSchemaFailed,
+    MissingSchemaId,
+}
+
+/// Attribute values for the `reason` key on the `schema_fallbacks` counter.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, strum_macros::VariantNames, strum_macros::IntoStaticStr,
+)]
+#[strum(serialize_all = "snake_case")]
+enum SchemaFallbackReason {
+    NoContentIdWithDefault,
+    NoContentIdNoDefault,
+    NotFoundInCache,
+    CacheChannelClosed,
+    CacheLookupTimeout,
+    CacheLookupSendFailed,
+}
+
 #[derive(Debug, Clone)]
 pub struct KafkaYangPublisherStats {
     received: opentelemetry::metrics::Counter<u64>,
@@ -125,6 +191,13 @@ pub struct KafkaYangPublisherStats {
     error_send: opentelemetry::metrics::Counter<u64>,
     delivered_messages: opentelemetry::metrics::Counter<u64>,
     failed_delivery_messages: opentelemetry::metrics::Counter<u64>,
+    cache_hits: opentelemetry::metrics::Counter<u64>,
+    cache_misses: opentelemetry::metrics::Counter<u64>,
+    cache_actor_pending: opentelemetry::metrics::UpDownCounter<i64>,
+    cache_actor_timeouts: opentelemetry::metrics::Counter<u64>,
+    schema_registry_registrations: opentelemetry::metrics::Counter<u64>,
+    schema_registration_errors: opentelemetry::metrics::Counter<u64>,
+    schema_fallbacks: opentelemetry::metrics::Counter<u64>,
 }
 
 impl KafkaYangPublisherStats {
@@ -157,6 +230,51 @@ impl KafkaYangPublisherStats {
             .u64_counter("netcalyx.collector.kafka.yang.failed_delivery_messages")
             .with_description("Messages failed delivery to Kafka")
             .build();
+        let cache_hits = meter
+            .u64_counter("netcalyx.collector.kafka.yang.schema_cache.hits")
+            .with_description(
+                "Schema ID lookups satisfied from the local in-process schema_id_cache \
+                (no round-trip to the CacheActor)",
+            )
+            .build();
+        let cache_misses = meter
+            .u64_counter("netcalyx.collector.kafka.yang.schema_cache.misses")
+            .with_description("Schema ID lookups not found in the local schema_id_cache, forwarded to the CacheActor")
+            .build();
+        let cache_actor_pending = meter
+            .i64_up_down_counter("netcalyx.collector.kafka.yang.cache_actor.requests.pending")
+            .with_description(
+                "Requests sent to the CacheActor currently pending a response, incremented \
+                after the request is sent successfully and decremented after receive/timeout",
+            )
+            .build();
+        let cache_actor_timeouts = meter
+            .u64_counter("netcalyx.collector.kafka.yang.cache_actor.requests.timeouts")
+            .with_description("CacheActor round-trip requests that timed out")
+            .build();
+        let schema_registry_registrations = meter
+            .u64_counter("netcalyx.collector.kafka.yang.schema_registry.registrations")
+            .with_description(
+                "Schemas registered with the Schema Registry, including default/custom \
+                schemas at actor startup and on cache-miss lookups",
+            )
+            .build();
+        let schema_registration_errors = meter
+            .u64_counter("netcalyx.collector.kafka.yang.schema_registry.registration_errors")
+            .with_description(format!(
+                "Failures resolving, loading, extending, or registering a schema during a \
+                cache-miss lookup, tagged with reason ({})",
+                SchemaRegistrationErrorReason::VARIANTS.join(" | ")
+            ))
+            .build();
+        let schema_fallbacks = meter
+            .u64_counter("netcalyx.collector.kafka.yang.schema.fallbacks")
+            .with_description(format!(
+                "Messages that fell back to the default schema or were sent without a \
+                schema, tagged with reason ({})",
+                SchemaFallbackReason::VARIANTS.join(" | ")
+            ))
+            .build();
         Self {
             received,
             sent,
@@ -165,6 +283,13 @@ impl KafkaYangPublisherStats {
             error_send,
             delivered_messages,
             failed_delivery_messages,
+            cache_hits,
+            cache_misses,
+            cache_actor_pending,
+            cache_actor_timeouts,
+            schema_registry_registrations,
+            schema_registration_errors,
+            schema_fallbacks,
         }
     }
 }
@@ -346,6 +471,7 @@ where
                     config.yang_converter.subject_prefix(),
                 )
                 .await?;
+                stats.schema_registry_registrations.add(1, &[]);
                 Some(default_schema_id)
             } else {
                 None
@@ -374,6 +500,7 @@ where
                 config.yang_converter.subject_prefix(),
             )
             .await?;
+            stats.schema_registry_registrations.add(1, &[]);
             // Store schema registry ID in cache
             schema_id_cache.insert(content_id.to_string(), schema_id);
         }
@@ -425,9 +552,20 @@ where
         content_id: Option<&str>,
         subscription_info: Option<&SubscriptionInfo>,
     ) -> Result<Option<i32>, KafkaYangPublisherActorError<E>> {
+        let mut tags = subscription_info_tags(subscription_info);
         let id = if let Some(id) = content_id {
             id
         } else {
+            let reason = if self.default_schema_id.is_some() {
+                SchemaFallbackReason::NoContentIdWithDefault
+            } else {
+                SchemaFallbackReason::NoContentIdNoDefault
+            };
+            tags.push(opentelemetry::KeyValue::new(
+                REASON_KEY,
+                <&str>::from(reason),
+            ));
+            self.stats.schema_fallbacks.add(1, &tags);
             return if let Some(default_schema_id) = self.default_schema_id {
                 if let Some(subscription_info) = subscription_info {
                     warn!(
@@ -469,6 +607,7 @@ where
 
         // Check if we already have this schema registered
         if let Some(&schema_id) = self.schema_id_cache.get(id) {
+            self.stats.cache_hits.add(1, &tags);
             if let Some(subscription_info) = subscription_info {
                 trace!(
                     peer_ip=%subscription_info.peer_ip(),
@@ -489,6 +628,7 @@ where
 
             return Ok(Some(schema_id));
         }
+        self.stats.cache_misses.add(1, &tags);
 
         // Request schema from SchemaCache Actor
         // (with timeout to prevent hanging)
@@ -502,9 +642,27 @@ where
             })
             .await
         {
-            warn!("Failed to request schema for content_id: {}", id);
-            return Err(err.into());
+            let mut error_tags = tags.clone();
+            error_tags.push(opentelemetry::KeyValue::new(
+                REASON_KEY,
+                <&str>::from(SchemaRegistrationErrorReason::CacheLookupSendFailed),
+            ));
+            self.stats.schema_registration_errors.add(1, &error_tags);
+
+            tags.push(opentelemetry::KeyValue::new(
+                REASON_KEY,
+                <&str>::from(SchemaFallbackReason::CacheLookupSendFailed),
+            ));
+            self.stats.schema_fallbacks.add(1, &tags);
+
+            warn!(
+                "Failed to request schema for content_id: {id}, fallback to using root schema \
+                (id={:?}): {err}",
+                self.default_schema_id
+            );
+            return Ok(self.default_schema_id);
         }
+        self.stats.cache_actor_pending.add(1, &tags);
 
         // TODO: expose timeout to config
         let (content_id, yang_lib_ref) = match tokio::time::timeout(
@@ -513,8 +671,17 @@ where
         )
         .await
         {
-            Ok(Ok((content_id, Some(yang_lib_ref)))) => (content_id, yang_lib_ref),
+            Ok(Ok((content_id, Some(yang_lib_ref)))) => {
+                self.stats.cache_actor_pending.add(-1, &tags);
+                (content_id, yang_lib_ref)
+            }
             Ok(Ok((content_id, None))) => {
+                self.stats.cache_actor_pending.add(-1, &tags);
+                tags.push(opentelemetry::KeyValue::new(
+                    REASON_KEY,
+                    <&str>::from(SchemaFallbackReason::NotFoundInCache),
+                ));
+                self.stats.schema_fallbacks.add(1, &tags);
                 warn!(
                     "Schema not found for content ID '{:?}', fallback to using root schema (id={content_id})",
                     self.default_schema_id
@@ -522,6 +689,12 @@ where
                 return Ok(self.default_schema_id);
             }
             Ok(Err(_)) => {
+                self.stats.cache_actor_pending.add(-1, &tags);
+                tags.push(opentelemetry::KeyValue::new(
+                    REASON_KEY,
+                    <&str>::from(SchemaFallbackReason::CacheChannelClosed),
+                ));
+                self.stats.schema_fallbacks.add(1, &tags);
                 warn!(
                     "Schema request channel closed for content ID '{:?}', fallback to using root schema (id={:?})",
                     id, self.default_schema_id
@@ -529,6 +702,13 @@ where
                 return Ok(self.default_schema_id);
             }
             Err(_) => {
+                self.stats.cache_actor_pending.add(-1, &tags);
+                self.stats.cache_actor_timeouts.add(1, &tags);
+                tags.push(opentelemetry::KeyValue::new(
+                    REASON_KEY,
+                    <&str>::from(SchemaFallbackReason::CacheLookupTimeout),
+                ));
+                self.stats.schema_fallbacks.add(1, &tags);
                 warn!(
                     "Schema request timeout for content ID '{}', fallback to using root schema (id={:?})",
                     id, self.default_schema_id
@@ -538,21 +718,45 @@ where
         };
 
         // Handle schema_cache response, extend and register schema
-        let mut schemas = yang_lib_ref.load_schemas()?;
-        let mut yang_lib = yang_lib_ref.yang_library()?;
+        let mut schemas = yang_lib_ref.load_schemas().inspect_err(|_| {
+            tags.push(opentelemetry::KeyValue::new(
+                REASON_KEY,
+                <&str>::from(SchemaRegistrationErrorReason::LoadSchemasFailed),
+            ));
+            self.stats.schema_registration_errors.add(1, &tags);
+        })?;
+        let mut yang_lib = yang_lib_ref.yang_library().inspect_err(|_| {
+            tags.push(opentelemetry::KeyValue::new(
+                REASON_KEY,
+                <&str>::from(SchemaRegistrationErrorReason::YangLibraryFailed),
+            ));
+            self.stats.schema_registration_errors.add(1, &tags);
+        })?;
 
         if let Some((extension_yang_lib, extension_schemas)) = self.extension_yang_library.as_ref()
         {
-            let mut builder = yang_lib.into_module_set_builder(
-                &schemas,
-                "ALL".into(),
-                &PermissiveVersionChecker,
-            )?;
-            builder.extend_from_yang_lib(
-                extension_yang_lib.clone(),
-                extension_schemas,
-                &PermissiveVersionChecker,
-            )?;
+            let mut builder = yang_lib
+                .into_module_set_builder(&schemas, "ALL".into(), &PermissiveVersionChecker)
+                .inspect_err(|_| {
+                    tags.push(opentelemetry::KeyValue::new(
+                        REASON_KEY,
+                        <&str>::from(SchemaRegistrationErrorReason::ModuleSetBuilderFailed),
+                    ));
+                    self.stats.schema_registration_errors.add(1, &tags);
+                })?;
+            builder
+                .extend_from_yang_lib(
+                    extension_yang_lib.clone(),
+                    extension_schemas,
+                    &PermissiveVersionChecker,
+                )
+                .inspect_err(|_| {
+                    tags.push(opentelemetry::KeyValue::new(
+                        REASON_KEY,
+                        <&str>::from(SchemaRegistrationErrorReason::ExtendYangLibFailed),
+                    ));
+                    self.stats.schema_registration_errors.add(1, &tags);
+                })?;
 
             let (yang_lib_extended, schemas_extended) = builder.build_yang_lib();
             yang_lib = yang_lib_extended;
@@ -566,13 +770,26 @@ where
                 &schemas,
                 &self.sr_client,
             )
-            .await?;
+            .await
+            .inspect_err(|_| {
+                tags.push(opentelemetry::KeyValue::new(
+                    REASON_KEY,
+                    <&str>::from(SchemaRegistrationErrorReason::RegisterSchemaFailed),
+                ));
+                self.stats.schema_registration_errors.add(1, &tags);
+            })?;
 
         let schema_id = registered_schema.id.ok_or_else(|| {
+            tags.push(opentelemetry::KeyValue::new(
+                REASON_KEY,
+                <&str>::from(SchemaRegistrationErrorReason::MissingSchemaId),
+            ));
+            self.stats.schema_registration_errors.add(1, &tags);
             KafkaYangPublisherActorError::SchemaRegistrationError(format!(
                 "Schema ID not found in registered schema response for content_id: {id}"
             ))
         })?;
+        self.stats.schema_registry_registrations.add(1, &tags);
         self.schema_id_cache.insert(content_id, schema_id);
         Ok(Some(schema_id))
     }
@@ -594,18 +811,18 @@ where
         let content_id = self.config.yang_converter.content_id(&input);
         let subscription_info = self.config.yang_converter.subscription_info(&input);
         let key = self.config.yang_converter.get_key(&input);
+        let tags = subscription_info_tags(subscription_info.as_ref());
 
         let encoded_value = match self.config.yang_converter.serialize_json(input) {
             Ok(bytes) => bytes,
             Err(err) => {
                 error!("Error serializing message to JSON bytes: {err}");
-                self.stats.error_decode.add(
-                    1,
-                    &[opentelemetry::KeyValue::new(
-                        "netcalyx.json.serialize.error.msg",
-                        err.to_string(),
-                    )],
-                );
+                let mut tags = tags.clone();
+                tags.push(opentelemetry::KeyValue::new(
+                    "netcalyx.json.serialize.error.msg",
+                    err.to_string(),
+                ));
+                self.stats.error_decode.add(1, &tags);
                 return Err(KafkaYangPublisherActorError::YangConverterError(err));
             }
         };
@@ -615,13 +832,12 @@ where
                 Ok(value) => Some(value),
                 Err(err) => {
                     error!("Error encoding serde_json::Value for key into byte array: {err}");
-                    self.stats.error_decode.add(
-                        1,
-                        &[opentelemetry::KeyValue::new(
-                            "netcalyx.json.encode.error.msg",
-                            err.to_string(),
-                        )],
-                    );
+                    let mut tags = tags.clone();
+                    tags.push(opentelemetry::KeyValue::new(
+                        "netcalyx.json.encode.error.msg",
+                        err.to_string(),
+                    ));
+                    self.stats.error_decode.add(1, &tags);
                     return Err(KafkaYangPublisherActorError::JsonError(err));
                 }
             },
@@ -662,7 +878,7 @@ where
         loop {
             match self.producer.send(record) {
                 Ok(_) => {
-                    self.stats.sent.add(1, &[]);
+                    self.stats.sent.add(1, &tags);
                     return Ok(());
                 }
                 Err((err, rec)) => match err {
@@ -670,17 +886,16 @@ where
                         // Exponential backoff when the librdkafka is full
                         if polling_interval > MAX_POLLING_INTERVAL {
                             error!("Kafka polling interval exceeded, dropping record");
-                            self.stats.error_send.add(
-                                1,
-                                &[opentelemetry::KeyValue::new(
-                                    "netcalyx.kafka.sent.error.msg",
-                                    err.to_string(),
-                                )],
-                            );
+                            let mut tags = tags.clone();
+                            tags.push(opentelemetry::KeyValue::new(
+                                "netcalyx.kafka.sent.error.msg",
+                                err.to_string(),
+                            ));
+                            self.stats.error_send.add(1, &tags);
                             return Err(KafkaYangPublisherActorError::KafkaError(err));
                         }
                         debug!("Kafka message queue is full, sleeping for {polling_interval:?}");
-                        self.stats.send_retries.add(1, &[]);
+                        self.stats.send_retries.add(1, &tags);
                         tokio::time::sleep(polling_interval).await;
                         polling_interval *= 2;
                         record = rec;
@@ -688,13 +903,12 @@ where
                     }
                     err => {
                         error!("Error sending message: {err}");
-                        self.stats.error_send.add(
-                            1,
-                            &[opentelemetry::KeyValue::new(
-                                "netcalyx.kafka.sent.error.msg",
-                                err.to_string(),
-                            )],
-                        );
+                        let mut tags = tags.clone();
+                        tags.push(opentelemetry::KeyValue::new(
+                            "netcalyx.kafka.sent.error.msg",
+                            err.to_string(),
+                        ));
+                        self.stats.error_send.add(1, &tags);
                         return Err(KafkaYangPublisherActorError::KafkaError(err));
                     }
                 },
@@ -725,7 +939,10 @@ where
                 msg = self.msg_recv.recv() => {
                     match msg {
                         Ok(msg) => {
-                            self.stats.received.add(1, &[]);
+                            let subscription_info = self.config.yang_converter.subscription_info(&msg);
+                            self.stats
+                                .received
+                                .add(1, &subscription_info_tags(subscription_info.as_ref()));
                             if let Err(err) = self.send(msg).await {
                                 error!("Error sending message to Kafka: {err}");
                             }
