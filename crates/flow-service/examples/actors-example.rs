@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2024-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,7 +18,7 @@ use netcalyx_flow_service::flow_supervisor::{
     FlowCollectorsSupervisorActorHandle, SupervisorConfig,
 };
 use std::time::Duration;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 fn init_tracing() {
     // Very simple setup at the moment to validate the instrumentation in the code
@@ -25,6 +26,7 @@ fn init_tracing() {
     // configuration options
     let subscriber = tracing_subscriber::FmtSubscriber::builder()
         .with_max_level(tracing::Level::DEBUG)
+        .with_writer(std::io::stderr)
         .finish();
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 }
@@ -53,7 +55,15 @@ pub fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> 
         }
         tokio::spawn(async move {
             while let Ok(pkt) = pkt_rx.recv().await {
-                info!("[Printer] Received packet: {pkt:?}");
+                let addr = pkt.0;
+                info!(%addr, "[Printer] Received packet");
+                match serde_json::to_string(&pkt.1) {
+                    Ok(json) => println!("{json}"),
+                    Err(err) => {
+                        error!(%addr, error = %err, "failed to serialize packet to JSON");
+                        debug!(%addr, packet = ?pkt.1, "packet that failed to serialize");
+                    }
+                }
             }
         });
 
