@@ -84,6 +84,7 @@ anyhow = { version = "1" }
 serde_with = { version = "3.20" }
 indexmap = { version = "2.14" }
 apache-avro = { version = "0.21" }
+# TODO: clean-up and consolidate towards schema-registry-client
 schema_registry_converter = { version = "4.9", default-features = false }
 rdkafka = { version = "0.39", default-features = false }
 tracing-test = { version = "0.2" }
@@ -102,7 +103,7 @@ sysinfo = { version = "0.39", default-features = false }
 shadow-rs = { version = "2.0", default-features = false }
 smallvec = { version = "1.15" }
 rustc-hash = { version = "2.1" }
-yang4 = { version = "0.1", features = ["bundled"] }
+yang5 = { version = "0.2", features = ["bundled"] }
 tempfile = { version = "3.27" }
 quick-xml = { version = "0.40" }
 russh = { version = "0.61" }

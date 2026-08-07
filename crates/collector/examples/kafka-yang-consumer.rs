@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2026-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -45,11 +46,11 @@ use schema_registry_client::rest::schema_registry_client::{Client, SchemaRegistr
 use serde_json::json;
 use shadow_rs::shadow;
 use std::collections::{HashMap, HashSet};
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
 use tokio::signal;
 use tracing::{debug, error, info, trace, warn};
-use yang4::context::Context;
-use yang4::data::{DataFormat, DataParserFlags, DataValidationFlags};
+use yang5::context::Context;
+use yang5::data::{DataFormat, DataParserFlags, DataValidationFlags};
 
 shadow!(build);
 
@@ -131,7 +132,6 @@ struct ValidationStats {
     failed: usize,
     context_errors: usize,
     no_schema: usize,
-    no_tm_schema: usize,
 }
 
 /// Cache for YANG contexts indexed by schema ID
@@ -206,7 +206,7 @@ impl YangContextCache {
             &yang_lib_ref.yang_library_path(),
             DataFormat::XML,
             &search_dir.as_path(),
-            yang4::context::ContextFlags::empty(),
+            yang5::context::ContextFlags::empty(),
         )?;
 
         info!(
@@ -803,7 +803,6 @@ fn log_statistics(stats: &ValidationStats, total_count: usize) {
     info!("  Failed:                      {}", stats.failed);
     info!("  Context errors:              {}", stats.context_errors);
     info!("  No schema-id (skipped):      {}", stats.no_schema);
-    info!("  No ietf-tm schema (skipped): {}", stats.no_tm_schema);
     info!("");
 
     let validated_total = stats.passed + stats.failed;
@@ -846,12 +845,8 @@ async fn main() -> Result<()> {
     let sr_client = SchemaRegistryClient::new(sr_config);
 
     // Create placeholder subscription info (reused for all schemas)
-    let subscription_info = SubscriptionInfo::new_empty(
-        SocketAddr::new(IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)), 0),
-        None,
-        SocketAddr::new(IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)), 0),
-        0,
-    );
+    let subscription_info =
+        SubscriptionInfo::new_empty(IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)), 0);
 
     // Create YANG context cache
     let mut yang_ctx_cache = YangContextCache::new();
@@ -971,64 +966,36 @@ async fn main() -> Result<()> {
                                 Ok(yang_ctx) => {
                                     debug!("Using YANG context for schema ID: {}", schema_id);
 
-                                    // Get Telemetry Message module
-                                    let tm_module =
-                                        yang_ctx.get_module_implemented("ietf-telemetry-message");
+                                    // Validate message payload against YANG schemas.
+                                    let validation_result = yang5::data::DataTree::parse_string(
+                                        yang_ctx,
+                                        payload,
+                                        DataFormat::JSON,
+                                        DataParserFlags::STRICT | DataParserFlags::ANYDATA_STRICT,
+                                        DataValidationFlags::PRESENT,
+                                    );
 
-                                    if tm_module.is_none() {
-                                        warn!(
-                                            "Message validation SKIPPED [partition: {}, offset: {}, key: {}]: \
-                                            ietf-telemetry-message schema not found",
-                                            borrowed_message.partition(),
-                                            borrowed_message.offset(),
-                                            String::from_utf8_lossy(key)
-                                        );
-                                        validation_stats.no_tm_schema += 1;
-                                    } else {
-                                        // Extract ietf-telemetry-message extension instance
-                                        let tm_ext = tm_module.as_ref().and_then(|m| m.extensions().next());
-
-                                        // Validate message payload
-                                        let validation_result = match &tm_ext {
-                                            Some(ext) => yang4::data::DataTree::parse_ext_string(
-                                                ext,
-                                                payload,
-                                                DataFormat::JSON,
-                                                DataParserFlags::STRICT,
-                                                DataValidationFlags::PRESENT,
-                                            ),
-                                            // Support legacy ietf-telemetry-message without YANG structure
-                                            None => yang4::data::DataTree::parse_string(
-                                                yang_ctx,
-                                                payload,
-                                                DataFormat::JSON,
-                                                DataParserFlags::STRICT,
-                                                DataValidationFlags::PRESENT,
-                                            ),
-                                        };
-
-                                        match validation_result {
-                                            Ok(_) => {
-                                                debug!(
-                                                    "Message validation PASSED [partition: {}, offset: {}, key: {}, schema_id: {}]",
-                                                    borrowed_message.partition(),
-                                                    borrowed_message.offset(),
-                                                    String::from_utf8_lossy(key),
-                                                    schema_id
-                                                );
-                                                validation_stats.passed += 1;
-                                            }
-                                            Err(err) => {
-                                                error!(
-                                                    "Message validation FAILED [partition: {}, offset: {}, key: {}, schema_id: {}]: {}",
-                                                    borrowed_message.partition(),
-                                                    borrowed_message.offset(),
-                                                    String::from_utf8_lossy(key),
-                                                    schema_id,
-                                                    err
-                                                );
-                                                validation_stats.failed += 1;
-                                            }
+                                    match validation_result {
+                                        Ok(_) => {
+                                            debug!(
+                                                "Message validation PASSED [partition: {}, offset: {}, key: {}, schema_id: {}]",
+                                                borrowed_message.partition(),
+                                                borrowed_message.offset(),
+                                                String::from_utf8_lossy(key),
+                                                schema_id
+                                            );
+                                            validation_stats.passed += 1;
+                                        }
+                                        Err(err) => {
+                                            error!(
+                                                "Message validation FAILED [partition: {}, offset: {}, key: {}, schema_id: {}]: {}",
+                                                borrowed_message.partition(),
+                                                borrowed_message.offset(),
+                                                String::from_utf8_lossy(key),
+                                                schema_id,
+                                                err
+                                            );
+                                            validation_stats.failed += 1;
                                         }
                                     }
                                 }
