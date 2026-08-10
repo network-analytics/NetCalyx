@@ -51,7 +51,7 @@ use rdkafka::producer::{BaseRecord, Producer, ThreadedProducer};
 use schema_registry_client::rest::schema_registry_client::{Client, SchemaRegistryClient};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use strum::VariantNames;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -182,6 +182,23 @@ enum SchemaFallbackReason {
     CacheLookupSendFailed,
 }
 
+// Attribute key for the `outcome` tag on the `cache_actor_requests_duration`
+// histogram.
+const OUTCOME_KEY: &str = "outcome";
+
+/// Attribute values for the `outcome` key on the
+/// `cache_actor_requests_duration` histogram.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, strum_macros::VariantNames, strum_macros::IntoStaticStr,
+)]
+#[strum(serialize_all = "snake_case")]
+enum CacheActorRequestOutcome {
+    Success,
+    NotFound,
+    ChannelClosed,
+    Timeout,
+}
+
 #[derive(Debug, Clone)]
 pub struct KafkaYangPublisherStats {
     received: opentelemetry::metrics::Counter<u64>,
@@ -193,7 +210,7 @@ pub struct KafkaYangPublisherStats {
     failed_delivery_messages: opentelemetry::metrics::Counter<u64>,
     cache_hits: opentelemetry::metrics::Counter<u64>,
     cache_misses: opentelemetry::metrics::Counter<u64>,
-    cache_actor_pending: opentelemetry::metrics::UpDownCounter<i64>,
+    cache_actor_requests_duration: opentelemetry::metrics::Histogram<f64>,
     cache_actor_timeouts: opentelemetry::metrics::Counter<u64>,
     schema_registry_registrations: opentelemetry::metrics::Counter<u64>,
     schema_registration_errors: opentelemetry::metrics::Counter<u64>,
@@ -241,12 +258,16 @@ impl KafkaYangPublisherStats {
             .u64_counter("netcalyx.collector.kafka.yang.schema_cache.misses")
             .with_description("Schema ID lookups not found in the local schema_id_cache, forwarded to the CacheActor")
             .build();
-        let cache_actor_pending = meter
-            .i64_up_down_counter("netcalyx.collector.kafka.yang.cache_actor.requests.pending")
-            .with_description(
-                "Requests sent to the CacheActor currently pending a response, incremented \
-                after the request is sent successfully and decremented after receive/timeout",
-            )
+        let cache_actor_requests_duration = meter
+            .f64_histogram("netcalyx.collector.kafka.yang.cache_actor.requests.duration")
+            .with_description(format!(
+                "Duration of CacheActor round-trip schema lookups, tagged with outcome ({})",
+                CacheActorRequestOutcome::VARIANTS.join(" | ")
+            ))
+            .with_unit("s")
+            .with_boundaries(vec![
+                0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0,
+            ])
             .build();
         let cache_actor_timeouts = meter
             .u64_counter("netcalyx.collector.kafka.yang.cache_actor.requests.timeouts")
@@ -285,7 +306,7 @@ impl KafkaYangPublisherStats {
             failed_delivery_messages,
             cache_hits,
             cache_misses,
-            cache_actor_pending,
+            cache_actor_requests_duration,
             cache_actor_timeouts,
             schema_registry_registrations,
             schema_registration_errors,
@@ -633,6 +654,7 @@ where
         // Request schema from SchemaCache Actor
         // (with timeout to prevent hanging)
         let (response_tx, response_rx) = oneshot::channel();
+        let cache_lookup_start = Instant::now();
 
         if let Err(err) = self
             .cache_req_tx
@@ -662,7 +684,6 @@ where
             );
             return Ok(self.default_schema_id);
         }
-        self.stats.cache_actor_pending.add(1, &tags);
 
         // TODO: expose timeout to config
         let (content_id, yang_lib_ref) = match tokio::time::timeout(
@@ -672,11 +693,25 @@ where
         .await
         {
             Ok(Ok((content_id, Some(yang_lib_ref)))) => {
-                self.stats.cache_actor_pending.add(-1, &tags);
+                let mut outcome_tags = tags.clone();
+                outcome_tags.push(opentelemetry::KeyValue::new(
+                    OUTCOME_KEY,
+                    <&str>::from(CacheActorRequestOutcome::Success),
+                ));
+                self.stats
+                    .cache_actor_requests_duration
+                    .record(cache_lookup_start.elapsed().as_secs_f64(), &outcome_tags);
                 (content_id, yang_lib_ref)
             }
             Ok(Ok((content_id, None))) => {
-                self.stats.cache_actor_pending.add(-1, &tags);
+                let mut outcome_tags = tags.clone();
+                outcome_tags.push(opentelemetry::KeyValue::new(
+                    OUTCOME_KEY,
+                    <&str>::from(CacheActorRequestOutcome::NotFound),
+                ));
+                self.stats
+                    .cache_actor_requests_duration
+                    .record(cache_lookup_start.elapsed().as_secs_f64(), &outcome_tags);
                 tags.push(opentelemetry::KeyValue::new(
                     REASON_KEY,
                     <&str>::from(SchemaFallbackReason::NotFoundInCache),
@@ -689,7 +724,14 @@ where
                 return Ok(self.default_schema_id);
             }
             Ok(Err(_)) => {
-                self.stats.cache_actor_pending.add(-1, &tags);
+                let mut outcome_tags = tags.clone();
+                outcome_tags.push(opentelemetry::KeyValue::new(
+                    OUTCOME_KEY,
+                    <&str>::from(CacheActorRequestOutcome::ChannelClosed),
+                ));
+                self.stats
+                    .cache_actor_requests_duration
+                    .record(cache_lookup_start.elapsed().as_secs_f64(), &outcome_tags);
                 tags.push(opentelemetry::KeyValue::new(
                     REASON_KEY,
                     <&str>::from(SchemaFallbackReason::CacheChannelClosed),
@@ -702,8 +744,15 @@ where
                 return Ok(self.default_schema_id);
             }
             Err(_) => {
-                self.stats.cache_actor_pending.add(-1, &tags);
                 self.stats.cache_actor_timeouts.add(1, &tags);
+                let mut outcome_tags = tags.clone();
+                outcome_tags.push(opentelemetry::KeyValue::new(
+                    OUTCOME_KEY,
+                    <&str>::from(CacheActorRequestOutcome::Timeout),
+                ));
+                self.stats
+                    .cache_actor_requests_duration
+                    .record(cache_lookup_start.elapsed().as_secs_f64(), &outcome_tags);
                 tags.push(opentelemetry::KeyValue::new(
                     REASON_KEY,
                     <&str>::from(SchemaFallbackReason::CacheLookupTimeout),
