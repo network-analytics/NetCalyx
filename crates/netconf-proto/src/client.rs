@@ -17,8 +17,8 @@
 use crate::capabilities::{Capability, NetconfVersion};
 use crate::codec::{SshCodec, SshCodecError};
 use crate::protocol::{
-    Filter, Hello, NetConfMessage, Rpc, RpcOperation, RpcReply, RpcReplyContent, RpcResponse,
-    WellKnownOperation, WellKnownRpcResponse, YangSchemaFormat,
+    Filter, GetSchemaFormat, Hello, NetConfMessage, Rpc, RpcOperation, RpcReply, RpcReplyContent,
+    RpcResponse, WellKnownOperation, WellKnownRpcResponse,
 };
 use crate::xml_utils::{ParsingError, XmlDeserialize};
 use crate::yang_module_cache::{ModuleFetch, YangModuleCache};

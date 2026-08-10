@@ -231,19 +231,22 @@ impl YangModuleCache {
     pub fn begin_fetch(&self, name: &str, revision: &str) -> ModuleFetch {
         let key = Self::make_key(name, revision);
         let mut map = self.inner.write().expect("yang module cache lock poisoned");
-        match map.get(&key) {
-            Some(ModuleEntry::Ready(text)) => {
-                self.stats.hits.fetch_add(1, Ordering::Relaxed);
-                ModuleFetch::Cached(Arc::clone(text))
-            }
-            Some(ModuleEntry::InFlight(rx)) => ModuleFetch::Wait(ModuleFetchWaiter {
-                rx: rx.clone(),
-                stats: Arc::clone(&self.stats),
-            }),
-            None => {
+        match map.entry(key) {
+            Entry::Occupied(entry) => match entry.get() {
+                ModuleEntry::Ready(text) => {
+                    self.stats.hits.fetch_add(1, Ordering::Relaxed);
+                    ModuleFetch::Cached(Arc::clone(text))
+                }
+                ModuleEntry::InFlight(rx) => ModuleFetch::Wait(ModuleFetchWaiter {
+                    rx: rx.clone(),
+                    stats: Arc::clone(&self.stats),
+                }),
+            },
+            Entry::Vacant(entry) => {
                 self.stats.misses.fetch_add(1, Ordering::Relaxed);
                 let (tx, rx) = watch::channel(None);
-                map.insert(key.clone(), ModuleEntry::InFlight(rx));
+                let key = entry.key().clone();
+                entry.insert(ModuleEntry::InFlight(rx));
                 ModuleFetch::Lead(ModuleFetchLease {
                     inner: Arc::clone(&self.inner),
                     stats: Arc::clone(&self.stats),
@@ -258,7 +261,13 @@ impl YangModuleCache {
     /// Return the cached module text for `(name, revision)`, or `None` on miss.
     /// Increments the appropriate stats counter.  An in-flight (not yet
     /// published) fetch counts as a miss.
-    pub fn get(&self, name: &str, revision: &str) -> Option<Arc<str>> {
+    ///
+    /// Test-only: production code goes through
+    /// [`begin_fetch`](Self::begin_fetch) so that concurrent fetches are
+    /// de-duplicated. A plain `get` would bypass single-flight and re-issue
+    /// redundant `get-schema` RPCs.
+    #[cfg(test)]
+    fn get(&self, name: &str, revision: &str) -> Option<Arc<str>> {
         let key = Self::make_key(name, revision);
         let result = match self
             .inner
@@ -280,7 +289,12 @@ impl YangModuleCache {
     /// Insert a module text.  First writer wins: if `(name, revision)` is
     /// already present the call is a no-op.  This is safe because identical
     /// `(name, revision)` always has identical content per the YANG spec.
-    pub fn insert(&self, name: &str, revision: &str, text: Arc<str>) {
+    ///
+    /// Test-only: production code publishes through
+    /// [`ModuleFetchLease::fulfil`], which is driven by
+    /// [`begin_fetch`](Self::begin_fetch)'s single-flight protocol.
+    #[cfg(test)]
+    fn insert(&self, name: &str, revision: &str, text: Arc<str>) {
         let key = Self::make_key(name, revision);
         let mut map = self.inner.write().expect("yang module cache lock poisoned");
         if let Entry::Vacant(entry) = map.entry(key) {
@@ -291,7 +305,8 @@ impl YangModuleCache {
 
     /// Number of ready (fully-fetched) modules currently in the cache.
     /// In-flight placeholders are not counted.
-    pub fn len(&self) -> usize {
+    #[cfg(test)]
+    fn len(&self) -> usize {
         self.inner
             .read()
             .expect("yang module cache lock poisoned")
@@ -300,7 +315,8 @@ impl YangModuleCache {
             .count()
     }
 
-    pub fn is_empty(&self) -> bool {
+    #[cfg(test)]
+    fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
