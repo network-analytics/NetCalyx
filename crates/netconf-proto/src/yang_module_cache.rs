@@ -29,17 +29,29 @@
 //!
 //! ## Metrics
 //!
-//! [`YangModuleCache`] exposes three plain counters via [`YangModuleCacheStats`]:
+//! [`YangModuleCache`] exposes four plain counters via [`YangModuleCacheStats`]:
 //!
 //! | field | meaning |
 //! |-------|---------|
-//! | [`YangModuleCacheStats::hits`]   | `get-schema` RPC avoided (module already cached) |
-//! | [`YangModuleCacheStats::misses`] | `get-schema` RPC issued (module not yet cached)  |
-//! | [`YangModuleCacheStats::size`]   | number of distinct modules currently cached      |
+//! | [`YangModuleCacheStats::hits`]      | `get-schema` RPC avoided (module already cached) |
+//! | [`YangModuleCacheStats::misses`]    | `get-schema` RPC issued (module not yet cached)  |
+//! | [`YangModuleCacheStats::coalesced`] | `get-schema` RPC avoided by waiting on an in-flight fetch started by another session |
+//! | [`YangModuleCacheStats::size`]      | number of distinct modules currently cached      |
 //!
 //! These are `AtomicU64` so they can be read from any thread without holding
 //! the cache lock.  Higher-level crates that own an OTel meter can poll them
 //! and record gauges / counters as needed.
+//!
+//! ## Single-flight
+//!
+//! To avoid a thundering herd at collector startup — where many subscriptions
+//! request the same module before any fetch has completed — the cache
+//! de-duplicates **in-flight** fetches, not just completed ones.  The first
+//! caller for a `(name, revision)` becomes the *leader* and performs the
+//! `get-schema` RPC on its own session; concurrent callers become *waiters* and
+//! await the leader's result instead of issuing their own RPC.  If the leader
+//! fails, waiters fall back and re-race so one of them becomes a new leader.
+//! This is exposed through [`YangModuleCache::begin_fetch`].
 //!
 //! ## References
 //!
@@ -52,10 +64,24 @@
 //! [RFC 7950]: https://www.rfc-editor.org/rfc/rfc7950
 
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
+use tokio::sync::watch;
 
-type ModuleCacheInner = Arc<RwLock<HashMap<String, Arc<str>>>>;
+/// An entry in the module cache: either a fully-fetched module text, or a
+/// placeholder for a fetch that a *leader* session is currently performing.
+/// Waiters clone the [`watch::Receiver`] and await the published result.
+#[derive(Debug)]
+enum ModuleEntry {
+    /// The module text is cached and ready to serve.
+    Ready(Arc<str>),
+    /// A leader is fetching this module; the value is published here on success
+    /// (or the channel is closed on failure, signalling waiters to fall back).
+    InFlight(watch::Receiver<Option<Arc<str>>>),
+}
+
+type ModuleCacheInner = Arc<RwLock<HashMap<String, ModuleEntry>>>;
 
 /// Metrics counters exposed by [`YangModuleCache`].
 #[derive(Debug, Default)]
@@ -66,6 +92,9 @@ pub struct YangModuleCacheStats {
     /// Number of `get-schema` RPCs issued because the module was not yet
     /// cached.
     pub misses: AtomicU64,
+    /// Number of `get-schema` RPCs avoided by waiting on an in-flight fetch
+    /// started by another session (single-flight de-duplication).
+    pub coalesced: AtomicU64,
     /// Current number of distinct `(name, revision)` entries in the cache.
     pub size: AtomicU64,
 }
@@ -87,6 +116,94 @@ pub struct YangModuleCache {
     stats: Arc<YangModuleCacheStats>,
 }
 
+/// Outcome of [`YangModuleCache::begin_fetch`]: the caller's role for a given
+/// `(name, revision)`.
+#[derive(Debug)]
+pub enum ModuleFetch {
+    /// The module is already cached; use this text and skip the RPC.
+    Cached(Arc<str>),
+    /// Another session is already fetching this module; await it via
+    /// [`ModuleFetchWaiter::wait`] instead of issuing a duplicate RPC.
+    Wait(ModuleFetchWaiter),
+    /// No one is fetching this module yet; the caller is the leader and must
+    /// perform the `get-schema` RPC, then call [`ModuleFetchLease::fulfil`]
+    /// with the result (or drop the lease to abort, freeing waiters to retry).
+    Lead(ModuleFetchLease),
+}
+
+/// Handle for a waiter to await the leader's in-flight fetch.
+#[derive(Debug)]
+pub struct ModuleFetchWaiter {
+    rx: watch::Receiver<Option<Arc<str>>>,
+    stats: Arc<YangModuleCacheStats>,
+}
+
+impl ModuleFetchWaiter {
+    /// Await the leader's fetch.
+    ///
+    /// Returns `Some(text)` once the leader publishes its result (a coalesced
+    /// hit), or `None` if the leader failed/aborted — in which case the caller
+    /// should retry via [`YangModuleCache::begin_fetch`] and will become a new
+    /// leader or waiter.
+    pub async fn wait(mut self) -> Option<Arc<str>> {
+        loop {
+            // Read the current value first so we never miss a result that was
+            // published before we started awaiting (watch retains the latest).
+            if let Some(text) = self.rx.borrow().clone() {
+                self.stats.coalesced.fetch_add(1, Ordering::Relaxed);
+                return Some(text);
+            }
+            if self.rx.changed().await.is_err() {
+                // Leader dropped the sender without publishing -> fall back.
+                return None;
+            }
+        }
+    }
+}
+
+/// A lease held by the leader session while it fetches a module.
+///
+/// On success the leader calls [`fulfil`](Self::fulfil) to store the text and
+/// wake waiters.  If the lease is dropped without fulfilment (e.g. the fetch
+/// errored), the in-flight placeholder is removed so a future caller can lead,
+/// and the closed watch channel signals current waiters to retry.
+#[derive(Debug)]
+pub struct ModuleFetchLease {
+    inner: ModuleCacheInner,
+    stats: Arc<YangModuleCacheStats>,
+    key: String,
+    tx: watch::Sender<Option<Arc<str>>>,
+    fulfilled: bool,
+}
+
+impl ModuleFetchLease {
+    /// Store the fetched module text in the cache and wake all waiters.
+    pub fn fulfil(mut self, text: Arc<str>) {
+        {
+            let mut map = self.inner.write().expect("yang module cache lock poisoned");
+            map.insert(self.key.clone(), ModuleEntry::Ready(Arc::clone(&text)));
+        }
+        self.stats.size.fetch_add(1, Ordering::Relaxed);
+        // Publish to waiters; ignore send errors (no waiters is fine).
+        let _ = self.tx.send(Some(text));
+        self.fulfilled = true;
+    }
+}
+
+impl Drop for ModuleFetchLease {
+    fn drop(&mut self) {
+        if self.fulfilled {
+            return;
+        }
+        // Aborted fetch: remove our placeholder so the next caller re-leads.
+        // Dropping `tx` right after closes the watch, waking waiters to retry.
+        let mut map = self.inner.write().expect("yang module cache lock poisoned");
+        if matches!(map.get(&self.key), Some(ModuleEntry::InFlight(_))) {
+            map.remove(&self.key);
+        }
+    }
+}
+
 impl YangModuleCache {
     pub fn new() -> Self {
         Self::default()
@@ -96,16 +213,57 @@ impl YangModuleCache {
         &self.stats
     }
 
+    /// Begin a single-flight fetch for `(name, revision)`.
+    ///
+    /// Returns the caller's [`ModuleFetch`] role: a
+    /// [`Cached`](ModuleFetch::Cached) hit, a [`Wait`](ModuleFetch::Wait)
+    /// on another session's in-flight fetch,
+    /// or a [`Lead`](ModuleFetch::Lead) lease obliging the caller to fetch.
+    ///
+    /// Stats: a cache hit increments `hits`; leadership increments `misses`
+    /// (an RPC will be issued); waiting increments neither here — the coalesced
+    /// counter is bumped by [`ModuleFetchWaiter::wait`] on success.
+    pub fn begin_fetch(&self, name: &str, revision: &str) -> ModuleFetch {
+        let key = Self::make_key(name, revision);
+        let mut map = self.inner.write().expect("yang module cache lock poisoned");
+        match map.get(&key) {
+            Some(ModuleEntry::Ready(text)) => {
+                self.stats.hits.fetch_add(1, Ordering::Relaxed);
+                ModuleFetch::Cached(Arc::clone(text))
+            }
+            Some(ModuleEntry::InFlight(rx)) => ModuleFetch::Wait(ModuleFetchWaiter {
+                rx: rx.clone(),
+                stats: Arc::clone(&self.stats),
+            }),
+            None => {
+                self.stats.misses.fetch_add(1, Ordering::Relaxed);
+                let (tx, rx) = watch::channel(None);
+                map.insert(key.clone(), ModuleEntry::InFlight(rx));
+                ModuleFetch::Lead(ModuleFetchLease {
+                    inner: Arc::clone(&self.inner),
+                    stats: Arc::clone(&self.stats),
+                    key,
+                    tx,
+                    fulfilled: false,
+                })
+            }
+        }
+    }
+
     /// Return the cached module text for `(name, revision)`, or `None` on miss.
-    /// Increments the appropriate stats counter.
+    /// Increments the appropriate stats counter.  An in-flight (not yet
+    /// published) fetch counts as a miss.
     pub fn get(&self, name: &str, revision: &str) -> Option<Arc<str>> {
         let key = Self::make_key(name, revision);
-        let result = self
+        let result = match self
             .inner
             .read()
             .expect("yang module cache lock poisoned")
             .get(&key)
-            .cloned();
+        {
+            Some(ModuleEntry::Ready(text)) => Some(Arc::clone(text)),
+            Some(ModuleEntry::InFlight(_)) | None => None,
+        };
         if result.is_some() {
             self.stats.hits.fetch_add(1, Ordering::Relaxed);
         } else {
@@ -120,26 +278,25 @@ impl YangModuleCache {
     pub fn insert(&self, name: &str, revision: &str, text: Arc<str>) {
         let key = Self::make_key(name, revision);
         let mut map = self.inner.write().expect("yang module cache lock poisoned");
-        let prev_len = map.len();
-        map.entry(key).or_insert(text);
-        if map.len() > prev_len {
+        if let Entry::Vacant(entry) = map.entry(key) {
+            entry.insert(ModuleEntry::Ready(text));
             self.stats.size.fetch_add(1, Ordering::Relaxed);
         }
     }
 
-    /// Number of entries currently in the cache.
+    /// Number of ready (fully-fetched) modules currently in the cache.
+    /// In-flight placeholders are not counted.
     pub fn len(&self) -> usize {
         self.inner
             .read()
             .expect("yang module cache lock poisoned")
-            .len()
+            .values()
+            .filter(|entry| matches!(entry, ModuleEntry::Ready(_)))
+            .count()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.inner
-            .read()
-            .expect("yang module cache lock poisoned")
-            .is_empty()
+        self.len() == 0
     }
 
     fn make_key(name: &str, revision: &str) -> String {
@@ -258,5 +415,94 @@ mod tests {
             assert_eq!(cache.get(&name, &rev).as_deref(), Some(expected.as_str()));
         }
         assert_eq!(cache.stats().size.load(Ordering::Relaxed), n_modules as u64);
+    }
+
+    #[tokio::test]
+    async fn test_single_flight_coalesces_concurrent_fetches() {
+        let cache = YangModuleCache::new();
+
+        // First caller leads.
+        let lease = match cache.begin_fetch("mod", "2024-01-01") {
+            ModuleFetch::Lead(lease) => lease,
+            other => panic!("first caller should lead, got {other:?}"),
+        };
+
+        // While the leader holds the lease, every concurrent caller must wait.
+        let n = 8;
+        let mut waiters = Vec::new();
+        for _ in 0..n {
+            match cache.begin_fetch("mod", "2024-01-01") {
+                ModuleFetch::Wait(waiter) => {
+                    waiters.push(tokio::spawn(async move { waiter.wait().await }));
+                }
+                other => panic!("expected wait while a fetch is in flight, got {other:?}"),
+            }
+        }
+
+        // Publish the result; all waiters should observe it (no extra RPCs).
+        let text: Arc<str> = Arc::from("module mod { }");
+        lease.fulfil(Arc::clone(&text));
+
+        for waiter in waiters {
+            let got = waiter.await.expect("waiter task panicked");
+            assert_eq!(got.as_deref(), Some("module mod { }"));
+        }
+
+        assert_eq!(cache.stats().coalesced.load(Ordering::Relaxed), n as u64);
+        assert_eq!(cache.stats().misses.load(Ordering::Relaxed), 1);
+        assert_eq!(cache.stats().hits.load(Ordering::Relaxed), 0);
+        assert_eq!(cache.stats().size.load(Ordering::Relaxed), 1);
+        assert_eq!(cache.len(), 1);
+
+        // A later caller now takes the fast path.
+        assert!(matches!(
+            cache.begin_fetch("mod", "2024-01-01"),
+            ModuleFetch::Cached(_)
+        ));
+        assert_eq!(cache.stats().hits.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn test_leader_failure_lets_waiters_retry() {
+        let cache = YangModuleCache::new();
+
+        let lease = match cache.begin_fetch("mod", "2024-01-01") {
+            ModuleFetch::Lead(lease) => lease,
+            other => panic!("first caller should lead, got {other:?}"),
+        };
+        let waiter = match cache.begin_fetch("mod", "2024-01-01") {
+            ModuleFetch::Wait(waiter) => waiter,
+            other => panic!("expected wait, got {other:?}"),
+        };
+
+        // Leader aborts (e.g. its RPC failed) by dropping the lease.
+        drop(lease);
+
+        // The waiter is told to fall back, and no coalesced hit is recorded.
+        assert_eq!(waiter.wait().await, None);
+        assert_eq!(cache.stats().coalesced.load(Ordering::Relaxed), 0);
+        assert_eq!(cache.stats().size.load(Ordering::Relaxed), 0);
+
+        // The key is free again, so the next caller re-leads.
+        assert!(matches!(
+            cache.begin_fetch("mod", "2024-01-01"),
+            ModuleFetch::Lead(_)
+        ));
+        assert_eq!(cache.stats().misses.load(Ordering::Relaxed), 2);
+    }
+
+    #[tokio::test]
+    async fn test_distinct_keys_lead_independently() {
+        let cache = YangModuleCache::new();
+        assert!(matches!(
+            cache.begin_fetch("a", "2024-01-01"),
+            ModuleFetch::Lead(_)
+        ));
+        assert!(matches!(
+            cache.begin_fetch("b", "2024-01-01"),
+            ModuleFetch::Lead(_)
+        ));
+        // Two distinct modules -> two leaders -> two RPCs.
+        assert_eq!(cache.stats().misses.load(Ordering::Relaxed), 2);
     }
 }

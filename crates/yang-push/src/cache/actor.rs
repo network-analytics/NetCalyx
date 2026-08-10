@@ -251,6 +251,7 @@ pub struct CachingStats {
     // Held here to keep the OTel callbacks registered for the lifetime of the actor.
     _yang_module_cache_hits: opentelemetry::metrics::ObservableCounter<u64>,
     _yang_module_cache_misses: opentelemetry::metrics::ObservableCounter<u64>,
+    _yang_module_cache_coalesced: opentelemetry::metrics::ObservableCounter<u64>,
     _yang_module_cache_size: opentelemetry::metrics::ObservableGauge<u64>,
 }
 
@@ -312,6 +313,16 @@ impl CachingStats {
                 })
                 .build()
         };
+        let _yang_module_cache_coalesced = {
+            let s = Arc::clone(&stats);
+            meter
+                .u64_observable_counter("netcalyx.collector.yang_push.caching.yang_module_cache.coalesced")
+                .with_description("Number of get-schema RPCs avoided by waiting on an in-flight fetch started by another session")
+                .with_callback(move |counter| {
+                    counter.observe(s.coalesced.load(Ordering::Relaxed), &[]);
+                })
+                .build()
+        };
         let _yang_module_cache_size = {
             let s = Arc::clone(&stats);
             meter
@@ -336,6 +347,7 @@ impl CachingStats {
             device_fetch_failed,
             _yang_module_cache_hits,
             _yang_module_cache_misses,
+            _yang_module_cache_coalesced,
             _yang_module_cache_size,
         }
     }
