@@ -21,7 +21,7 @@ use crate::protocol::{
     WellKnownOperation, WellKnownRpcResponse, YangSchemaFormat,
 };
 use crate::xml_utils::{ParsingError, XmlDeserialize};
-use crate::yang_module_cache::YangModuleCache;
+use crate::yang_module_cache::{ModuleFetch, YangModuleCache};
 use crate::yang_push::SUBSCRIBED_NOTIFICATIONS_NS;
 use crate::yang_push::filters::Filters;
 use crate::yang_push::subscription::{DatastoreSelectionFilterObjects, Subscription, Target};
@@ -532,20 +532,68 @@ impl<T: AsyncRead + AsyncWrite + Unpin> NetConfSshClient<T> {
     /// populates the cache for all future calls.  When `version` is `None` the
     /// module is fetched straight from the device on every call, bypassing the
     /// cache.
+    ///
+    /// Concurrent fetches of the same `(name, revision)` across sessions are
+    /// de-duplicated via [`YangModuleCache::begin_fetch`]: only one session
+    /// (the leader) issues the RPC while the others await its result. This is
+    /// sound because a given `(name, revision)` identifies stable content
+    /// regardless of which device served it ([RFC 7950] §11).
+    ///
+    /// [RFC 7950]: https://www.rfc-editor.org/rfc/rfc7950
     pub async fn get_yang_module(
         &mut self,
         name: &str,
         version: Option<&str>,
     ) -> Result<Arc<str>, NetConfSshClientError> {
-        if let Some(version) = version
-            && let Some(cached) = self.module_cache.get(name, version)
-        {
-            trace!(
-                "[{}] yang module cache hit for `{name}` revision {version}",
-                self.peer
-            );
-            return Ok(cached);
+        // Unversioned modules are never cached; fetch straight from the device.
+        let Some(version) = version else {
+            return self.fetch_module_rpc(name, None).await;
+        };
+
+        // `module_cache` is a cheap-to-clone handle; clone it so the fetch below
+        // can borrow `&mut self` without conflicting with the cache borrow.
+        let cache = self.module_cache.clone();
+        loop {
+            match cache.begin_fetch(name, version) {
+                ModuleFetch::Cached(cached) => {
+                    trace!(
+                        "[{}] yang module cache hit for `{name}` revision {version}",
+                        self.peer
+                    );
+                    return Ok(cached);
+                }
+                ModuleFetch::Wait(waiter) => {
+                    trace!(
+                        "[{}] awaiting in-flight fetch for `{name}` revision {version}",
+                        self.peer
+                    );
+                    if let Some(text) = waiter.wait().await {
+                        return Ok(text);
+                    }
+                    // The leader failed; retry — we become a new leader or waiter.
+                    debug!(
+                        "[{}] leader fetch for `{name}` revision {version} failed, retrying",
+                        self.peer
+                    );
+                }
+                ModuleFetch::Lead(lease) => {
+                    // We are the leader: perform the RPC. On success publish the
+                    // text to waiters; on error the lease drops, freeing them.
+                    let text = self.fetch_module_rpc(name, Some(version)).await?;
+                    lease.fulfil(Arc::clone(&text));
+                    return Ok(text);
+                }
+            }
         }
+    }
+
+    /// Issue a `get-schema` RPC for `(name, version)` and return the raw module
+    /// text. This talks to the device directly and does not touch the cache.
+    async fn fetch_module_rpc(
+        &mut self,
+        name: &str,
+        version: Option<&str>,
+    ) -> Result<Arc<str>, NetConfSshClientError> {
         debug!(
             "[{}] Getting a YANG module with name `{name}` and version {version:?}",
             self.peer
@@ -569,13 +617,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> NetConfSshClient<T> {
             if let RpcResponse::WellKnown(WellKnownRpcResponse::YangSchema { schema }) =
                 rpc_response
             {
-                let arc: Arc<str> = Arc::from(schema.as_ref());
-                // Only versioned modules are cached; the cache is keyed by
-                // `(name, revision)`.
-                if let Some(version) = version {
-                    self.module_cache.insert(name, version, Arc::clone(&arc));
-                }
-                return Ok(arc);
+                return Ok(Arc::from(schema.as_ref()));
             } else {
                 unreachable!()
             }
