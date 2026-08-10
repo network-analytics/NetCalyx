@@ -81,7 +81,12 @@ enum ModuleEntry {
     InFlight(watch::Receiver<Option<Arc<str>>>),
 }
 
-type ModuleCacheInner = Arc<RwLock<HashMap<String, ModuleEntry>>>;
+/// Cache key: a `(module_name, revision)` pair. Kept as a tuple rather than a
+/// concatenated string so the two components can never be mixed (e.g. a
+/// name or revision containing the separator).
+type ModuleCacheKey = (String, String);
+
+type ModuleCacheInner = Arc<RwLock<HashMap<ModuleCacheKey, ModuleEntry>>>;
 
 /// Metrics counters exposed by [`YangModuleCache`].
 #[derive(Debug, Default)]
@@ -171,7 +176,7 @@ impl ModuleFetchWaiter {
 pub struct ModuleFetchLease {
     inner: ModuleCacheInner,
     stats: Arc<YangModuleCacheStats>,
-    key: String,
+    key: ModuleCacheKey,
     tx: watch::Sender<Option<Arc<str>>>,
     fulfilled: bool,
 }
@@ -299,8 +304,8 @@ impl YangModuleCache {
         self.len() == 0
     }
 
-    fn make_key(name: &str, revision: &str) -> String {
-        format!("{name}@{revision}")
+    fn make_key(name: &str, revision: &str) -> ModuleCacheKey {
+        (name.to_owned(), revision.to_owned())
     }
 }
 
