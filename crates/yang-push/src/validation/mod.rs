@@ -207,6 +207,11 @@ enum CacheLookupBy {
 /// the cache actor responds, regardless of whether a schema was found. While
 /// it is `true`, duplicate packets for the same subscription are buffered
 /// rather than forwarded unvalidated.
+///
+/// At most one fetch is ever in-flight per subscription id: a
+/// `SubscriptionStarted`/`SubscriptionModified` for the same id is also
+/// buffered while pending, so a stale response can never clobber a newer
+/// subscription generation.
 #[derive(Debug)]
 struct CachedSubscription {
     cached_content_id: Option<ContentId>,
@@ -245,6 +250,7 @@ pub struct ValidationStats {
     pub decoded: opentelemetry::metrics::Counter<u64>,
     pub dropped: opentelemetry::metrics::Counter<u64>,
     pub cache_lookups: opentelemetry::metrics::Counter<u64>,
+    pub subscription_update_deferred: opentelemetry::metrics::Counter<u64>,
     pub buffered: opentelemetry::metrics::Gauge<u64>,
     pub buffer_drained: opentelemetry::metrics::Counter<u64>,
     pub yang_context_loaded: opentelemetry::metrics::Counter<u64>,
@@ -284,6 +290,14 @@ impl ValidationStats {
                 "Number of YANG schema cache lookups issued, tagged with by ({})",
                 CacheLookupBy::VARIANTS.join(" | ")
             ))
+            .build();
+        let subscription_update_deferred = meter
+            .u64_counter("netcalyx.yang_push.validation.subscription_update.deferred")
+            .with_description(
+                "Number of SubscriptionStarted/SubscriptionModified notifications buffered \
+                because a schema fetch was already in-flight for that subscription id, \
+                deferring the change until the outstanding fetch resolves",
+            )
             .build();
         let buffered = meter
             .u64_gauge("netcalyx.yang_push.validation.buffered")
@@ -353,6 +367,7 @@ impl ValidationStats {
             decoded,
             dropped,
             cache_lookups,
+            subscription_update_deferred,
             buffered,
             buffer_drained,
             yang_context_loaded,
@@ -429,6 +444,10 @@ impl ValidationActor {
     ///
     /// If it is different, remove the existing one from the cache to allow a
     /// new request to the caching actor.
+    ///
+    /// Only called when `schema_fetch_pending` is `false` for this id (see the
+    /// gate in `extract_subscription_info`), so `buffered_packets` is always
+    /// empty whenever an entry is removed below.
     fn check_subscription_new(&mut self, peer: SocketAddr, subscription_info: &SubscriptionInfo) {
         if let Some(cached_peer_subscriptions) = self.peer_cache.get_mut(&peer.ip()) {
             let is_different = cached_peer_subscriptions
@@ -974,6 +993,44 @@ impl ValidationActor {
             .notification_type()
             .map(|x| x.to_string())
             .unwrap_or("UNKNOWN".to_string());
+
+        // Defer started/modified notifications while a fetch is already in-flight
+        // for this id, so a stale response can never clobber a newer generation.
+        if let Some(notif_contents) = decoded.payload().notification_contents()
+            && matches!(
+                notif_contents,
+                NotificationVariant::SubscriptionStarted(_)
+                    | NotificationVariant::SubscriptionModified(_)
+            )
+        {
+            let subscription_id = notif_contents.subscription_id();
+            let pending_entry_info = self
+                .peer_cache
+                .get(&peer.ip())
+                .and_then(|c| c.subscriptions.get(&subscription_id))
+                .filter(|s| s.schema_fetch_pending)
+                .map(|s| s.subscription_info.clone());
+            if let Some(existing_info) = pending_entry_info {
+                peer_tags.push(opentelemetry::KeyValue::new(
+                    OTL_YANG_PUSH_SUBSCRIPTION_ID_KEY,
+                    opentelemetry::Value::I64(subscription_id.into()),
+                ));
+
+                if self.buffer_packet(existing_info, message) {
+                    debug!(
+                        peer=%peer,
+                        message_id,
+                        publisher_id,
+                        subscription_id,
+                        notification_type,
+                        "Schema fetch already in-flight for this subscription, deferring \
+                        subscription started/modified notification until it resolves"
+                    );
+                    self.stats.subscription_update_deferred.add(1, &peer_tags);
+                }
+                return Ok(None);
+            }
+        }
 
         match self.get_subscription_info(peer, decoded) {
             Some((subscription_info, cached_content_id)) => {
@@ -2696,6 +2753,186 @@ mod tests {
             fetcher_count.lock().unwrap().len(),
             2,
             "a new device fetch must be triggered when yang-library-content-id changes"
+        );
+
+        handle.shutdown().await.unwrap();
+        caching_handle.shutdown().await.unwrap();
+        caching_join_handle.await.unwrap().unwrap();
+    }
+
+    /// A SubscriptionModified (different content-id) arriving while
+    /// the original SubscriptionStarted's fetch is still in-flight must be
+    /// deferred, not clobber it. Messages 1-2 (started, push-update)
+    /// validate against the first schema; only then does the deferred
+    /// SubscriptionModified trigger fetch #2, and messages 3-4 follow once
+    /// it resolves.
+    #[tokio::test]
+    #[tracing_test::traced_test]
+    async fn test_validation_actor_subscription_modified_while_fetch_in_flight() {
+        let (
+            caching_join_handle,
+            caching_handle,
+            subscription_info,
+            fetcher_count,
+            udp_notif_tx,
+            validated_rx,
+            handle,
+        ) = setup_validation_actor();
+        let peer = SocketAddr::new(subscription_info.peer_ip(), 0);
+        let session = SessionInfo::new(SocketAddr::from(([127, 0, 0, 1], 10000)), None, peer);
+
+        let push_update_payload = |sequence_number: u32| {
+            serde_json::json!({
+              "ietf-yp-notification:envelope": {
+                "event-time": "2026-04-21T13:33:31.007Z",
+                "hostname": "ipf-zbl1312-r-ap-01",
+                "sequence-number": sequence_number,
+                "contents": {
+                  "ietf-yang-push:push-update": {
+                    "id": 1,
+                    "datastore-contents": {
+                      "ietf-interfaces:interfaces": {
+                        "interface": [
+                          {
+                            "name": "GigabitEthernet0/0/0",
+                            "type": "iana-if-type:ethernetCsmacd",
+                            "enabled": true,
+                            "link-up-down-trap-enable": "enabled",
+                            "admin-status": "up",
+                            "oper-status": "up",
+                            "if-index": 4,
+                            "phys-address": "8C:E5:EF:B7:18:4E",
+                            "speed": "1000000000",
+                          }
+                        ]
+                      }
+                    },
+                    "ietf-yp-observation:timestamp": "2026-04-21T13:33:30.665Z",
+                    "ietf-yp-observation:point-in-time": "current-accounting",
+                    "ietf-distributed-notif:message-publisher-id": 16974839
+                  }
+                }
+              }
+            })
+        };
+        let make_packet = |msg_id: u32, payload: &serde_json::Value| {
+            Arc::new(UdpNotifRequest::new(
+                session.clone(),
+                UdpNotifPacket::new(
+                    MediaType::YangDataJson,
+                    10,
+                    msg_id,
+                    HashMap::new(),
+                    Bytes::from(serde_json::to_vec(payload).unwrap()),
+                ),
+            ))
+        };
+
+        let started_payload = serde_json::json!({
+          "ietf-yp-notification:envelope": {
+            "event-time": "2025-09-23T14:12:16.024Z",
+            "hostname": "test-router-01",
+            "sequence-number": 0,
+            "contents": {
+              "ietf-subscribed-notifications:subscription-started": {
+                "id": 1,
+                "ietf-yang-push:datastore": "ietf-datastores:operational",
+                "ietf-yang-push:datastore-xpath-filter": "/ietf-interfaces:interfaces",
+                "transport": "ietf-udp-notif-transport:udp-notif",
+                "encoding": "encode-json",
+                "purpose": "test subscription",
+                "ietf-distributed-notif:message-publisher-id": [16843789],
+                "ietf-yang-push-revision:module-version": [
+                  {"name": "ietf-interfaces", "revision": "2018-02-20"}
+                ],
+                "ietf-yang-push-revision:yang-library-content-id": "test-content-id-1",
+                "ietf-yang-push:periodic": {"period": 6000}
+              }
+            }
+          }
+        });
+        let modified_payload = serde_json::json!({
+          "ietf-yp-notification:envelope": {
+            "event-time": "2025-09-24T08:00:00.000Z",
+            "hostname": "test-router-01",
+            "sequence-number": 1,
+            "contents": {
+              "ietf-subscribed-notifications:subscription-modified": {
+                "id": 1,
+                "ietf-yang-push:datastore": "ietf-datastores:operational",
+                "ietf-yang-push:datastore-xpath-filter": "/ietf-interfaces:interfaces",
+                "transport": "ietf-udp-notif-transport:udp-notif",
+                "encoding": "encode-json",
+                "purpose": "test subscription",
+                "ietf-distributed-notif:message-publisher-id": [16843789],
+                "ietf-yang-push-revision:module-version": [
+                  {"name": "ietf-interfaces", "revision": "2018-02-20"}
+                ],
+                "ietf-yang-push-revision:yang-library-content-id": "updated-content-id-2",
+                "ietf-yang-push:periodic": {"period": 6000}
+              }
+            }
+          }
+        });
+
+        // Enqueue all four messages before the actor has any chance to run, so
+        // fetch #1 (triggered by message 1) is guaranteed to still be pending
+        // when messages 2-4 are handled.
+        udp_notif_tx
+            .send(make_packet(1, &started_payload))
+            .await
+            .unwrap();
+        udp_notif_tx
+            .send(make_packet(2, &push_update_payload(2)))
+            .await
+            .unwrap();
+        udp_notif_tx
+            .send(make_packet(3, &modified_payload))
+            .await
+            .unwrap();
+        udp_notif_tx
+            .send(make_packet(4, &push_update_payload(4)))
+            .await
+            .unwrap();
+
+        // Messages 1 and 2 must be validated with the first (content-id-1) schema.
+        for expected_msg_id in [1u32, 2u32] {
+            let notification = tokio::time::timeout(Duration::from_secs(3), validated_rx.recv())
+                .await
+                .unwrap_or_else(|_| panic!("timeout waiting for message {expected_msg_id}"))
+                .unwrap();
+            assert_eq!(notification.packet.message_id(), expected_msg_id);
+            assert!(
+                notification.cached_content_id.is_some(),
+                "message {expected_msg_id}: must be validated against the first fetch's schema, \
+                not lost or left pending forever"
+            );
+        }
+
+        // Messages 3 (deferred SubscriptionModified) and 4 must come after, once the
+        // second fetch (for content-id-2, unknown to the test fetcher) fails.
+        for expected_msg_id in [3u32, 4u32] {
+            let notification = tokio::time::timeout(Duration::from_secs(3), validated_rx.recv())
+                .await
+                .unwrap_or_else(|_| panic!("timeout waiting for message {expected_msg_id}"))
+                .unwrap();
+            assert_eq!(notification.packet.message_id(), expected_msg_id);
+            assert!(
+                notification.cached_content_id.is_none(),
+                "message {expected_msg_id}: second fetch fails for content-id-2 in this test, \
+                so must be forwarded unvalidated (not clobbered by the stale first response)"
+            );
+        }
+
+        // Exactly two device fetches: one per distinct content-id. A stale
+        // response clobbering the second generation would not add a third
+        // fetch, so this alone doesn't prove the fix, but combined with the
+        // ordering/content_id assertions above it confirms no data was lost
+        // and no premature schema_fetch_pending clear occurred.
+        assert_eq!(
+            fetcher_count.lock().unwrap().len(),
+            2,
+            "exactly one device fetch per distinct yang-library-content-id"
         );
 
         handle.shutdown().await.unwrap();
