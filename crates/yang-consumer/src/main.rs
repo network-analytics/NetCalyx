@@ -57,9 +57,35 @@ shadow!(build);
 // CLI Arguments
 // ============================================================================
 
+/// Builds the multi-line version/build info string
+fn version_info() -> String {
+    format!(
+        "{}\n  \
+         Commit:      {} ({})\n  \
+         Branch/Tag:  {} / {}\n  \
+         Build Time:  {}\n  \
+         Rust:        {} ({})\n  \
+         OS:          {}",
+        build::PKG_VERSION,
+        build::COMMIT_HASH,
+        build::COMMIT_DATE,
+        build::BRANCH,
+        build::TAG,
+        build::BUILD_TIME,
+        build::RUST_VERSION,
+        build::BUILD_RUST_CHANNEL,
+        build::BUILD_OS,
+    )
+}
+
 /// Kafka YANG message consumer with Schema Registry validation
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(
+    about,
+    long_about = None,
+    disable_version_flag = true,
+    version = version_info()
+)]
 struct Args {
     /// Librdkafka config file (json).
     ///
@@ -111,6 +137,10 @@ struct Args {
     /// interrupted/terminated
     #[arg(short = 'f', long = "follow")]
     follow: bool,
+
+    /// Print version and build information, then exit
+    #[arg(long, short = 'V', action = clap::ArgAction::Version)]
+    version: Option<bool>,
 }
 
 // ============================================================================

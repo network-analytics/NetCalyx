@@ -20,7 +20,7 @@ build = "build.rs"
 netcalyx-netconf-proto = { workspace = true }
 netcalyx-yang-push = { workspace = true }
 anyhow = { workspace = true }
-clap = { workspace = true, features = ["derive"] }
+clap = { workspace = true, features = ["derive", "string"] }
 futures-util = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, default-features = false, features = ["net", "io-util", "sync", "time", "rt-multi-thread", "macros", "signal"] }

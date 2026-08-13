@@ -14,6 +14,7 @@ CLI Utility to convert NetFlow, IPFIX, BGP, BMP or UDP-Nofif data from a PCAP fi
 """
 keywords = ["pcap", "parser", "decoder", "protocol"]
 categories = ["network-programming", "parsing"]
+build = "build.rs"
 
 [dependencies]
 netcalyx-flow-pkt = { workspace = true, features = ["codec"] }
@@ -27,7 +28,11 @@ serde_json = { workspace = true, features = ["preserve_order"] }
 pcap-parser = { workspace = true, features = ["data"] }
 bytes = { workspace = true }
 tokio-util = { workspace = true, default-features = false, features = ["codec"] }
-clap = { workspace = true, features = ["default", "derive"] }
+clap = { workspace = true, features = ["default", "derive", "string"] }
+shadow-rs = { workspace = true, features = ["default", "metadata", "build"] }
+
+[build-dependencies]
+shadow-rs = { workspace = true, default-features = true }
 
 [dev-dependencies]
 chrono = { workspace = true, default-features = false, features = [

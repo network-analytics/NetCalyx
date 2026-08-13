@@ -2961,6 +2961,7 @@ dependencies = [
  "pcap-parser",
  "serde",
  "serde_json",
+ "shadow-rs",
  "tempfile",
  "tokio-util",
 ]
