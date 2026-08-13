@@ -180,16 +180,16 @@ pub async fn init_flow_collection(
                         }
                     }
 
-                    let (flow_recv, _) = supervisor_handle
-                        .subscribe(publisher_config.buffer_size)
-                        .await?;
-
                     if let Some(enrichment_config) = publisher_config.enrichment.as_ref() {
                         if let Some(flow_options_config) = enrichment_config
                             .inputs
                             .as_ref()
                             .and_then(|i| i.flow_options.as_ref())
                         {
+                            let (flow_recv, _) = supervisor_handle
+                                .subscribe(publisher_config.buffer_size)
+                                .await?;
+
                             let (flow_options_join, flow_options_handle) =
                                 FlowOptionsActorHandle::from_config(
                                     flow_options_config,
@@ -279,16 +279,16 @@ pub async fn init_flow_collection(
                         }
                     }
 
-                    let (flow_recv, _) = supervisor_handle
-                        .subscribe(publisher_config.buffer_size)
-                        .await?;
-
                     if let Some(enrichment_config) = publisher_config.enrichment.as_ref() {
                         if let Some(flow_options_config) = enrichment_config
                             .inputs
                             .as_ref()
                             .and_then(|i| i.flow_options.as_ref())
                         {
+                            let (flow_recv, _) = supervisor_handle
+                                .subscribe(publisher_config.buffer_size)
+                                .await?;
+
                             let (flow_options_join, flow_options_handle) =
                                 FlowOptionsActorHandle::from_config(
                                     flow_options_config,
