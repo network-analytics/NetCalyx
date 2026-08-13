@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2025-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +19,31 @@ use netcalyx_pcap_decoder::{
     BgpProtocolHandler, BmpProtocolHandler, Config, FlowProtocolHandler, UdpNotifProtocolHandler,
     load_pcap_and_process,
 };
+use shadow_rs::shadow;
 use std::path::PathBuf;
+
+shadow!(build);
+
+/// Builds the multi-line version/build info string
+fn version_info() -> String {
+    format!(
+        "{}\n  \
+         Commit:      {} ({})\n  \
+         Branch/Tag:  {} / {}\n  \
+         Build Time:  {}\n  \
+         Rust:        {} ({})\n  \
+         OS:          {}",
+        build::PKG_VERSION,
+        build::COMMIT_HASH,
+        build::COMMIT_DATE,
+        build::BRANCH,
+        build::TAG,
+        build::BUILD_TIME,
+        build::RUST_VERSION,
+        build::BUILD_RUST_CHANNEL,
+        build::BUILD_OS,
+    )
+}
 
 #[derive(Debug, Clone, ValueEnum)]
 pub enum ProtocolToDecode {
@@ -29,7 +54,12 @@ pub enum ProtocolToDecode {
 }
 
 #[derive(Debug, Parser)]
-#[command(long_about = None)]
+#[command(
+    about,
+    long_about = None,
+    disable_version_flag = true,
+    version = version_info()
+)]
 struct Cli {
     /// Input PCAP file path
     #[clap(short, long)]
@@ -57,6 +87,10 @@ struct Cli {
     /// Include the PCAP frame number alongside each JSON output entry
     #[clap(long, default_value_t = false)]
     show_frame_number: bool,
+
+    /// Print version and build information, then exit
+    #[arg(long, short = 'V', action = clap::ArgAction::Version)]
+    version: Option<bool>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

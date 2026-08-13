@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2024-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -204,6 +205,27 @@ fn init_open_telemetry(
     Ok(())
 }
 
+/// Builds the multi-line version/build info string
+fn version_info() -> String {
+    format!(
+        "{}\n  \
+         Commit:      {} ({})\n  \
+         Branch/Tag:  {} / {}\n  \
+         Build Time:  {}\n  \
+         Rust:        {} ({})\n  \
+         OS:          {}",
+        build::PKG_VERSION,
+        build::COMMIT_HASH,
+        build::COMMIT_DATE,
+        build::BRANCH,
+        build::TAG,
+        build::BUILD_TIME,
+        build::RUST_VERSION,
+        build::BUILD_RUST_CHANNEL,
+        build::BUILD_OS,
+    )
+}
+
 /// NetCalyx network metrics collector CLI arguments
 #[derive(clap::Parser, Debug)]
 #[command(
@@ -212,41 +234,23 @@ fn init_open_telemetry(
 NetCalyx network telemetry collector.
 
 Log level can also be overridden via the RUST_LOG environment variable:
-  RUST_LOG=netcalyx_collector=trace netcalyx-collector config.yaml"
+
+  RUST_LOG=netcalyx_collector=trace netcalyx-collector config.yaml",
+    disable_version_flag = true,
+    version = version_info()
 )]
 struct Args {
     /// Path to the YAML config file
-    #[arg(required_unless_present = "version")]
-    config_file: Option<PathBuf>,
+    config_file: PathBuf,
 
     /// Print version and build information, then exit
-    #[arg(long, short = 'v', action = clap::ArgAction::SetTrue)]
-    version: bool,
+    #[arg(long, short = 'V', action = clap::ArgAction::Version)]
+    version: Option<bool>,
 }
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-    if args.version {
-        println!("NetCalyx Collector");
-        println!("  Version:     {}", build::PKG_VERSION);
-        println!(
-            "  Commit:      {} ({})",
-            build::COMMIT_HASH,
-            build::COMMIT_DATE
-        );
-        println!("  Branch/Tag:  {} / {}", build::BRANCH, build::TAG);
-        println!("  Build Time:  {}", build::BUILD_TIME);
-        println!(
-            "  Rust:        {} ({})",
-            build::RUST_VERSION,
-            build::BUILD_RUST_CHANNEL
-        );
-        println!("  OS:          {}", build::BUILD_OS);
-        std::process::exit(0);
-    }
-
-    // Safe to unwrap: clap guarantees config_file is Some when --version is absent
-    let config_file = args.config_file.unwrap();
+    let config_file = args.config_file;
     let file = File::open(&config_file)?;
     let reader = BufReader::new(file);
     let config: CollectorConfig = match from_reader(reader) {
