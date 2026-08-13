@@ -1,0 +1,39 @@
+lints.workspace = true
+
+[package]
+name = "netcalyx-yang-consumer"
+version = "0.2.0"
+edition = "2024"
+authors = ["NetCalyx Authors"]
+license = "Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/network-analytics/NetCalyx"
+homepage = "https://github.com/network-analytics/NetCalyx"
+description = """
+CLI utility to consume YANG-encoded telemetry messages from Kafka and validate them against YANG schemas from a Schema Registry.
+"""
+keywords = ["yang", "kafka", "telemetry", "schema-registry", "validation"]
+categories = ["network-programming", "command-line-utilities"]
+build = "build.rs"
+
+[dependencies]
+netcalyx-netconf-proto = { workspace = true }
+netcalyx-yang-push = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+futures-util = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, default-features = false, features = ["net", "io-util", "sync", "time", "rt-multi-thread", "macros", "signal"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+shadow-rs = { workspace = true, features = ["default", "metadata", "build"] }
+yang5 = { workspace = true }
+schema-registry-client = { workspace = true }
+rdkafka = { workspace = true, features = [
+    "tokio",
+    "cmake-build",
+    "ssl-vendored",
+] }
+
+[build-dependencies]
+shadow-rs = { workspace = true, default-features = true }

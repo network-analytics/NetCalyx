@@ -17,6 +17,7 @@ members = [
     "crates/udp-notif-service",
     "crates/collector",
     "crates/yang-push",
+    "crates/yang-consumer",
     "crates/pcap-decoder",
     "crates/netconf-proto",
     "fuzz",
@@ -40,6 +41,7 @@ netcalyx-udp-notif-pkt = { version = "0.2.0", path = "crates/udp-notif-pkt" }
 netcalyx-udp-notif-service = { version = "0.2.0", path = "crates/udp-notif-service" }
 netcalyx-analytics = { version = "0.2.0", path = "crates/analytics" }
 netcalyx-yang-push = { version = "0.2.0", path = "crates/yang-push" }
+netcalyx-yang-consumer = { version = "0.2.0", path = "crates/yang-consumer" }
 netcalyx-pcap-decoder = { version = "0.2.0", path = "crates/pcap-decoder" }
 netcalyx-netconf-proto = { version = "0.2.0", path = "crates/netconf-proto" }
 thiserror = "2.0"
