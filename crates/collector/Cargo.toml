@@ -125,7 +125,6 @@ chrono = { workspace = true, default-features = false, features = [
     "clock",
 ] }
 tempfile = { workspace = true }
-yang5 = { workspace = true }
 tracing-test = { workspace = true }
 
 [features]

@@ -14,11 +14,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! # Kafka YANG Consumer Example
+//! # Kafka YANG Consumer
 //!
-//! This example demonstrates how to consume YANG-encoded telemetry messages
-//! from Kafka and validate them against YANG schemas stored in a Schema
-//! Registry.
+//! This binary consumes YANG-encoded telemetry messages from Kafka and
+//! validates them against YANG schemas stored in a Schema Registry.
 //!
 //! ## Features
 //!
@@ -62,7 +61,10 @@ shadow!(build);
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// Librdkafka config file (json)
+    /// Librdkafka config file (json).
+    ///
+    /// Entries are passed directly to librdkafka as key/value properties, see:
+    /// <https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md>
     #[arg(short = 'c', long)]
     config_file: Option<std::path::PathBuf>,
 

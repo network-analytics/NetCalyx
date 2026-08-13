@@ -2799,7 +2799,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tracing-test",
- "yang5",
 ]
 
 [[package]]
@@ -3034,6 +3033,25 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tracing-test",
+]
+
+[[package]]
+name = "netcalyx-yang-consumer"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "futures-util",
+ "netcalyx-netconf-proto",
+ "netcalyx-yang-push",
+ "rdkafka",
+ "schema-registry-client",
+ "serde_json",
+ "shadow-rs",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "yang5",
 ]
 
 [[package]]

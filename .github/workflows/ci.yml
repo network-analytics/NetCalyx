@@ -518,6 +518,80 @@ jobs:
           path: target/${{ matrix.target }}/release/${{ steps.binary_filename.outputs.name }}
           retention-days: 30
 
+  # Build yang-consumer binary
+  #
+  # Windows and x86_64-apple-darwin are intentionally omitted: yang5/rdkafka
+  # don't build on Windows yet, and yang5 links system libpcre2 which can't be
+  # cross-compiled from arm64 macos-latest.
+  build-yang-consumer-bin:
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    needs: version
+    name: Build yang-consumer binary (${{ matrix.dist_and_arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary_name: netcalyx-yang-consumer
+            strip_command: true
+            smoke_test: true
+            install_deps: |
+              sudo apt-get update
+              sudo apt-get install -y cmake perl gcc g++ libpcre2-dev libcurl4-openssl-dev
+            dist_and_arch: x86_64-ubuntu_latest # used just for naming the binary
+          - os: ubuntu-latest
+            container: rockylinux/rockylinux:8.10
+            target: x86_64-unknown-linux-gnu
+            binary_name: netcalyx-yang-consumer
+            strip_command: true
+            smoke_test: true
+            install_deps: |
+              dnf install -y gcc gcc-c++ pcre2-devel perl-core cmake git curl libcurl-devel
+            dist_and_arch: x86_64-el8_10 # used just for naming the binary
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            binary_name: netcalyx-yang-consumer
+            strip_command: true
+            smoke_test: true
+            dist_and_arch: aarch64-apple-latest # used just for naming the binary
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # needs full git history so shadow-rs embeds tag/commit info
+      - name: Install build dependencies
+        if: matrix.install_deps
+        run: ${{ matrix.install_deps }}
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Build yang-consumer
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            export C_INCLUDE_PATH="$C_INCLUDE_PATH:$HOMEBREW_PREFIX/include"
+          fi
+          cargo build --locked --release --target ${{ matrix.target }} -p netcalyx-yang-consumer
+      - name: Smoke test (run --help)
+        if: matrix.smoke_test == 'true'
+        run: ./target/${{ matrix.target }}/release/${{ matrix.binary_name }} --help
+      - name: Strip binary
+        if: matrix.strip_command == 'true'
+        run: strip target/${{ matrix.target }}/release/${{ matrix.binary_name }}
+      - name: Create complete binary file name
+        id: binary_filename
+        run: echo "name=netcalyx-yang-consumer-${{ needs.version.outputs.version }}-${{ needs.version.outputs.release }}-${{ matrix.dist_and_arch }}" >> "$GITHUB_OUTPUT"
+      - name: Rename binary
+        run: mv "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" "target/${{ matrix.target }}/release/${{ steps.binary_filename.outputs.name }}"
+      - name: Upload yang-consumer artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.binary_filename.outputs.name }}
+          path: target/${{ matrix.target }}/release/${{ steps.binary_filename.outputs.name }}
+          retention-days: 30
+
   commitlint:
     runs-on: ubuntu-latest
     steps:
