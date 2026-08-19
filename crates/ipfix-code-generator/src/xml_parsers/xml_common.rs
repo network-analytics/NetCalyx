@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2022-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -130,8 +131,7 @@ fn replace_first_numeric_char(value: &str) -> String {
 ///
 /// - removes line breaks and trimming
 /// - only selects text preceding any ":", useful for e.g. [IPFIX MPLS label type (Value 46)](https://www.iana.org/assignments/ipfix/ipfix.xhtml#ipfix-mpls-label-type)
-/// - removes ascii punctuation
-/// - removes spaces
+/// - keeps only Rust identifier characters, dropping punctuation and spaces
 /// - replaces first numeric char (e.g. 3PC --> ThreePC)
 ///
 /// TODO: feedback to Benoit
@@ -155,9 +155,10 @@ pub fn xml_string_to_enum_type(input: &str) -> (usize, String) {
     // Remove spaces
     let str_words: Vec<&str> = str_before_column.split_whitespace().collect();
     let str_words_amount = str_words.len();
+    // Keep only valid Rust identifier chars, dropping punctuation and spaces
     let mut str_without_spaces = str_before_column
         .chars()
-        .filter(|c| !c.is_whitespace() && !c.is_ascii_punctuation())
+        .filter(|c| unicode_ident::is_xid_continue(*c))
         .collect::<String>();
 
     // Replace first numeric char if we have one
