@@ -4,7 +4,7 @@
 <registry xmlns="http://www.iana.org/assignments" id="segment-routing">
   <title>Segment Routing</title>
   <created>2021-01-08</created>
-  <updated>2026-06-02</updated>
+  <updated>2026-08-18</updated>
   
   <registry id="srv6-endpoint-behaviors">
     <title>SRv6 Endpoint Behaviors</title>
@@ -567,21 +567,21 @@
       <value>76</value>
       <hex>0x004C</hex>
       <description>End.DTMC4</description>
-      <xref type="draft" data="RFC-ietf-bess-mvpn-evpn-sr-p2mp-18"/>
+      <xref type="rfc" data="rfc10018"/>
       <controller>IETF</controller>
     </record>
     <record date="2022-07-05" updated="2026-01-26">
       <value>77</value>
       <hex>0x004D</hex>
       <description>End.DTMC6</description>
-      <xref type="draft" data="RFC-ietf-bess-mvpn-evpn-sr-p2mp-18"/>
+      <xref type="rfc" data="rfc10018"/>
       <controller>IETF</controller>
     </record>
     <record date="2022-07-05" updated="2026-01-26">
       <value>78</value>
       <hex>0x004E</hex>
       <description>End.DTMC46</description>
-      <xref type="draft" data="RFC-ietf-bess-mvpn-evpn-sr-p2mp-18"/>
+      <xref type="rfc" data="rfc10018"/>
       <controller>IETF</controller>
     </record>
     <record date="2022-11-23">
@@ -1280,9 +1280,23 @@
       <xref type="draft" data="draft-lh-spring-srv6-sfc-csid-04"/>
       <controller><xref type="person" data="Cheng_Li"/></controller>
     </record>
+    <record date="2026-07-22" updated="2026-08-18">
+      <value>188</value>
+      <hex>0x00BC</hex>
+      <description>End.B6.Insert with NEXT‑CSID</description>
+      <xref type="draft" data="draft-chen-spring-srv6-compressed-bsid-insertion-02"/>
+      <controller><xref type="person" data="Ran_Chen"/></controller>
+    </record>
+    <record date="2026-07-22" updated="2026-08-18">
+      <value>189</value>
+      <hex>0x00BD</hex>
+      <description>End.B6.Insert.Red with NEXT‑CSID</description>
+      <xref type="draft" data="draft-chen-spring-srv6-compressed-bsid-insertion-02"/>
+      <controller><xref type="person" data="Ran_Chen"/></controller>
+    </record>
     <record>
-      <value>188-32766</value>
-      <hex>0x00BC-0x7FFE</hex>
+      <value>190-32766</value>
+      <hex>0x00BE-0x7FFE</hex>
       <description>Unassigned</description>
       <controller/>
     </record>
@@ -1376,6 +1390,27 @@
       <value>K</value>
       <description>IPv6 Addresses for link endpoints as Local, Remote pair for SRv6</description>
       <xref type="rfc" data="rfc9256"/>
+    </record>
+    <record date="2026-07-02">
+      <value>L</value>
+      <description>IPv4 Node Address and Local Interface ID with optional SR Algorithm for SR-MPLS (TEMPORARY - registered 2026-07-02, expires 2027-07-02)</description>
+      <xref type="draft" data="draft-ietf-idr-sr-te-policy-attr-05"/>
+    </record>
+    <record date="2026-07-02">
+      <value>M</value>
+      <description>IPv4 Addresses for link endpoints as Local, Remote pair with optional SR Algorithm for SR-MPLS (TEMPORARY - registered 2026-07-02, expires 2027-07-02)</description>
+      <xref type="draft" data="draft-ietf-idr-sr-te-policy-attr-05"/>
+    </record>
+    <record date="2026-07-02">
+      <value>N</value>
+      <description>IPv6 Node Addresses and Interface ID for link endpoints as Local, 
+        Remote pair, with optional SR Algorithm for SR-MPLS (TEMPORARY - registered 2026-07-02, expires 2027-07-02)</description>
+      <xref type="draft" data="draft-ietf-idr-sr-te-policy-attr-05"/>
+    </record>
+    <record date="2026-07-02">
+      <value>O</value>
+      <description>IPv6 Addresses for link endpoints as Local, Remote pair, with optional SR Algorithm for SR-MPLS (TEMPORARY - registered 2026-07-02, expires 2027-07-02)</description>
+      <xref type="draft" data="draft-ietf-idr-sr-te-policy-attr-05"/>
     </record>
   </registry>
 
@@ -1528,7 +1563,7 @@
     <person id="Ran_Chen">
       <name>Ran Chen</name>
       <uri>mailto:chen.ran&amp;zte.com.cn</uri>
-      <updated>2022-11-23</updated>
+      <updated>2026-07-22</updated>
     </person>
     <person id="Yuya_Kawakami">
       <name>Yuya Kawakami</name>
