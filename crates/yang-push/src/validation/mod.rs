@@ -32,6 +32,7 @@
 //!     100,          // cache response channel buffer size
 //!     1000,         // max packets buffered per peer
 //!     100,          // max packets buffered per subscription
+//!     true,         // enforce strict validation of anydata nodes
 //!     rx,           // incoming UDP-Notif packets
 //!     tx,           // validated packets output
 //!     cache_cmd_tx, // cache lookup commands
@@ -424,6 +425,9 @@ pub struct ValidatedNotification {
 struct ValidationActor {
     max_buffered_packets_per_peer: usize,
     max_buffered_packets_per_subscription: usize,
+    /// Whether `anydata` nodes are validated strictly against their
+    /// schema (see `yang5::data::DataParserFlags::ANYDATA_STRICT`).
+    anydata_strict: bool,
     peer_cache: FxHashMap<IpAddr, CachedPeerSubscriptions>,
     cmd_rx: mpsc::Receiver<ValidationActorCommand>,
     rx: async_channel::Receiver<Arc<UdpNotifRequest>>,
@@ -791,6 +795,7 @@ impl ValidationActor {
                 &notification_type,
                 yang_ctx,
                 is_legacy,
+                self.anydata_strict,
                 &self.stats,
                 &peer_tags,
             );
@@ -883,6 +888,7 @@ impl ValidationActor {
         notification_type: &String,
         yang_ctx: &yang5::context::Context,
         is_legacy: bool,
+        anydata_strict: bool,
         stats: &ValidationStats,
         peer_tags: &[opentelemetry::KeyValue],
     ) -> Result<(), yang5::Error> {
@@ -890,11 +896,15 @@ impl ValidationActor {
         let publisher_id = packet.publisher_id();
 
         if !is_legacy {
+            let mut parser_flags = DataParserFlags::STRICT;
+            if anydata_strict {
+                parser_flags |= DataParserFlags::ANYDATA_STRICT;
+            }
             let validation_result = yang5::data::DataTree::parse_string(
                 yang_ctx,
                 packet.payload(),
                 DataFormat::JSON,
-                DataParserFlags::STRICT | DataParserFlags::ANYDATA_STRICT,
+                parser_flags,
                 DataValidationFlags::PRESENT,
             );
             if let Err(err) = validation_result {
@@ -1473,10 +1483,12 @@ pub struct ValidationActorHandle {
 }
 
 impl ValidationActorHandle {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         buffer_size: usize,
         max_buffered_packets_per_peer: usize,
         max_buffered_packets_per_subscription: usize,
+        anydata_strict: bool,
         rx: async_channel::Receiver<Arc<UdpNotifRequest>>,
         tx: async_channel::Sender<ValidatedNotification>,
         cache_cmd_tx: async_channel::Sender<CacheLookupCommand>,
@@ -1497,6 +1509,7 @@ impl ValidationActorHandle {
         let actor = ValidationActor {
             max_buffered_packets_per_peer,
             max_buffered_packets_per_subscription,
+            anydata_strict,
             peer_cache: FxHashMap::default(),
             cmd_rx,
             rx,
@@ -1551,6 +1564,7 @@ mod tests {
             100,
             1000,
             100,
+            true,
             udp_notif_rx,
             validated_tx,
             caching_handle.request_tx(),
@@ -1847,6 +1861,7 @@ mod tests {
             100,
             10000,
             1000,
+            true,
             udp_notif_rx,
             validated_tx,
             caching_handle.request_tx(),
@@ -2250,6 +2265,99 @@ mod tests {
             "push-update with a typo in a field name must be dropped by strict YANG validation"
         );
         assert!(logs_contain("Failed to validate UDP-Notif payload"));
+
+        handle.shutdown().await.unwrap();
+        caching_handle.shutdown().await.unwrap();
+        caching_join_handle.await.unwrap().unwrap();
+    }
+
+    /// Same push-update as `test_validation_actor_invalid_push_update_dropped`,
+    /// but with `anydata_strict` disabled: content of anydata nodes is not
+    /// being validated so the message must pass through
+    #[tokio::test]
+    #[tracing_test::traced_test]
+    async fn test_validation_actor_invalid_push_update_passes_when_anydata_not_strict() {
+        let (caching_join_handle, caching_handle, subscription_info, _fetcher_count) =
+            setup_actor_with_empty_cache();
+
+        let (udp_notif_tx, udp_notif_rx) = async_channel::bounded(100);
+        let (validated_tx, validated_rx) = async_channel::bounded(100);
+        let (_join_handle, handle) = ValidationActorHandle::new(
+            100,
+            1000,
+            100,
+            false, // anydata_strict disabled
+            udp_notif_rx,
+            validated_tx,
+            caching_handle.request_tx(),
+            either::Right(ValidationStats::new(opentelemetry::global::meter(
+                "test_meter",
+            ))),
+        )
+        .expect("Failed to spawn validation actor");
+
+        let peer = SocketAddr::new(subscription_info.peer_ip(), 0);
+        setup_and_load_schema(&udp_notif_tx, &validated_rx, peer).await;
+
+        // Push-update with "enabelled" (typo for "enabled"): an unknown YANG node
+        // that only strict anydata validation would reject.
+        let invalid_push_update_payload = serde_json::json!({
+            "ietf-yp-notification:envelope": {
+                "event-time": "2026-04-21T13:33:31.007Z",
+                "hostname": "test-router-01",
+                "sequence-number": 1,
+                "contents": {
+                    "ietf-yang-push:push-update": {
+                        "id": 1,
+                        "datastore-contents": {
+                            "ietf-interfaces:interfaces": {
+                                "interface": [
+                                    {
+                                        "name": "GigabitEthernet0/0/0",
+                                        "type": "iana-if-type:ethernetCsmacd",
+                                        "enabelled": true,
+                                        "admin-status": "up",
+                                        "oper-status": "up",
+                                        "if-index": 1,
+                                        "speed": "1000000000"
+                                    }
+                                ]
+                            }
+                        },
+                        "ietf-distributed-notif:message-publisher-id": 16974839
+                    }
+                }
+            }
+        });
+        let bytes = serde_json::to_vec(&invalid_push_update_payload).unwrap();
+        udp_notif_tx
+            .send(Arc::new(UdpNotifRequest::new(
+                SessionInfo::new(SocketAddr::from(([127, 0, 0, 1], 10000)), None, peer),
+                UdpNotifPacket::new(
+                    MediaType::YangDataJson,
+                    10,
+                    2,
+                    HashMap::new(),
+                    Bytes::from(bytes),
+                ),
+            )))
+            .await
+            .unwrap();
+
+        let ValidatedNotification {
+            cached_content_id: content_id,
+            subscription_info: sub_info,
+            ..
+        } = tokio::time::timeout(Duration::from_secs(1), validated_rx.recv())
+            .await
+            .expect("timeout: push-update was not forwarded")
+            .unwrap();
+        assert!(
+            content_id.is_some(),
+            "with anydata_strict disabled, an unknown node inside the anydata payload must \
+            not cause validation to fail"
+        );
+        assert!(!sub_info.is_empty());
 
         handle.shutdown().await.unwrap();
         caching_handle.shutdown().await.unwrap();
