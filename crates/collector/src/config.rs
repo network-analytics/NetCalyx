@@ -71,6 +71,10 @@ pub(crate) const fn default_max_cached_packets_per_subscription() -> usize {
     100
 }
 
+pub(crate) const fn default_anydata_strict_validation() -> bool {
+    true
+}
+
 pub(crate) const fn default_netconf_port() -> u16 {
     830
 }
@@ -249,6 +253,11 @@ pub struct UdpNotifConfig {
 
     #[serde(default = "default_max_cached_packets_per_subscription")]
     pub max_cached_packets_per_subscription: usize,
+
+    /// Whether `anydata` nodes are validated strictly against the
+    /// schema when validating YANG-Push notifications
+    #[serde(default = "default_anydata_strict_validation")]
+    pub anydata_strict_validation: bool,
 
     pub netconf: NetconfConfig,
 

@@ -21,6 +21,9 @@ udp_notif:
 
   cache_location: /tmp/netcalyx-udpnotif-telemetry-cache
 
+  # Strictly validate anydata nodes against their schema
+  anydata_strict_validation: true
+
   netconf:
     username: someusername
     private_key_path: /paht/to/private-key
