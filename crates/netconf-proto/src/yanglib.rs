@@ -1,3 +1,19 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
+// Copyright (C) 2025-present The NetGauze Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+// implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use crate::xml_utils::{ParsingError, XmlDeserialize, XmlParser, XmlSerialize, XmlWriter};
 use crate::yangparser::{YangDependencies, extract_yang_dependencies};
 use crate::{YANG_DATASTORES_NS_STR, YANG_LIBRARY_AUGMENTED_BY_NS, YANG_LIBRARY_NS};
@@ -110,6 +126,14 @@ impl YangLibrary {
         None
     }
 
+    /// Find a module by namespace, scoped to the module sets referenced by
+    /// `datastore_name`'s schema (RFC 8525 datastore -> schema -> module-set).
+    ///
+    /// Unlike [Self::find_module], this only considers module sets reachable
+    /// from the given datastore, since different datastores can be backed by
+    /// different schemas/module-sets and may pin different revisions of the
+    /// same module. Returns `None` if the datastore, its schema, or a
+    /// matching module cannot be found.
     pub fn find_module_by_datastore_and_ns(
         &self,
         datastore_name: &DatastoreName,
@@ -118,12 +142,52 @@ impl YangLibrary {
         let datastore = self.datastores().get(datastore_name)?;
         let schema = self.schemas().get(datastore.schema())?;
         for module_set_name in schema.modules_sets() {
-            let module_set = self.module_sets().get(module_set_name)?;
+            let Some(module_set) = self.module_sets().get(module_set_name) else {
+                warn!(
+                    "schema `{}` references module-set `{module_set_name}` that is unknown in \
+                     the YANG library (the device may have sent an inconsistent yang-library \
+                     instance), skipping it",
+                    schema.name()
+                );
+                continue;
+            };
             if let Some(module) = module_set
                 .modules()
                 .values()
                 .find(|module| module.namespace() == ns)
             {
+                return Some(module);
+            }
+        }
+        None
+    }
+
+    /// Find a module by name, scoped to the module sets referenced by
+    /// `datastore_name`'s schema (RFC 8525 datastore -> schema -> module-set).
+    ///
+    /// Unlike [Self::find_module], this only considers module sets reachable
+    /// from the given datastore, since different datastores can be backed by
+    /// different schemas/module-sets and may pin different revisions of the
+    /// same module name. Returns `None` if the datastore, its schema, or a
+    /// matching module cannot be found.
+    pub fn find_module_by_datastore_and_name(
+        &self,
+        datastore_name: &DatastoreName,
+        name: &str,
+    ) -> Option<&Module> {
+        let datastore = self.datastores().get(datastore_name)?;
+        let schema = self.schemas().get(datastore.schema())?;
+        for module_set_name in schema.modules_sets() {
+            let Some(module_set) = self.module_sets().get(module_set_name) else {
+                warn!(
+                    "schema `{}` references module-set `{module_set_name}` that is unknown in \
+                     the YANG library (the device may have sent an inconsistent yang-library \
+                     instance), skipping it",
+                    schema.name()
+                );
+                continue;
+            };
+            if let Some(module) = module_set.modules().get(name) {
                 return Some(module);
             }
         }

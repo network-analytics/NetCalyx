@@ -152,16 +152,20 @@ fn resolve_by_xpath(
                 %prefix,
                 "xpath prefix has no declared namespace binding, resolving it as a module name",
             );
-            router_yang_library.find_module(&prefix).ok_or_else(|| {
-                error!(
-                    %prefix,
-                    "target module not found when resolving xpath prefix as a module name",
-                );
-                Box::new((
-                    empty.clone(),
-                    YangLibraryCacheError::ModulePrefixNotFound(prefix.clone().into_boxed_str()),
-                ))
-            })?
+            router_yang_library
+                .find_module_by_datastore_and_name(ds_name, &prefix)
+                .ok_or_else(|| {
+                    error!(
+                        %prefix,
+                        "target module not found when resolving xpath prefix as a module name",
+                    );
+                    Box::new((
+                        empty.clone(),
+                        YangLibraryCacheError::ModulePrefixNotFound(
+                            prefix.clone().into_boxed_str(),
+                        ),
+                    ))
+                })?
         };
         trace!(%prefix, module=%module.name(), "resolved target module from xpath prefix");
         push_module(&mut ret, module);
@@ -990,6 +994,38 @@ mod resolve_tests {
         }
     }
 
+    /// Two datastores, each with its own schema/module-set pinning a
+    /// different revision of the same module name.
+    fn make_multi_datastore_yang_library() -> YangLibrary {
+        let module = |revision: &str| {
+            Module::new(
+                "foo-mod".into(),
+                Some(revision.into()),
+                "urn:example:foo".into(),
+                Box::new([]),
+                Box::new([]),
+                Box::new([]),
+                Box::new([]),
+                Box::new([]),
+            )
+        };
+        YangLibrary::new(
+            "test-content-id".into(),
+            vec![
+                ModuleSet::new("operational-set".into(), vec![module("2020-01-01")], vec![]),
+                ModuleSet::new("running-set".into(), vec![module("2023-01-01")], vec![]),
+            ],
+            vec![
+                Schema::new("op-schema".into(), Box::new(["operational-set".into()])),
+                Schema::new("run-schema".into(), Box::new(["running-set".into()])),
+            ],
+            vec![
+                Datastore::new(DatastoreName::Operational, "op-schema".into()),
+                Datastore::new(DatastoreName::Running, "run-schema".into()),
+            ],
+        )
+    }
+
     #[test]
     fn test_resolve_by_namespaces_resolves_each_namespace_to_a_module() {
         let yang_lib = make_yang_library(
@@ -1077,6 +1113,24 @@ mod resolve_tests {
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].name(), "Cisco-IOS-XR-procmem-oper");
+    }
+
+    /// The module-name fallback must scope its lookup to the target
+    /// datastore, the same as the declared-namespace path does — not return
+    /// whichever module-set happens to be first in the library. Regression
+    /// test for a module name present, at different revisions, in two
+    /// datastores' module sets.
+    #[test]
+    fn test_resolve_by_xpath_module_name_fallback_is_scoped_by_datastore() {
+        let yang_lib = make_multi_datastore_yang_library();
+        let filter = xpath_filter(&[], "/foo-mod:thing");
+
+        let result = resolve_by_xpath(&yang_lib, &DatastoreName::Running, &filter, &empty_info())
+            .expect("module name should resolve within the running datastore");
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name(), "foo-mod");
+        assert_eq!(result[0].revision(), Some("2023-01-01"));
     }
 
     /// Huawei style: `xmlns` binding declared on the filter takes precedence
