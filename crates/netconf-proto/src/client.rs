@@ -847,10 +847,14 @@ impl<T: AsyncRead + AsyncWrite + Unpin> NetConfSshClient<T> {
         if let Some(RpcResponse::WellKnown(WellKnownRpcResponse::Data(data))) =
             rpc_reply.reply().responses()
         {
+            trace!("[{}] Raw <get> response for filters: `{data}`", self.peer);
+
             let mut reader = NsReader::from_str(data);
             reader.config_mut().trim_text(true);
             let mut parser = crate::xml_utils::XmlParser::new(reader)?;
             let filters = Filters::xml_deserialize(&mut parser)?;
+
+            trace!("[{}] Parsed filters: {filters:?}", self.peer);
             return Ok(filters);
         }
         Err(NetConfSshClientError::UnexpectedMessage {
@@ -884,6 +888,10 @@ impl<T: AsyncRead + AsyncWrite + Unpin> NetConfSshClient<T> {
         if let Some(RpcResponse::WellKnown(WellKnownRpcResponse::Data(data))) =
             rpc_reply.reply().responses()
         {
+            trace!(
+                "[{}] Raw <get> response for subscription {id}: `{data}`",
+                self.peer
+            );
             // Parse the response streams if any returned, filters if any returned
             // and then the subscription details
             let mut reader = NsReader::from_str(data);
@@ -893,6 +901,10 @@ impl<T: AsyncRead + AsyncWrite + Unpin> NetConfSshClient<T> {
             {
                 parser.open(Some(SUBSCRIBED_NOTIFICATIONS_NS), "subscriptions")?;
                 let mut subscription = Subscription::xml_deserialize(&mut parser)?;
+                trace!(
+                    "[{}] Parsed subscription {id} before target-by-reference resolution: {subscription:?}",
+                    self.peer
+                );
                 if let Target::Datastore(datastore_target) = &mut subscription.target
                     && let DatastoreSelectionFilterObjects::ByReference(name) =
                         &datastore_target.selection
@@ -910,6 +922,13 @@ impl<T: AsyncRead + AsyncWrite + Unpin> NetConfSshClient<T> {
                     }
                 }
                 parser.close()?;
+                trace!(
+                    "[{}] Final subscription {id}: target={:?} module_version={:?} yang_library_content_id={:?}",
+                    self.peer,
+                    subscription.target,
+                    subscription.module_version,
+                    subscription.yang_library_content_id
+                );
                 subscription
             } else {
                 return Err(NetConfSshClientError::ParsingError(
