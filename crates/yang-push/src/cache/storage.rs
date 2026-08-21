@@ -164,6 +164,31 @@ pub enum YangLibraryCacheError {
 
     #[strum(to_string = "failed to connect to netconf server: {0}")]
     NetConfClientError(netcalyx_netconf_proto::client::NetConfSshClientError),
+
+    #[strum(to_string = "cannot fetch YANG Library for selection filter by reference '{0}'")]
+    UnresolvedFilterReference(Box<str>),
+
+    #[strum(
+        to_string = "module with namespace '{namespace}' not found in YANG Library for datastore '{datastore}'"
+    )]
+    ModuleNamespaceNotFound {
+        namespace: Box<str>,
+        datastore: Box<str>,
+    },
+
+    #[strum(to_string = "module '{0}' (used as xpath prefix) not found in YANG Library")]
+    ModulePrefixNotFound(Box<str>),
+
+    #[strum(
+        to_string = "no target modules could be resolved from subscription {subscription_id} filter for datastore '{datastore}'"
+    )]
+    NoTargetModulesResolved {
+        subscription_id: SubscriptionId,
+        datastore: Box<str>,
+    },
+
+    #[strum(to_string = "invalid subscription target: {0}")]
+    InvalidSubscriptionTarget(Box<str>),
 }
 
 impl std::error::Error for YangLibraryCacheError {}

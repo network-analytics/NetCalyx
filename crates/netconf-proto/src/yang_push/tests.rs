@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2026-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -781,4 +782,31 @@ fn test_yang_push_module_version_json_serde() {
 
     let deserialized: YangPushModuleVersion = serde_json::from_value(json_value).unwrap();
     assert_eq!(deserialized, modeled);
+}
+
+#[test]
+fn test_datastore_xpath_filter_path_prefixes() {
+    // Cisco IOS-XR: prefix equals the module name, no xmlns binding declared.
+    let cisco = DatastoreXPathFilter {
+        namespaces: Box::new([]),
+        path: "Cisco-IOS-XR-procmem-oper:processes-memory/nodes/node/process-ids/process-id".into(),
+    };
+    assert_eq!(cisco.path_prefixes(), vec!["Cisco-IOS-XR-procmem-oper"]);
+
+    // Multi-module xpath (Huawei-style), distinct prefixes (sorted).
+    let multi = DatastoreXPathFilter {
+        namespaces: Box::new([
+            ("devm".into(), "urn:huawei:yang:huawei-devm".into()),
+            ("driver".into(), "urn:huawei:yang:huawei-driver".into()),
+        ]),
+        path: "/devm:devm/devm:chassiss/devm:chassis/driver:power-supply-attribute".into(),
+    };
+    assert_eq!(multi.path_prefixes(), vec!["devm", "driver"]);
+
+    // Unprefixed (default-namespace) steps contribute no prefixes.
+    let unprefixed = DatastoreXPathFilter {
+        namespaces: Box::new([]),
+        path: "/interfaces/interface/state/counters".into(),
+    };
+    assert!(unprefixed.path_prefixes().is_empty());
 }

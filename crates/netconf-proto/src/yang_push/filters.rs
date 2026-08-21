@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2026-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -351,6 +352,19 @@ impl<'a> XmlDeserialize<'a, DatastoreFilterSpec> for DatastoreFilterSpec {
 pub struct DatastoreXPathFilter {
     pub namespaces: Box<[(Box<str>, Box<str>)]>,
     pub path: Box<str>,
+}
+
+impl DatastoreXPathFilter {
+    /// Prefixes used in the xpath `path` (e.g. the `if` in
+    /// `/if:interfaces/if:interface`), sorted for determinism. Axis specifiers
+    /// and string literals are not treated as prefixes.
+    pub fn path_prefixes(&self) -> Vec<String> {
+        let mut prefixes: Vec<String> = crate::xml_utils::find_xpath_prefixes(&self.path)
+            .into_iter()
+            .collect();
+        prefixes.sort_unstable();
+        prefixes
+    }
 }
 
 impl XmlSerialize for DatastoreXPathFilter {

@@ -30,7 +30,9 @@ use crate::cache::storage::{SubscriptionInfo, YangLibraryCacheError};
 use netcalyx_netconf_proto::capabilities::{Capability, NetconfVersion};
 use netcalyx_netconf_proto::client::{NetconfSshConnectConfig, SshAuth, SshHandler, connect};
 use netcalyx_netconf_proto::yang_module_cache::YangModuleCache;
-use netcalyx_netconf_proto::yang_push::filters::StreamSelectionFilterObjects;
+use netcalyx_netconf_proto::yang_push::filters::{
+    DatastoreFilterSpec, DatastoreXPathFilter, StreamSelectionFilterObjects,
+};
 use netcalyx_netconf_proto::yang_push::subscription::{
     DatastoreSelectionFilterObjects, Target, YangPushModuleVersion,
 };
@@ -49,6 +51,123 @@ pub type FetcherResult = Result<
     (SubscriptionInfo, YangLibrary, HashMap<Box<str>, Box<str>>),
     Box<(SubscriptionInfo, YangLibraryCacheError)>,
 >;
+
+/// Append `module` to `modules` as a [`YangPushModuleVersion`], skipping it if
+/// a module with the same name is already present.
+fn push_module(
+    modules: &mut Vec<YangPushModuleVersion>,
+    module: &netcalyx_netconf_proto::yanglib::Module,
+) {
+    if modules.iter().any(|m| m.name() == module.name()) {
+        return;
+    }
+    modules.push(YangPushModuleVersion::new(
+        module.name().into(),
+        module.revision().map(|x| x.into()),
+        None,
+    ));
+}
+
+/// Resolve every module referenced by a namespace binding against the device
+/// YANG Library. Used for subtree filters and stream filters, where modules
+/// are identified by the root element namespace.
+fn resolve_by_namespaces(
+    router_yang_library: &YangLibrary,
+    ds_name: &DatastoreName,
+    namespaces: &[(Box<str>, Box<str>)],
+    empty: &SubscriptionInfo,
+) -> Result<Vec<YangPushModuleVersion>, Box<(SubscriptionInfo, YangLibraryCacheError)>> {
+    let mut ret = Vec::with_capacity(namespaces.len());
+    for (_prefix, namespace) in namespaces {
+        let module = router_yang_library
+            .find_module_by_datastore_and_ns(ds_name, namespace)
+            .ok_or_else(|| {
+                error!(
+                    %namespace,
+                    %ds_name,
+                    "target module not found in device YANG Library by namespace",
+                );
+                Box::new((
+                    empty.clone(),
+                    YangLibraryCacheError::ModuleNamespaceNotFound {
+                        namespace: namespace.clone(),
+                        datastore: ds_name.to_string().into_boxed_str(),
+                    },
+                ))
+            })?;
+        trace!(namespace=%namespace, module=%module.name(), "resolved target module by namespace");
+        push_module(&mut ret, module);
+    }
+    Ok(ret)
+}
+
+/// Resolve xpath-filter modules per the RFC 8641 XPath context for
+/// `datastore-xpath-filter`: prefixes declared via `xmlns` take precedence
+/// (e.g. Huawei), otherwise the prefix is the YANG module name from the
+/// server's base context (e.g. Cisco IOS-XR). Both are conformant; we try the
+/// declared binding first, then the module name.
+fn resolve_by_xpath(
+    router_yang_library: &YangLibrary,
+    ds_name: &DatastoreName,
+    xpath: &DatastoreXPathFilter,
+    empty: &SubscriptionInfo,
+) -> Result<Vec<YangPushModuleVersion>, Box<(SubscriptionInfo, YangLibraryCacheError)>> {
+    let declared: HashMap<&str, &str> = xpath
+        .namespaces
+        .iter()
+        .map(|(prefix, ns)| (prefix.as_ref(), ns.as_ref()))
+        .collect();
+    let mut ret = Vec::new();
+    let prefixes = xpath.path_prefixes();
+    trace!(
+        %ds_name,
+        path = %xpath.path,
+        ?prefixes,
+        declared_prefixes = declared.len(),
+        "resolving target modules from xpath filter",
+    );
+    for prefix in prefixes {
+        let module = if let Some(namespace) = declared.get(prefix.as_str()) {
+            router_yang_library
+                .find_module_by_datastore_and_ns(ds_name, namespace)
+                .ok_or_else(|| {
+                    error!(
+                        %prefix,
+                        namespace,
+                        %ds_name,
+                        "target module not found for declared xpath prefix namespace",
+                    );
+                    Box::new((
+                        empty.clone(),
+                        YangLibraryCacheError::ModuleNamespaceNotFound {
+                            namespace: (*namespace).into(),
+                            datastore: ds_name.to_string().into_boxed_str(),
+                        },
+                    ))
+                })?
+        } else {
+            // No xmlns binding: per RFC 8641 the prefix is the YANG module
+            // name in the server's base XPath context.
+            debug!(
+                %prefix,
+                "xpath prefix has no declared namespace binding, resolving it as a module name",
+            );
+            router_yang_library.find_module(&prefix).ok_or_else(|| {
+                error!(
+                    %prefix,
+                    "target module not found when resolving xpath prefix as a module name",
+                );
+                Box::new((
+                    empty.clone(),
+                    YangLibraryCacheError::ModulePrefixNotFound(prefix.clone().into_boxed_str()),
+                ))
+            })?
+        };
+        trace!(%prefix, module=%module.name(), "resolved target module from xpath prefix");
+        push_module(&mut ret, module);
+    }
+    Ok(ret)
+}
 
 /// Fetch YANG Library and schemas from an external source
 pub trait YangLibraryFetcher {
@@ -281,89 +400,91 @@ impl NetconfYangLibraryFetcher {
 
         let modules = if let Some(modules) = &subscription.module_version {
             debug!(
-                peer_ip=%peer_ip,
+                host=%host,
                 subscription_id,
-                modules=?modules,
-                "using module-version reported by device for subscription",
+                module_count = modules.len(),
+                "device reported module-version for subscription, using it to resolve target modules",
             );
             modules.clone().to_vec()
         } else {
-            let (ds_name, namespaces) = match &subscription.target {
-                Target::Stream(stream_target) => {
-                    match &stream_target.filter {
-                        StreamSelectionFilterObjects::ByReference(name) => {
-                            // references are resolved in the NETCONF client,
-                            // if we reach this point, there must be a misconfigured router,
-                            return Err(Box::new((
-                                empty,
-                                YangLibraryCacheError::IoError(std::io::Error::other(format!(
-                                    "cannot fetch YANG Library for stream selection filter by reference for {name}"
-                                ))),
-                            )));
-                        }
-                        StreamSelectionFilterObjects::WithInSubscription(filter) => {
-                            (DatastoreName::Running, filter.namespaces())
-                        }
-                    }
-                }
-                Target::Datastore(datastore_target) => match &datastore_target.selection {
-                    DatastoreSelectionFilterObjects::ByReference(name) => {
+            let (ds_name, modules) = match &subscription.target {
+                Target::Stream(stream_target) => match &stream_target.filter {
+                    StreamSelectionFilterObjects::ByReference(name) => {
+                        // references are resolved in the NETCONF client,
+                        // if we reach this point, there must be a misconfigured router,
+                        error!(
+                            %name,
+                            subscription_id,
+                            "stream selection filter reached fetcher unresolved by reference, likely a misconfigured router",
+                        );
                         return Err(Box::new((
                             empty,
-                            YangLibraryCacheError::IoError(std::io::Error::other(format!(
-                                "cannot fetch YANG Library for datastore selection filter by reference for {name}"
-                            ))),
+                            YangLibraryCacheError::UnresolvedFilterReference(name.clone()),
+                        )));
+                    }
+                    StreamSelectionFilterObjects::WithInSubscription(filter) => {
+                        let ds_name = DatastoreName::Running;
+                        let modules = resolve_by_namespaces(
+                            &router_yang_library,
+                            &ds_name,
+                            filter.namespaces(),
+                            &empty,
+                        )?;
+                        (ds_name, modules)
+                    }
+                },
+                Target::Datastore(datastore_target) => match &datastore_target.selection {
+                    DatastoreSelectionFilterObjects::ByReference(name) => {
+                        error!(
+                            %name,
+                            subscription_id,
+                            "datastore selection filter reached fetcher unresolved by reference, likely a misconfigured router",
+                        );
+                        return Err(Box::new((
+                            empty,
+                            YangLibraryCacheError::UnresolvedFilterReference(name.clone()),
                         )));
                     }
                     DatastoreSelectionFilterObjects::WithInSubscription(filter) => {
-                        (datastore_target.datastore.clone(), filter.namespaces())
+                        let ds_name = datastore_target.datastore.clone();
+                        let modules = match filter {
+                            DatastoreFilterSpec::Xpath(xpath) => {
+                                resolve_by_xpath(&router_yang_library, &ds_name, xpath, &empty)?
+                            }
+                            DatastoreFilterSpec::Subtree(subtree) => resolve_by_namespaces(
+                                &router_yang_library,
+                                &ds_name,
+                                &subtree.namespaces,
+                                &empty,
+                            )?,
+                        };
+                        (ds_name, modules)
                     }
                 },
             };
-            debug!(
-                peer_ip=%peer_ip,
-                subscription_id,
-                ds_name=?ds_name,
-                namespaces=?namespaces,
-                target=?subscription.target,
-                "no module-version reported by device, resolving target namespaces against YANG Library instead",
-            );
-            let mut ret = Vec::with_capacity(namespaces.len());
-            for (prefix, namespace) in namespaces {
-                let module = router_yang_library.find_module_by_datastore_and_ns(&ds_name, namespace).ok_or_else(|| {
-                    warn!(
-                        peer_ip=%peer_ip,
+            if modules.is_empty() {
+                error!(
+                    host=%host,
+                    subscription_id,
+                    %ds_name,
+                    "no target modules could be resolved from subscription filter",
+                );
+                return Err(Box::new((
+                    empty,
+                    YangLibraryCacheError::NoTargetModulesResolved {
                         subscription_id,
-                        ds_name=?ds_name,
-                        prefix,
-                        namespace,
-                        "module with namespace not found in YANG Library for datastore",
-                    );
-                    Box::new((empty.clone(), YangLibraryCacheError::IoError(std::io::Error::other(format!("module with namespace {namespace} not found in YANG Library for datastore {ds_name}")))))
-                })?;
-                trace!(
-                    peer_ip=%peer_ip,
-                    subscription_id,
-                    prefix,
-                    namespace,
-                    module_name=module.name(),
-                    "resolved xpath-filter prefix to module via namespace",
-                );
-                ret.push(YangPushModuleVersion::new(
-                    module.name().into(),
-                    module.revision().map(|x| x.into()),
-                    None,
-                ));
+                        datastore: ds_name.to_string().into_boxed_str(),
+                    },
+                )));
             }
-            if ret.is_empty() {
-                warn!(
-                    peer_ip=%peer_ip,
-                    subscription_id,
-                    target=?subscription.target,
-                    "target namespaces resolution produced no modules; the target's YANG module(s) will not be fetched",
-                );
-            }
-            ret
+            debug!(
+                host=%host,
+                subscription_id,
+                %ds_name,
+                modules = ?modules.iter().map(|m| m.name()).collect::<Vec<_>>(),
+                "resolved target modules from subscription filter",
+            );
+            modules
         };
 
         let mut module_names = modules.iter().map(|x| x.name()).collect::<Vec<_>>();
@@ -393,9 +514,7 @@ impl NetconfYangLibraryFetcher {
         let subscription_target = subscription.target.try_into().map_err(|err| {
             Box::new((
                 empty,
-                YangLibraryCacheError::IoError(std::io::Error::other(format!(
-                    "invalid subscription target: {err}"
-                ))),
+                YangLibraryCacheError::InvalidSubscriptionTarget(format!("{err}").into_boxed_str()),
             ))
         })?;
         let subscription_info = SubscriptionInfo::new(
@@ -822,5 +941,217 @@ mod retry_tests {
             logs_contain("retrying YANG Library fetch after backoff"),
             "backoff trace log should appear for the transient failures"
         );
+    }
+}
+
+#[cfg(test)]
+mod resolve_tests {
+    use super::*;
+    use netcalyx_netconf_proto::yang_push::filters::DatastoreXPathFilter;
+    use netcalyx_netconf_proto::yanglib::{Datastore, Module, ModuleSet, Schema, YangLibrary};
+
+    fn empty_info() -> SubscriptionInfo {
+        SubscriptionInfo::new_empty("127.0.0.1".parse().unwrap(), 1)
+    }
+
+    /// A single-datastore, single-module-set YANG Library fixture.
+    /// `modules` are `(name, namespace)` pairs.
+    fn make_yang_library(ds_name: DatastoreName, modules: &[(&str, &str)]) -> YangLibrary {
+        let modules = modules
+            .iter()
+            .map(|(name, ns)| {
+                Module::new(
+                    (*name).into(),
+                    None,
+                    (*ns).into(),
+                    Box::new([]),
+                    Box::new([]),
+                    Box::new([]),
+                    Box::new([]),
+                    Box::new([]),
+                )
+            })
+            .collect();
+        YangLibrary::new(
+            "test-content-id".into(),
+            vec![ModuleSet::new("modules".into(), modules, vec![])],
+            vec![Schema::new("schema".into(), Box::new(["modules".into()]))],
+            vec![Datastore::new(ds_name, "schema".into())],
+        )
+    }
+
+    fn xpath_filter(namespaces: &[(&str, &str)], path: &str) -> DatastoreXPathFilter {
+        DatastoreXPathFilter {
+            namespaces: namespaces
+                .iter()
+                .map(|(p, ns)| ((*p).into(), (*ns).into()))
+                .collect(),
+            path: path.into(),
+        }
+    }
+
+    #[test]
+    fn test_resolve_by_namespaces_resolves_each_namespace_to_a_module() {
+        let yang_lib = make_yang_library(
+            DatastoreName::Running,
+            &[("if-mod", "urn:example:interfaces")],
+        );
+        let namespaces: Box<[(Box<str>, Box<str>)]> =
+            Box::new([("if".into(), "urn:example:interfaces".into())]);
+
+        let result = resolve_by_namespaces(
+            &yang_lib,
+            &DatastoreName::Running,
+            &namespaces,
+            &empty_info(),
+        )
+        .expect("namespace should resolve to a module");
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name(), "if-mod");
+    }
+
+    #[test]
+    fn test_resolve_by_namespaces_dedups_same_module_seen_twice() {
+        // Two distinct namespace bindings resolving to the same module must
+        // only appear once in the result (push_module dedup).
+        let yang_lib = make_yang_library(
+            DatastoreName::Running,
+            &[("if-mod", "urn:example:interfaces")],
+        );
+        let namespaces: Box<[(Box<str>, Box<str>)]> = Box::new([
+            ("a".into(), "urn:example:interfaces".into()),
+            ("b".into(), "urn:example:interfaces".into()),
+        ]);
+
+        let result = resolve_by_namespaces(
+            &yang_lib,
+            &DatastoreName::Running,
+            &namespaces,
+            &empty_info(),
+        )
+        .expect("namespaces should resolve");
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name(), "if-mod");
+    }
+
+    #[test]
+    fn test_resolve_by_namespaces_unknown_namespace_is_a_hard_error() {
+        let yang_lib = make_yang_library(DatastoreName::Running, &[]);
+        let namespaces: Box<[(Box<str>, Box<str>)]> =
+            Box::new([("if".into(), "urn:example:unknown".into())]);
+
+        let err = resolve_by_namespaces(
+            &yang_lib,
+            &DatastoreName::Running,
+            &namespaces,
+            &empty_info(),
+        )
+        .expect_err("unknown namespace must not resolve");
+
+        assert!(matches!(
+            err.1,
+            YangLibraryCacheError::ModuleNamespaceNotFound { .. }
+        ));
+    }
+
+    /// Cisco IOS-XR style: no `xmlns` binding declared, prefix equals the
+    /// YANG module name directly (RFC 8641 base XPath context).
+    #[test]
+    fn test_resolve_by_xpath_falls_back_to_module_name_when_undeclared() {
+        let yang_lib = make_yang_library(
+            DatastoreName::Running,
+            &[(
+                "Cisco-IOS-XR-procmem-oper",
+                "urn:cisco:params:xml:ns:yang:procmem-oper",
+            )],
+        );
+        let filter = xpath_filter(
+            &[],
+            "/Cisco-IOS-XR-procmem-oper:processes-memory/nodes/node",
+        );
+
+        let result = resolve_by_xpath(&yang_lib, &DatastoreName::Running, &filter, &empty_info())
+            .expect("undeclared prefix should resolve as a module name");
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name(), "Cisco-IOS-XR-procmem-oper");
+    }
+
+    /// Huawei style: `xmlns` binding declared on the filter takes precedence
+    /// over treating the prefix as a module name.
+    #[test]
+    fn test_resolve_by_xpath_prefers_declared_namespace_binding() {
+        let yang_lib = make_yang_library(
+            DatastoreName::Running,
+            &[("huawei-devm", "urn:huawei:yang:huawei-devm")],
+        );
+        let filter = xpath_filter(
+            &[("devm", "urn:huawei:yang:huawei-devm")],
+            "/devm:devm/devm:chassis",
+        );
+
+        let result = resolve_by_xpath(&yang_lib, &DatastoreName::Running, &filter, &empty_info())
+            .expect("declared xmlns binding should resolve the module");
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name(), "huawei-devm");
+    }
+
+    #[test]
+    fn test_resolve_by_xpath_multiple_distinct_prefixes_resolve_independently() {
+        let yang_lib = make_yang_library(
+            DatastoreName::Running,
+            &[
+                ("if-mod", "urn:example:interfaces"),
+                ("rt-mod", "urn:example:routing"),
+            ],
+        );
+        let filter = xpath_filter(
+            &[
+                ("if", "urn:example:interfaces"),
+                ("rt", "urn:example:routing"),
+            ],
+            "/if:interfaces/if:interface | /rt:routing/rt:ribs",
+        );
+
+        let mut result =
+            resolve_by_xpath(&yang_lib, &DatastoreName::Running, &filter, &empty_info())
+                .expect("both prefixes should resolve")
+                .into_iter()
+                .map(|m| m.name().to_string())
+                .collect::<Vec<_>>();
+        result.sort_unstable();
+
+        assert_eq!(result, vec!["if-mod", "rt-mod"]);
+    }
+
+    #[test]
+    fn test_resolve_by_xpath_declared_namespace_not_in_library_is_a_hard_error() {
+        let yang_lib = make_yang_library(DatastoreName::Running, &[]);
+        let filter = xpath_filter(&[("devm", "urn:huawei:yang:huawei-devm")], "/devm:devm");
+
+        let err = resolve_by_xpath(&yang_lib, &DatastoreName::Running, &filter, &empty_info())
+            .expect_err("declared namespace missing from library must fail");
+
+        assert!(matches!(
+            err.1,
+            YangLibraryCacheError::ModuleNamespaceNotFound { .. }
+        ));
+    }
+
+    #[test]
+    fn test_resolve_by_xpath_undeclared_prefix_not_a_module_name_is_a_hard_error() {
+        let yang_lib = make_yang_library(DatastoreName::Running, &[]);
+        let filter = xpath_filter(&[], "/bogus:interfaces");
+
+        let err = resolve_by_xpath(&yang_lib, &DatastoreName::Running, &filter, &empty_info())
+            .expect_err("prefix with no binding and no matching module must fail");
+
+        assert!(matches!(
+            err.1,
+            YangLibraryCacheError::ModulePrefixNotFound(ref p) if p.as_ref() == "bogus"
+        ));
     }
 }

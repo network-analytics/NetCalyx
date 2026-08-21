@@ -764,7 +764,7 @@ impl<'a, R: io::BufRead> XmlParser<'a, R> {
             all_namespaces.insert(prefix, String::from_utf8_lossy(ns).into_owned());
         }
         let path = self.tag_string()?;
-        let used_namespaces = Self::find_xpath_prefixes(&path);
+        let used_namespaces = find_xpath_prefixes(&path);
         let namespaces: IndexMap<String, String> = all_namespaces
             .into_iter()
             .filter(|(prefix, _)| used_namespaces.contains(prefix))
@@ -811,59 +811,61 @@ impl<'a, R: io::BufRead> XmlParser<'a, R> {
             }
         }
     }
+}
 
-    /// Find prefixes used within an Xpath expression
-    fn find_xpath_prefixes(xpath: &str) -> HashSet<String> {
-        let mut prefixes = HashSet::new();
-        let mut chars = xpath.char_indices().peekable();
-        let mut in_single = false;
-        let mut in_double = false;
+/// Find the prefixes used within an Xpath expression (e.g. the `if` in
+/// `/if:interfaces/if:interface`). String literals are skipped and axis
+/// specifiers (`child::`) are not treated as prefixes.
+pub(crate) fn find_xpath_prefixes(xpath: &str) -> HashSet<String> {
+    let mut prefixes = HashSet::new();
+    let mut chars = xpath.char_indices().peekable();
+    let mut in_single = false;
+    let mut in_double = false;
 
-        while let Some((i, c)) = chars.next() {
-            // Skip over string literals — colons inside them aren't prefixes.
-            if in_single {
-                if c == '\'' {
-                    in_single = false;
-                }
-                continue;
+    while let Some((i, c)) = chars.next() {
+        // Skip over string literals — colons inside them aren't prefixes.
+        if in_single {
+            if c == '\'' {
+                in_single = false;
             }
-            if in_double {
-                if c == '"' {
-                    in_double = false;
-                }
-                continue;
-            }
-            match c {
-                '\'' => in_single = true,
-                '"' => in_double = true,
-                c if c.is_ascii_alphabetic() || c == '_' => {
-                    let start = i;
-                    let mut end = i + c.len_utf8();
-                    while let Some(&(_, nc)) = chars.peek() {
-                        if nc.is_ascii_alphanumeric() || nc == '_' || nc == '-' || nc == '.' {
-                            chars.next();
-                            end += nc.len_utf8();
-                        } else {
-                            break;
-                        }
-                    }
-                    // A prefix is an NCName followed by exactly one ':'
-                    // (two colons = axis specifier like `child::`).
-                    if let Some(&(_, ':')) = chars.peek() {
-                        let mut look = chars.clone();
-                        look.next();
-                        let is_axis = matches!(look.peek(), Some(&(_, ':')));
-                        if !is_axis {
-                            prefixes.insert(xpath[start..end].to_string());
-                            chars.next(); // consume the ':'
-                        }
-                    }
-                }
-                _ => {}
-            }
+            continue;
         }
-        prefixes
+        if in_double {
+            if c == '"' {
+                in_double = false;
+            }
+            continue;
+        }
+        match c {
+            '\'' => in_single = true,
+            '"' => in_double = true,
+            c if c.is_ascii_alphabetic() || c == '_' => {
+                let start = i;
+                let mut end = i + c.len_utf8();
+                while let Some(&(_, nc)) = chars.peek() {
+                    if nc.is_ascii_alphanumeric() || nc == '_' || nc == '-' || nc == '.' {
+                        chars.next();
+                        end += nc.len_utf8();
+                    } else {
+                        break;
+                    }
+                }
+                // A prefix is an NCName followed by exactly one ':'
+                // (two colons = axis specifier like `child::`).
+                if let Some(&(_, ':')) = chars.peek() {
+                    let mut look = chars.clone();
+                    look.next();
+                    let is_axis = matches!(look.peek(), Some(&(_, ':')));
+                    if !is_axis {
+                        prefixes.insert(xpath[start..end].to_string());
+                        chars.next(); // consume the ':'
+                    }
+                }
+            }
+            _ => {}
+        }
     }
+    prefixes
 }
 
 /// Format a `DateTime<Utc>` as YANG `date-and-time` (RFC 3339, UTC).
@@ -1473,7 +1475,7 @@ mod tests {
 
     fn assert_prefixes(expr: &str, expected: HashSet<String>) {
         assert_eq!(
-            XmlParser::<io::Cursor<&[u8]>>::find_xpath_prefixes(expr),
+            find_xpath_prefixes(expr),
             expected,
             "unexpected prefix set for: {expr}"
         );
