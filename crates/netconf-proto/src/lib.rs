@@ -31,6 +31,7 @@ pub mod client;
 pub mod codec;
 pub mod protocol;
 pub mod xml_utils;
+pub mod xpath;
 pub mod yang_module_cache;
 pub mod yang_push;
 pub mod yanglib;
