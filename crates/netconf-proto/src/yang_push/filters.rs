@@ -365,6 +365,227 @@ impl DatastoreXPathFilter {
         prefixes.sort_unstable();
         prefixes
     }
+
+    /// Look up the namespace URI declared for `prefix` on this filter.
+    fn namespace_uri(&self, prefix: &str) -> Option<&str> {
+        self.namespaces
+            .iter()
+            .find(|(p, _)| p.as_ref() == prefix)
+            .map(|(_, uri)| uri.as_ref())
+    }
+
+    /// Normalize `path` to RFC 8641's base XPath context:
+    /// module-name-qualified, prefix emitted only on module change (matches
+    /// libyang's canonical schema path format). E.g.
+    /// `/debug:debug/debug:board-resouce-state` (xmlns-prefixed) and
+    /// `/huawei-debug:debug/board-resouce-state` (module-name prefixed)
+    /// both normalize to the latter.
+    ///
+    /// How a step's module is determined, in order: if its prefix has a
+    /// declared `xmlns` binding, that namespace URI is resolved to a module
+    /// name via `resolve_module`; if the prefix is undeclared, the prefix
+    /// text is itself already the module name; if the step has no prefix at
+    /// all, it inherits the module of the preceding step. Whatever module is
+    /// found is only written back out as a prefix when it differs from the
+    /// previous step's — that's the "prefix on change" part. Predicates
+    /// (`[...]`) get the same per-token treatment for any `prefix:name` found
+    /// in their text (string literals are left alone), except the prefix is
+    /// dropped instead of kept when it matches the *enclosing* step's module.
+    ///
+    /// Only a single, plain location path with implicit `child`-axis steps is
+    /// supported (not the full XPath 1.0 grammar — no functions, unions, or
+    /// explicit axes). The result always starts with `/` (inserted if
+    /// missing): per RFC 8641 the context node is always the datastore root.
+    ///
+    /// Returns `None` — keep the original path — for unsupported constructs
+    /// or a declared prefix `resolve_module` can't map. Idempotent.
+    pub fn normalize_path<F>(&self, resolve_module: F) -> Option<String>
+    where
+        F: Fn(&str) -> Option<Box<str>>,
+    {
+        let path = self.path.trim();
+        if path.is_empty() {
+            return None;
+        }
+        let segments = crate::xpath::split_location_path(path)?;
+        let mut out = String::with_capacity(path.len() + 1);
+        let mut current_module: Option<Box<str>> = None;
+        for (i, seg) in segments.iter().enumerate() {
+            if i > 0 {
+                out.push('/');
+            }
+            // Empty segment: leading '/' (absolute) or '//' (descendant).
+            if seg.is_empty() {
+                continue;
+            }
+            // Split the node test from any trailing predicate(s).
+            let head_end = seg.find('[').unwrap_or(seg.len());
+            let (prefix, local) = crate::xpath::parse_node_test(&seg[..head_end])?;
+            let predicates = &seg[head_end..];
+
+            let module: Option<Box<str>> = match prefix {
+                Some(p) => {
+                    if let Some(uri) = self.namespace_uri(p) {
+                        Some(resolve_module(uri)?)
+                    } else {
+                        Some(p.into())
+                    }
+                }
+                // Bare wildcard cannot be module-qualified; leave it as-is.
+                None if local == "*" => None,
+                None => current_module.clone(),
+            };
+            match module {
+                Some(m) => {
+                    if current_module.as_deref() != Some(m.as_ref()) {
+                        out.push_str(&m);
+                        out.push(':');
+                        current_module = Some(m);
+                    }
+                    out.push_str(local);
+                }
+                None => out.push_str(local),
+            }
+            if predicates.is_empty() {
+                continue;
+            }
+            let rewritten = self.rewrite_predicate_prefixes(
+                predicates,
+                current_module.as_deref(),
+                &resolve_module,
+            )?;
+            out.push_str(&rewritten);
+        }
+        if !out.starts_with('/') {
+            out.insert(0, '/');
+        }
+        Some(out)
+    }
+
+    /// Rewrite `prefix:name` tokens found in predicate text (`[...]`),
+    /// mirroring the module resolution applied to location steps in
+    /// [`Self::normalize_path`]: a declared prefix is mapped to its module via
+    /// `resolve_module`; an undeclared prefix is itself the module name. The
+    /// prefix is then dropped if the resolved module matches
+    /// `enclosing_module` (the module of the step the predicate is attached
+    /// to), or rewritten to the resolved module name otherwise.
+    ///
+    /// String-literal content (`'...'` / `"..."`) is skipped verbatim — a
+    /// `prefix:name`-shaped substring inside a literal (e.g. an identityref
+    /// value) is data, not a reference, and must not be touched. This is a
+    /// quote-aware tokenizer, not a full XPath expression parser: any bare
+    /// `NCName ':' NCName` (or `NCName ':' '*'`) outside a literal and not
+    /// part of an axis specifier (`::`) is treated as a prefixed name.
+    ///
+    /// Returns `None` if a `:` is found outside a literal that isn't part of
+    /// a well-formed prefixed name or axis specifier, or if a prefix with a
+    /// declared `xmlns` binding can't be resolved to a module — same
+    /// bail-and-keep-original contract as the rest of `normalize_path`.
+    fn rewrite_predicate_prefixes<F>(
+        &self,
+        predicate: &str,
+        enclosing_module: Option<&str>,
+        resolve_module: &F,
+    ) -> Option<String>
+    where
+        F: Fn(&str) -> Option<Box<str>>,
+    {
+        let mut out = String::with_capacity(predicate.len());
+        let mut chars = predicate.char_indices().peekable();
+        let mut in_single = false;
+        let mut in_double = false;
+        while let Some((i, c)) = chars.next() {
+            if in_single {
+                out.push(c);
+                if c == '\'' {
+                    in_single = false;
+                }
+                continue;
+            }
+            if in_double {
+                out.push(c);
+                if c == '"' {
+                    in_double = false;
+                }
+                continue;
+            }
+            match c {
+                '\'' => {
+                    in_single = true;
+                    out.push(c);
+                }
+                '"' => {
+                    in_double = true;
+                    out.push(c);
+                }
+                c if c.is_ascii_alphabetic() || c == '_' => {
+                    let start = i;
+                    let mut end = i + c.len_utf8();
+                    while let Some(&(_, nc)) = chars.peek() {
+                        if nc.is_ascii_alphanumeric() || nc == '_' || nc == '-' || nc == '.' {
+                            chars.next();
+                            end += nc.len_utf8();
+                        } else {
+                            break;
+                        }
+                    }
+                    let ident = &predicate[start..end];
+                    // A prefix is an NCName followed by exactly one ':'
+                    // (two colons = axis specifier like `child::`).
+                    let Some(&(_, ':')) = chars.peek() else {
+                        out.push_str(ident);
+                        continue;
+                    };
+                    let mut look = chars.clone();
+                    look.next();
+                    if matches!(look.peek(), Some(&(_, ':'))) {
+                        out.push_str(ident);
+                        continue;
+                    }
+                    chars.next(); // consume the ':'
+                    let (local_start, mut local_end) = match chars.peek() {
+                        Some(&(li, '*')) => {
+                            chars.next();
+                            (li, li + 1)
+                        }
+                        Some(&(li, lc)) if lc.is_ascii_alphabetic() || lc == '_' => {
+                            chars.next();
+                            (li, li + lc.len_utf8())
+                        }
+                        // ':' not followed by a valid NCName or '*' — unsupported.
+                        _ => return None,
+                    };
+                    // Wildcard local names (`prefix:*`) have no further
+                    // characters to scan; NCName locals continue below.
+                    if !predicate[local_start..].starts_with('*') {
+                        while let Some(&(_, nc)) = chars.peek() {
+                            if nc.is_ascii_alphanumeric() || nc == '_' || nc == '-' || nc == '.' {
+                                chars.next();
+                                local_end += nc.len_utf8();
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    let local = &predicate[local_start..local_end];
+                    let module: Box<str> = if let Some(uri) = self.namespace_uri(ident) {
+                        resolve_module(uri)?
+                    } else {
+                        ident.into()
+                    };
+                    if enclosing_module == Some(module.as_ref()) {
+                        out.push_str(local);
+                    } else {
+                        out.push_str(&module);
+                        out.push(':');
+                        out.push_str(local);
+                    }
+                }
+                _ => out.push(c),
+            }
+        }
+        Some(out)
+    }
 }
 
 impl XmlSerialize for DatastoreXPathFilter {

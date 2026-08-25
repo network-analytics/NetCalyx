@@ -80,9 +80,120 @@ pub(crate) fn find_xpath_prefixes(xpath: &str) -> HashSet<String> {
     prefixes
 }
 
+/// Split an XPath 1.0 location path into `/`-separated steps, honoring
+/// bracketed predicates and quoted strings so a `/` inside `[...]` or a
+/// string literal is not mistaken for a step separator. Returns `None` if
+/// brackets or quotes are unbalanced.
+pub(crate) fn split_location_path(path: &str) -> Option<Vec<&str>> {
+    let mut segments = Vec::new();
+    let mut depth: i32 = 0;
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut start = 0usize;
+    for (i, c) in path.char_indices() {
+        match c {
+            '\'' if !in_double => in_single = !in_single,
+            '"' if !in_single => in_double = !in_double,
+            '[' if !in_single && !in_double => depth += 1,
+            ']' if !in_single && !in_double => {
+                depth -= 1;
+                if depth < 0 {
+                    return None;
+                }
+            }
+            '/' if depth == 0 && !in_single && !in_double => {
+                segments.push(&path[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    if depth != 0 || in_single || in_double {
+        return None;
+    }
+    segments.push(&path[start..]);
+    Some(segments)
+}
+
+/// Parse a node test of the form `(prefix ':')? (NCName | '*')`, returning
+/// `(prefix, local)`. Returns `None` for anything else (functions, axes, `@`,
+/// `.`/`..`, embedded whitespace), which signals an unsupported path.
+pub(crate) fn parse_node_test(head: &str) -> Option<(Option<&str>, &str)> {
+    let head = head.trim();
+    if head.is_empty() {
+        return None;
+    }
+    let (prefix, local) = match head.split_once(':') {
+        Some((p, l)) => (Some(p), l),
+        None => (None, head),
+    };
+    if let Some(p) = prefix
+        && !is_ncname(p)
+    {
+        return None;
+    }
+    if local != "*" && !is_ncname(local) {
+        return None;
+    }
+    Some((prefix, local))
+}
+
+/// Whether `s` is a YANG/XML NCName: a leading letter or `_`, followed by
+/// letters, digits, `_`, `-`, or `.`.
+fn is_ncname(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_split_location_path_splits_on_slash_outside_brackets_and_quotes() {
+        assert_eq!(
+            split_location_path("/a/b[c='/']/d"),
+            Some(vec!["", "a", "b[c='/']", "d"])
+        );
+    }
+
+    #[test]
+    fn test_split_location_path_rejects_unbalanced_brackets_or_quotes() {
+        assert_eq!(split_location_path("/a[b"), None);
+        assert_eq!(split_location_path("/a]"), None);
+        assert_eq!(split_location_path("/a[b='c]"), None);
+    }
+
+    #[test]
+    fn test_parse_node_test_accepts_prefixed_names_and_wildcards() {
+        assert_eq!(
+            parse_node_test("if:interface"),
+            Some((Some("if"), "interface"))
+        );
+        assert_eq!(parse_node_test("*"), Some((None, "*")));
+        assert_eq!(parse_node_test("if:*"), Some((Some("if"), "*")));
+    }
+
+    #[test]
+    fn test_parse_node_test_rejects_functions_axes_and_special_steps() {
+        for head in ["current()", "node()", "@id", ".", "..", "if : interface"] {
+            assert_eq!(parse_node_test(head), None, "should reject `{head}`");
+        }
+    }
+
+    #[test]
+    fn test_is_ncname_accepts_valid_and_rejects_invalid_names() {
+        for valid in ["if", "_ns", "oc-if", "a.b", "a1"] {
+            assert!(is_ncname(valid), "should accept `{valid}`");
+        }
+        for invalid in ["", "1if", "-if", ".if", "if:name", "if name"] {
+            assert!(!is_ncname(invalid), "should reject `{invalid}`");
+        }
+    }
 
     fn set<const N: usize>(items: [&str; N]) -> HashSet<String> {
         items.iter().map(|s| s.to_string()).collect()
