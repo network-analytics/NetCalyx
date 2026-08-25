@@ -126,10 +126,13 @@ use crate::{
     ContentId, OTL_YANG_PUSH_SUBSCRIPTION_ID_KEY, OTL_YANG_PUSH_SUBSCRIPTION_ROUTER_CONTENT_ID_KEY,
     OTL_YANG_PUSH_SUBSCRIPTION_TARGET_KEY,
 };
+use netcalyx_netconf_proto::yang_push::filters::DatastoreXPathFilter;
 use netcalyx_netconf_proto::yang_push::subscription::YangPushModuleVersion;
 use netcalyx_netconf_proto::yang_push::types::SubscriptionId;
 use netcalyx_udp_notif_pkt::decoded::{UdpNotifPacketDecoded, UdpNotifPayload};
-use netcalyx_udp_notif_pkt::notification::{NotificationVariant, SubscriptionStartedModified};
+use netcalyx_udp_notif_pkt::notification::{
+    NotificationVariant, SubscriptionStartedModified, Target,
+};
 use netcalyx_udp_notif_pkt::raw::UdpNotifPacket;
 use netcalyx_udp_notif_service::{OTL_UDP_NOTIF_PUBLISHER_ID_KEY, SessionInfo, UdpNotifRequest};
 use rustc_hash::FxHashMap;
@@ -1346,6 +1349,57 @@ impl ValidationActor {
         Ok(())
     }
 
+    /// Normalize the inline `datastore-xpath-filter` carried by a JSON
+    /// `SubscriptionStarted`/`SubscriptionModified` notification to the same
+    /// module-name-qualified, prefix-on-change canonical form the fetcher
+    /// applies to NETCONF/XML-sourced targets (see
+    /// `DatastoreXPathFilter::normalize_path`).
+    ///
+    /// Unlike the XML case, JSON xpath strings never carry `xmlns` prefix
+    /// declarations — per RFC 7951/8641 a prefix in the path text is already
+    /// the module name itself. So this is a pure string transform: wrapping
+    /// the path in a `DatastoreXPathFilter` with an empty namespace table
+    /// makes every prefix fall into `normalize_path`'s "undeclared prefix is
+    /// the module name" branch, meaning `resolve_module` is never invoked and
+    /// no schema/YANG-library access is needed here.
+    ///
+    /// No-op if the target has no datastore xpath filter. Leaves the path
+    /// untouched (but logs a warning) if it can't be confidently normalized
+    /// (e.g. functions, unions, or other unsupported XPath 1.0 constructs).
+    fn normalize_json_target_xpath(
+        peer: SocketAddr,
+        subscription_id: SubscriptionId,
+        target: &mut Target,
+    ) {
+        let Some(original) = target.datastore_xpath_filter.as_deref() else {
+            return;
+        };
+        let filter = DatastoreXPathFilter {
+            namespaces: Box::new([]),
+            path: original.into(),
+        };
+        match filter.normalize_path(|_uri| None) {
+            Some(normalized) => {
+                if normalized != original {
+                    debug!(
+                        %peer,
+                        subscription_id,
+                        from = %original,
+                        to = %normalized,
+                        "normalized target xpath filter",
+                    );
+                }
+                target.datastore_xpath_filter = Some(normalized);
+            }
+            None => warn!(
+                %peer,
+                subscription_id,
+                path = %original,
+                "could not normalize target xpath filter, keeping original",
+            ),
+        }
+    }
+
     /// Construct a `SubscriptionInfo` from a `SubscriptionStarted/Modified`
     /// notification. Returns `None` if module-version is absent.
     fn build_subscription_info(
@@ -1378,10 +1432,13 @@ impl ValidationActor {
             }
         };
 
+        let mut target = sub_started.target().clone();
+        Self::normalize_json_target_xpath(peer, sub_started.id(), &mut target);
+
         Some(SubscriptionInfo::new(
             peer.ip(),
             sub_started.id(),
-            sub_started.target().clone(),
+            target,
             sub_started.stop_time().cloned(),
             sub_started.transport().cloned(),
             sub_started.encoding().cloned(),
@@ -3046,5 +3103,65 @@ mod tests {
         handle.shutdown().await.unwrap();
         caching_handle.shutdown().await.unwrap();
         caching_join_handle.await.unwrap().unwrap();
+    }
+
+    /// A JSON `datastore-xpath-filter` with a redundant module prefix on
+    /// every step must be collapsed to the prefix-on-change canonical form,
+    /// same as the fetcher-side XML normalization.
+    #[test]
+    fn test_normalize_json_target_xpath_collapses_redundant_prefixes() {
+        let mut target = Target::new_datastore(
+            "ietf-datastores:operational".to_string(),
+            either::Right(
+                "/ietf-interfaces:interfaces/ietf-interfaces:interface[ietf-interfaces:name='eth0']/ietf-interfaces:oper-status"
+                    .to_string(),
+            ),
+        );
+        ValidationActor::normalize_json_target_xpath(
+            SocketAddr::from(([127, 0, 0, 1], 0)),
+            1,
+            &mut target,
+        );
+        assert_eq!(
+            target.datastore_xpath_filter.as_deref(),
+            Some("/ietf-interfaces:interfaces/interface[name='eth0']/oper-status")
+        );
+    }
+
+    /// An already-canonical JSON xpath must be left unchanged
+    /// (idempotent transform).
+    #[test]
+    fn test_normalize_json_target_xpath_idempotent_on_canonical_path() {
+        let mut target = Target::new_datastore(
+            "ietf-datastores:operational".to_string(),
+            either::Right("/ietf-interfaces:interfaces/interface".to_string()),
+        );
+        ValidationActor::normalize_json_target_xpath(
+            SocketAddr::from(([127, 0, 0, 1], 0)),
+            1,
+            &mut target,
+        );
+        assert_eq!(
+            target.datastore_xpath_filter.as_deref(),
+            Some("/ietf-interfaces:interfaces/interface")
+        );
+    }
+
+    /// A target without a datastore xpath filter (e.g. a stream target) must
+    /// be left untouched.
+    #[test]
+    fn test_normalize_json_target_xpath_noop_without_xpath_filter() {
+        let mut target = Target::new_stream(
+            "NETCONF".to_string(),
+            None,
+            either::Left(serde_json::Value::Null),
+        );
+        let before = target.clone();
+        ValidationActor::normalize_json_target_xpath(
+            SocketAddr::from(([127, 0, 0, 1], 0)),
+            1,
+            &mut target,
+        );
+        assert_eq!(target, before);
     }
 }
