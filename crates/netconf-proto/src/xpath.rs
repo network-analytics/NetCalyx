@@ -1,5 +1,4 @@
 // Copyright (C) 2026-present The NetCalyx Authors.
-// Copyright (C) 2026-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,8 +19,10 @@
 //! XPath 1.0 grammar used by NETCONF/YANG-Push filters (plain location paths
 //! with implicit `child`-axis steps and simple predicates) — no dependency
 //! on a YANG context or any particular filter type. They back
-//! [`crate::yang_push::filters::DatastoreXPathFilter::path_prefixes`] and
-//! [`crate::xml_utils::XmlParser::read_xpath_with_namespaces`].
+//! [`crate::yang_push::filters::DatastoreXPathFilter::normalize_path`] and
+//! [`crate::xml_utils::XmlParser::read_xpath_with_namespaces`], and are also
+//! used outside this crate to diagnose xpath targets reported by a publisher
+//! against a loaded schema.
 
 use std::collections::HashSet;
 
@@ -80,10 +81,8 @@ pub(crate) fn find_xpath_prefixes(xpath: &str) -> HashSet<String> {
     prefixes
 }
 
-/// Split an XPath 1.0 location path into `/`-separated steps, honoring
-/// bracketed predicates and quoted strings so a `/` inside `[...]` or a
-/// string literal is not mistaken for a step separator. Returns `None` if
-/// brackets or quotes are unbalanced.
+/// Split an xpath location path on `/` at bracket depth 0 and outside string
+/// literals. Returns `None` if quotes or brackets are unbalanced.
 pub(crate) fn split_location_path(path: &str) -> Option<Vec<&str>> {
     let mut segments = Vec::new();
     let mut depth: i32 = 0;
@@ -147,6 +146,73 @@ fn is_ncname(s: &str) -> bool {
         _ => return false,
     }
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
+}
+
+/// Reduce `provided` vs `canonical` to the char index where they first
+/// diverge, plus the substrings unique to each side (with the common
+/// prefix/suffix stripped off), so small differences (e.g. a missing
+/// leading slash) are obvious without scanning both full paths.
+pub fn xpath_diff(provided: &str, canonical: &str) -> (usize, String, String) {
+    let prefix_chars = provided
+        .chars()
+        .zip(canonical.chars())
+        .take_while(|(a, b)| a == b)
+        .count();
+    let provided_chars = provided.chars().count();
+    let canonical_chars = canonical.chars().count();
+    let max_suffix = (provided_chars - prefix_chars).min(canonical_chars - prefix_chars);
+    let suffix_chars = provided
+        .chars()
+        .rev()
+        .zip(canonical.chars().rev())
+        .take_while(|(a, b)| a == b)
+        .count()
+        .min(max_suffix);
+
+    let byte_offset = |s: &str, chars: usize| -> usize {
+        s.char_indices()
+            .nth(chars)
+            .map(|(i, _)| i)
+            .unwrap_or(s.len())
+    };
+    let provided_unique = &provided
+        [byte_offset(provided, prefix_chars)..byte_offset(provided, provided_chars - suffix_chars)];
+    let canonical_unique = &canonical[byte_offset(canonical, prefix_chars)
+        ..byte_offset(canonical, canonical_chars - suffix_chars)];
+
+    (
+        prefix_chars,
+        provided_unique.to_string(),
+        canonical_unique.to_string(),
+    )
+}
+
+/// Remove XPath predicate groups (`[...]`) from a location path, honoring
+/// quoted strings and nested brackets so predicate contents (including a
+/// `]` inside a string literal) are not miscounted.
+pub fn strip_xpath_predicates(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    let mut depth: u32 = 0;
+    let mut in_single = false;
+    let mut in_double = false;
+    for c in path.chars() {
+        if depth == 0 {
+            if c == '[' {
+                depth = 1;
+            } else {
+                out.push(c);
+            }
+        } else {
+            match c {
+                '\'' if !in_double => in_single = !in_single,
+                '"' if !in_single => in_double = !in_double,
+                '[' if !in_single && !in_double => depth += 1,
+                ']' if !in_single && !in_double => depth -= 1,
+                _ => {}
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -363,5 +429,64 @@ mod tests {
         // whitespace. `if : interfaces` is three tokens, so `if` must not
         // be reported as a prefix. This behavior is intentional.
         assert_prefixes("  /  if : interfaces  ", HashSet::new());
+    }
+
+    #[test]
+    fn test_strip_xpath_predicates_removes_single_and_multiple_predicates() {
+        assert_eq!(
+            strip_xpath_predicates("/if:interfaces/if:interface[if:name='eth0']/if:oper-status"),
+            "/if:interfaces/if:interface/if:oper-status"
+        );
+        assert_eq!(
+            strip_xpath_predicates("/a:x[1]/a:y[a:z='w'][@id='2']"),
+            "/a:x/a:y"
+        );
+    }
+
+    #[test]
+    fn test_strip_xpath_predicates_ignores_brackets_inside_string_literals() {
+        // A `]` inside a quoted predicate value must not be mistaken for the
+        // end of the predicate.
+        assert_eq!(
+            strip_xpath_predicates(r#"/a:x[a:y='[literal]']/a:z"#),
+            "/a:x/a:z"
+        );
+    }
+
+    #[test]
+    fn test_strip_xpath_predicates_noop_without_predicates() {
+        assert_eq!(
+            strip_xpath_predicates("/if:interfaces/if:interface"),
+            "/if:interfaces/if:interface"
+        );
+    }
+
+    #[test]
+    fn test_xpath_diff_reports_common_prefix_and_unique_suffixes() {
+        let (diverges_at, provided_unique, canonical_unique) =
+            xpath_diff("if:interfaces/interface", "/if:interfaces/interface");
+        assert_eq!(diverges_at, 0);
+        assert_eq!(provided_unique, "");
+        assert_eq!(canonical_unique, "/");
+    }
+
+    #[test]
+    fn test_xpath_diff_isolates_a_single_differing_segment() {
+        let (diverges_at, provided_unique, canonical_unique) = xpath_diff(
+            "/if:interfaces/if:interface/oper-status",
+            "/if:interfaces/interface/oper-status",
+        );
+        assert_eq!(diverges_at, "/if:interfaces/i".chars().count());
+        assert_eq!(provided_unique, "f:i");
+        assert_eq!(canonical_unique, "");
+    }
+
+    #[test]
+    fn test_xpath_diff_identical_paths_yield_no_unique_substrings() {
+        let (diverges_at, provided_unique, canonical_unique) =
+            xpath_diff("/if:interfaces/interface", "/if:interfaces/interface");
+        assert_eq!(diverges_at, "/if:interfaces/interface".chars().count());
+        assert!(provided_unique.is_empty());
+        assert!(canonical_unique.is_empty());
     }
 }
