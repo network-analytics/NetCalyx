@@ -964,6 +964,9 @@ impl ModuleSet {
         modules: Vec<Module>,
         import_only_modules: Vec<ImportOnlyModule>,
     ) -> Self {
+        // TODO: we silently keep the last entry if `modules` has duplicate names,
+        // we should consider returning an error or warning if duplicates are found
+        // (RFC 8525 `module` list is keyed by name only, so duplicates shouldn't occur).
         let modules_map = IndexMap::from_iter(modules.into_iter().map(|m| (m.name.clone(), m)));
         let mut import_only_map = IndexMap::with_capacity(import_only_modules.len());
         for import_only in import_only_modules {
@@ -1012,6 +1015,9 @@ impl ModuleSet {
             }
         }
         for import_only_modules in self.import_only_modules.values() {
+            // TODO: RFC 8525 allows multiple revisions per import-only module
+            // name: support that instead of rejecting here (check for any
+            // side-effects in dependency graph first).
             if import_only_modules.len() != 1 {
                 return Err(format!(
                     "Import only module {} has multiple revisions",
@@ -1832,6 +1838,13 @@ pub struct ModuleSetBuilder {
 }
 
 impl ModuleSetBuilder {
+    /// Tag identifying the kind of item being hashed by
+    /// [`Self::update_len_prefixed`], so that e.g. a feature and a
+    /// submodule schema with the same bytes don't collide.
+    const TAG_FEATURE: u8 = 0;
+    const TAG_SUBMODULE: u8 = 1;
+    const TAG_MODULE: u8 = 2;
+
     pub fn new(name: Box<str>) -> Self {
         Self {
             module_set: ModuleSet::new(name, Vec::new(), Vec::new()),
@@ -2155,24 +2168,70 @@ impl ModuleSetBuilder {
     }
 
     /// Produce a YANG library that contains only one module set
+    ///
+    /// The `content-id` is a SHA-256 fingerprint computed over the module
+    /// schemas. To make it a stable, canonical fingerprint of the *content*
+    /// (independent of the order modules/features/submodules were
+    /// discovered or inserted, e.g. due to BFS dependency traversal order or
+    /// device-reported ordering), everything that is hashed is first sorted
+    /// deterministically (by name/revision). Otherwise, semantically
+    /// identical module sets could produce different content-ids just
+    /// because of insertion order, causing spurious cache duplication.
+    ///
+    /// Each hashed item is length-prefixed and tagged with its kind (see
+    /// `update_len_prefixed`) so that the concatenation is always
+    /// unambiguous.
     pub fn build_yang_lib(self) -> (YangLibrary, HashMap<Box<str>, Box<str>>) {
         let default_name: Box<str> = "ALL".into();
         let mut content_id = sha2::Sha256::new();
-        for module in self.module_set.modules().values() {
-            for feature in module.features() {
-                content_id.update(feature.as_ref());
+
+        let mut modules: Vec<_> = self.module_set.modules().values().collect();
+        modules.sort_unstable_by(|a, b| a.name().cmp(b.name()));
+        for module in modules {
+            let mut features: Vec<&Box<str>> = module.features().iter().collect();
+            features.sort_unstable();
+            for feature in features {
+                Self::update_len_prefixed(&mut content_id, Self::TAG_FEATURE, feature);
             }
-            for submodule in module.submodules() {
-                content_id.update(self.yang_schemas.get(submodule.name()).unwrap().as_ref());
+            let mut submodules: Vec<_> = module.submodules().iter().collect();
+            submodules.sort_unstable_by(|a, b| a.name().cmp(b.name()));
+            for submodule in submodules {
+                Self::update_len_prefixed(
+                    &mut content_id,
+                    Self::TAG_SUBMODULE,
+                    self.yang_schemas.get(submodule.name()).unwrap(),
+                );
             }
-            content_id.update(self.yang_schemas.get(module.name()).unwrap().as_ref());
+            Self::update_len_prefixed(
+                &mut content_id,
+                Self::TAG_MODULE,
+                self.yang_schemas.get(module.name()).unwrap(),
+            );
         }
-        for import_only_versions in self.module_set.import_only_modules().values() {
-            for module in import_only_versions.values() {
-                for (_, submodule) in module.submodules() {
-                    content_id.update(self.yang_schemas.get(submodule.name()).unwrap().as_ref());
+
+        let mut import_only_names: Vec<_> = self.module_set.import_only_modules().keys().collect();
+        import_only_names.sort_unstable();
+        for name in import_only_names {
+            let import_only_versions = &self.module_set.import_only_modules()[name];
+            let mut modules: Vec<_> = import_only_versions.values().collect();
+            modules.sort_unstable_by(|a, b| {
+                a.name().cmp(b.name()).then(a.revision().cmp(&b.revision()))
+            });
+            for module in modules {
+                let mut submodules: Vec<_> = module.submodules().iter().collect();
+                submodules.sort_unstable_by(|a, b| a.0.cmp(b.0));
+                for (_, submodule) in submodules {
+                    Self::update_len_prefixed(
+                        &mut content_id,
+                        Self::TAG_SUBMODULE,
+                        self.yang_schemas.get(submodule.name()).unwrap(),
+                    );
                 }
-                content_id.update(self.yang_schemas.get(module.name()).unwrap().as_ref());
+                Self::update_len_prefixed(
+                    &mut content_id,
+                    Self::TAG_MODULE,
+                    self.yang_schemas.get(module.name()).unwrap(),
+                );
             }
         }
         let content_id = content_id.finalize();
@@ -2194,6 +2253,13 @@ impl ModuleSetBuilder {
             )],
         );
         (yang_lib, self.yang_schemas)
+    }
+
+    /// Feed `data` into `hasher` prefixed with its kind `tag` and length
+    fn update_len_prefixed(hasher: &mut sha2::Sha256, tag: u8, data: &str) {
+        hasher.update([tag]);
+        hasher.update((data.len() as u64).to_le_bytes());
+        hasher.update(data.as_bytes());
     }
 
     pub fn extend_from_yang_lib<C: BackwardCompatibilityChecker>(
@@ -2884,5 +2950,235 @@ mod tests {
                 .map(|x| x.name()),
             None
         );
+    }
+
+    /// The `content-id` produced by `ModuleSetBuilder::build_yang_lib` must be
+    /// a canonical fingerprint of the module set content: it should not
+    /// depend on the order modules (and their features/submodules) were
+    /// inserted into the builder. Otherwise, semantically identical module
+    /// sets discovered/traversed in a different order (e.g. BFS dependency
+    /// resolution visiting modules in a different sequence) would produce
+    /// different content-ids, causing spurious cache duplication.
+    ///
+    /// This covers regular modules (with feature and submodule ordering) as
+    /// well as import-only modules (with name/revision and submodule
+    /// ordering).
+    #[test]
+    fn test_build_yang_lib_content_id_is_insertion_order_independent() {
+        let module_a = Module::new(
+            "module-a".into(),
+            Some("2020-01-01".into()),
+            "urn:example:module-a".into(),
+            Box::new(["feature-2".into(), "feature-1".into()]),
+            Box::new([]),
+            Box::new([Submodule::new(
+                "module-a-sub".into(),
+                Some("2020-01-01".into()),
+                Box::new([]),
+            )]),
+            Box::new([]),
+            Box::new([]),
+        );
+        let module_b = Module::new(
+            "module-b".into(),
+            Some("2020-02-02".into()),
+            "urn:example:module-b".into(),
+            Box::new([]),
+            Box::new([]),
+            Box::new([]),
+            Box::new([]),
+            Box::new([]),
+        );
+        let yang_types = ImportOnlyModule::new(
+            "ietf-yang-types".into(),
+            Some("2013-07-15".into()),
+            "urn:ietf:params:xml:ns:yang:ietf-yang-types".into(),
+            Box::new([]),
+            IndexMap::new(),
+        );
+        let inet_types = ImportOnlyModule::new(
+            "ietf-inet-types".into(),
+            Some("2013-07-15".into()),
+            "urn:ietf:params:xml:ns:yang:ietf-inet-types".into(),
+            Box::new([]),
+            IndexMap::from([(
+                "inet-types-sub".into(),
+                Submodule::new(
+                    "inet-types-sub".into(),
+                    Some("2013-07-15".into()),
+                    Box::new([]),
+                ),
+            )]),
+        );
+
+        let mut builder1 = ModuleSetBuilder::new("ALL".into());
+        builder1
+            .add_module(
+                module_a.clone(),
+                "module-a-schema".into(),
+                &PermissiveVersionChecker,
+            )
+            .unwrap();
+        builder1
+            .add_submodule_for_module(
+                "module-a",
+                Submodule::new(
+                    "module-a-sub".into(),
+                    Some("2020-01-01".into()),
+                    Box::new([]),
+                ),
+                "module-a-sub-schema".into(),
+                &PermissiveVersionChecker,
+            )
+            .unwrap();
+        builder1
+            .add_module(
+                module_b.clone(),
+                "module-b-schema".into(),
+                &PermissiveVersionChecker,
+            )
+            .unwrap();
+        builder1
+            .add_import_only_module(
+                yang_types.clone(),
+                "yang-types-schema".into(),
+                &PermissiveVersionChecker,
+            )
+            .unwrap();
+        builder1
+            .add_import_only_module(
+                inet_types.clone(),
+                "inet-types-schema".into(),
+                &PermissiveVersionChecker,
+            )
+            .unwrap();
+        builder1
+            .add_submodule_for_import_only_module(
+                "ietf-inet-types",
+                Submodule::new(
+                    "inet-types-sub".into(),
+                    Some("2013-07-15".into()),
+                    Box::new([]),
+                ),
+                "inet-types-sub-schema".into(),
+                &PermissiveVersionChecker,
+            )
+            .unwrap();
+        let (yang_lib1, _) = builder1.build_yang_lib();
+
+        // Insert everything in reverse order, and with module_a's features
+        // reordered, to also check feature-order independence.
+        let mut module_a2 = module_a;
+        module_a2.feature = Box::new(["feature-1".into(), "feature-2".into()]);
+        let mut builder2 = ModuleSetBuilder::new("ALL".into());
+        builder2
+            .add_import_only_module(
+                inet_types,
+                "inet-types-schema".into(),
+                &PermissiveVersionChecker,
+            )
+            .unwrap();
+        builder2
+            .add_submodule_for_import_only_module(
+                "ietf-inet-types",
+                Submodule::new(
+                    "inet-types-sub".into(),
+                    Some("2013-07-15".into()),
+                    Box::new([]),
+                ),
+                "inet-types-sub-schema".into(),
+                &PermissiveVersionChecker,
+            )
+            .unwrap();
+        builder2
+            .add_import_only_module(
+                yang_types,
+                "yang-types-schema".into(),
+                &PermissiveVersionChecker,
+            )
+            .unwrap();
+        builder2
+            .add_module(
+                module_b,
+                "module-b-schema".into(),
+                &PermissiveVersionChecker,
+            )
+            .unwrap();
+        builder2
+            .add_module(
+                module_a2,
+                "module-a-schema".into(),
+                &PermissiveVersionChecker,
+            )
+            .unwrap();
+        builder2
+            .add_submodule_for_module(
+                "module-a",
+                Submodule::new(
+                    "module-a-sub".into(),
+                    Some("2020-01-01".into()),
+                    Box::new([]),
+                ),
+                "module-a-sub-schema".into(),
+                &PermissiveVersionChecker,
+            )
+            .unwrap();
+        let (yang_lib2, _) = builder2.build_yang_lib();
+
+        assert_eq!(yang_lib1.content_id(), yang_lib2.content_id());
+    }
+
+    /// Without a type tag, hashing `[feature "foo"][module-schema "bar"]`
+    /// produces the same bytes as hashing
+    /// `[submodule-schema "foo"][module-schema "bar"]`, even though the two
+    /// module sets are semantically different. `update_len_prefixed` tags
+    /// each item with its kind so these must not collide.
+    #[test]
+    fn test_build_yang_lib_content_id_distinguishes_feature_from_submodule() {
+        let module_with_feature = Module::new(
+            "m".into(),
+            None,
+            "urn:example:m".into(),
+            Box::new(["foo".into()]),
+            Box::new([]),
+            Box::new([]),
+            Box::new([]),
+            Box::new([]),
+        );
+        let mut builder1 = ModuleSetBuilder::new("ALL".into());
+        builder1
+            .add_module(module_with_feature, "bar".into(), &PermissiveVersionChecker)
+            .unwrap();
+        let (yang_lib1, _) = builder1.build_yang_lib();
+
+        let module_with_submodule = Module::new(
+            "m".into(),
+            None,
+            "urn:example:m".into(),
+            Box::new([]),
+            Box::new([]),
+            Box::new([Submodule::new("sub".into(), None, Box::new([]))]),
+            Box::new([]),
+            Box::new([]),
+        );
+        let mut builder2 = ModuleSetBuilder::new("ALL".into());
+        builder2
+            .add_module(
+                module_with_submodule,
+                "bar".into(),
+                &PermissiveVersionChecker,
+            )
+            .unwrap();
+        builder2
+            .add_submodule_for_module(
+                "m",
+                Submodule::new("sub".into(), None, Box::new([])),
+                "foo".into(),
+                &PermissiveVersionChecker,
+            )
+            .unwrap();
+        let (yang_lib2, _) = builder2.build_yang_lib();
+
+        assert_ne!(yang_lib1.content_id(), yang_lib2.content_id());
     }
 }
