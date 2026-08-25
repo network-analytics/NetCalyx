@@ -784,29 +784,381 @@ fn test_yang_push_module_version_json_serde() {
     assert_eq!(deserialized, modeled);
 }
 
+/// A prefix with no `xmlns` binding declared equals the module name.
 #[test]
-fn test_datastore_xpath_filter_path_prefixes() {
-    // Cisco IOS-XR: prefix equals the module name, no xmlns binding declared.
-    let cisco = DatastoreXPathFilter {
+fn test_datastore_xpath_filter_path_prefixes_module_name_prefix() {
+    let filter = DatastoreXPathFilter {
         namespaces: Box::new([]),
-        path: "Cisco-IOS-XR-procmem-oper:processes-memory/nodes/node/process-ids/process-id".into(),
+        path: "example-procmem-oper:processes-memory/nodes/node/process-ids/process-id".into(),
     };
-    assert_eq!(cisco.path_prefixes(), vec!["Cisco-IOS-XR-procmem-oper"]);
+    assert_eq!(filter.path_prefixes(), vec!["example-procmem-oper"]);
+}
 
-    // Multi-module xpath (Huawei-style), distinct prefixes (sorted).
-    let multi = DatastoreXPathFilter {
+/// Distinct prefixes across a multi-module path are returned sorted.
+#[test]
+fn test_datastore_xpath_filter_path_prefixes_multi_module_are_sorted() {
+    let filter = DatastoreXPathFilter {
         namespaces: Box::new([
-            ("devm".into(), "urn:huawei:yang:huawei-devm".into()),
-            ("driver".into(), "urn:huawei:yang:huawei-driver".into()),
+            ("a".into(), "urn:example:yang:example-a".into()),
+            ("b".into(), "urn:example:yang:example-b".into()),
         ]),
-        path: "/devm:devm/devm:chassiss/devm:chassis/driver:power-supply-attribute".into(),
+        path: "/b:root/b:child/b:leaf/a:sibling".into(),
     };
-    assert_eq!(multi.path_prefixes(), vec!["devm", "driver"]);
+    assert_eq!(filter.path_prefixes(), vec!["a", "b"]);
+}
 
-    // Unprefixed (default-namespace) steps contribute no prefixes.
-    let unprefixed = DatastoreXPathFilter {
+/// Unprefixed (default-namespace) steps contribute no prefixes.
+#[test]
+fn test_datastore_xpath_filter_path_prefixes_unprefixed_steps_are_empty() {
+    let filter = DatastoreXPathFilter {
         namespaces: Box::new([]),
         path: "/interfaces/interface/state/counters".into(),
     };
-    assert!(unprefixed.path_prefixes().is_empty());
+    assert!(filter.path_prefixes().is_empty());
+}
+
+/// A declared `xmlns` binding and an undeclared, module-name-as-prefix
+/// encoding of the same target must converge onto the same canonical form.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_converges_declared_and_undeclared_prefixes() {
+    let resolve = |uri: &str| -> Option<Box<str>> {
+        match uri {
+            "urn:example:yang:example-debug" => Some("example-debug".into()),
+            _ => None,
+        }
+    };
+
+    let declared = DatastoreXPathFilter {
+        namespaces: Box::new([("debug".into(), "urn:example:yang:example-debug".into())]),
+        path: "/debug:debug/debug:board-state".into(),
+    };
+    let undeclared = DatastoreXPathFilter {
+        namespaces: Box::new([]),
+        path: "/example-debug:debug/board-state".into(),
+    };
+    let canonical = "/example-debug:debug/board-state";
+    assert_eq!(declared.normalize_path(resolve).as_deref(), Some(canonical));
+    assert_eq!(
+        undeclared.normalize_path(resolve).as_deref(),
+        Some(canonical),
+    );
+}
+
+/// Normalizing an already-canonical form yields itself.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_is_idempotent() {
+    let resolve = |_: &str| -> Option<Box<str>> { None };
+    let canonical = "/example-debug:debug/board-state";
+    let already = DatastoreXPathFilter {
+        namespaces: Box::new([]),
+        path: canonical.into(),
+    };
+    assert_eq!(already.normalize_path(resolve).as_deref(), Some(canonical));
+}
+
+/// A module-qualifying prefix is only emitted when the module changes.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_multi_module_emits_prefix_only_on_change() {
+    let resolve = |uri: &str| -> Option<Box<str>> {
+        match uri {
+            "urn:example:yang:example-a" => Some("example-a".into()),
+            "urn:example:yang:example-b" => Some("example-b".into()),
+            _ => None,
+        }
+    };
+
+    let multi = DatastoreXPathFilter {
+        namespaces: Box::new([
+            ("a".into(), "urn:example:yang:example-a".into()),
+            ("b".into(), "urn:example:yang:example-b".into()),
+        ]),
+        path: "/a:root/a:child/a:leaf/b:sibling".into(),
+    };
+    assert_eq!(
+        multi.normalize_path(resolve).as_deref(),
+        Some("/example-a:root/child/leaf/example-b:sibling"),
+    );
+}
+
+/// With no `xmlns` binding declared, an undeclared prefix is itself the
+/// module name (the base XPath context), and a relative path is made
+/// absolute.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_module_name_prefix_is_made_absolute() {
+    let resolve = |_: &str| -> Option<Box<str>> { None };
+
+    let relative = DatastoreXPathFilter {
+        namespaces: Box::new([]),
+        path: "example-oper:processes/process/pids/pid".into(),
+    };
+    let canonical = "/example-oper:processes/process/pids/pid";
+    assert_eq!(relative.normalize_path(resolve).as_deref(), Some(canonical));
+
+    // An already-absolute equivalent normalizes identically.
+    let absolute = DatastoreXPathFilter {
+        namespaces: Box::new([]),
+        path: canonical.into(),
+    };
+    assert_eq!(absolute.normalize_path(resolve).as_deref(), Some(canonical));
+}
+
+/// A predicate's own prefix is resolved the same as a step's: dropped
+/// entirely when it matches the enclosing step's module (redundant, per RFC
+/// 7950 §6.4.1 unprefixed-name-inherits-context-node rule), and a '/' inside
+/// the predicate's value must not be mistaken for a path separator.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_drops_redundant_predicate_prefix() {
+    let resolve = |uri: &str| -> Option<Box<str>> {
+        match uri {
+            "urn:example:yang:example-debug" => Some("example-debug".into()),
+            _ => None,
+        }
+    };
+
+    let with_pred = DatastoreXPathFilter {
+        namespaces: Box::new([("debug".into(), "urn:example:yang:example-debug".into())]),
+        path: "/debug:debug/debug:board-state[debug:id='1/2']".into(),
+    };
+    assert_eq!(
+        with_pred.normalize_path(resolve).as_deref(),
+        Some("/example-debug:debug/board-state[id='1/2']"),
+    );
+}
+
+/// A predicate prefix that resolves to a *different* module than the
+/// enclosing step is canonicalized to the resolved module name, not dropped.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_predicate_prefix_different_module_is_canonicalized() {
+    let resolve = |uri: &str| -> Option<Box<str>> {
+        match uri {
+            "urn:ietf:params:xml:ns:yang:ietf-interfaces" => Some("ietf-interfaces".into()),
+            "urn:example:oper-ext" => Some("example-oper-ext".into()),
+            _ => None,
+        }
+    };
+
+    let filter = DatastoreXPathFilter {
+        namespaces: Box::new([
+            (
+                "if".into(),
+                "urn:ietf:params:xml:ns:yang:ietf-interfaces".into(),
+            ),
+            ("ext".into(), "urn:example:oper-ext".into()),
+        ]),
+        path: "/if:interfaces/if:interface[ext:tag='x']".into(),
+    };
+    assert_eq!(
+        filter.normalize_path(resolve).as_deref(),
+        Some("/ietf-interfaces:interfaces/interface[example-oper-ext:tag='x']"),
+    );
+}
+
+/// A predicate prefix with a declared `xmlns` binding whose namespace cannot
+/// be resolved to a module bails (`None`), same as an unresolvable step
+/// prefix.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_unresolvable_predicate_prefix_bails() {
+    let resolve = |uri: &str| -> Option<Box<str>> {
+        match uri {
+            "urn:ietf:params:xml:ns:yang:ietf-interfaces" => Some("ietf-interfaces".into()),
+            _ => None,
+        }
+    };
+
+    let filter = DatastoreXPathFilter {
+        namespaces: Box::new([
+            (
+                "if".into(),
+                "urn:ietf:params:xml:ns:yang:ietf-interfaces".into(),
+            ),
+            ("unknown".into(), "urn:unresolvable".into()),
+        ]),
+        path: "/if:interfaces/if:interface[unknown:name='eth0']".into(),
+    };
+    assert_eq!(filter.normalize_path(resolve), None);
+}
+
+/// Reproduces the 6wind sub 303 shape: a fully-prefix-qualified path where
+/// the predicate's prefix is the same module as the enclosing step and must
+/// be dropped, same as the outer steps' redundant prefixes are dropped.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_sub_303_redundant_predicate_prefix() {
+    let resolve = |uri: &str| -> Option<Box<str>> {
+        match uri {
+            "urn:6wind:vrouter" => Some("vrouter".into()),
+            "urn:6wind:vrouter/interface" => Some("vrouter-interface".into()),
+            _ => None,
+        }
+    };
+
+    let filter = DatastoreXPathFilter {
+        namespaces: Box::new([
+            ("vrouter".into(), "urn:6wind:vrouter".into()),
+            ("vrouter-interface".into(), "urn:6wind:vrouter/interface".into()),
+        ]),
+        path: "/vrouter:state/vrouter:vrf/vrouter-interface:interface/vrouter-interface:physical[vrouter-interface:name='ens192']/vrouter-interface:oper-status".into(),
+    };
+    assert_eq!(
+        filter.normalize_path(resolve).as_deref(),
+        Some("/vrouter:state/vrf/vrouter-interface:interface/physical[name='ens192']/oper-status"),
+    );
+}
+
+/// A declared prefix whose namespace cannot be resolved bails (`None`).
+#[test]
+fn test_datastore_xpath_filter_normalize_path_unresolvable_prefix_bails() {
+    let resolve = |_: &str| -> Option<Box<str>> { None };
+
+    let unresolvable = DatastoreXPathFilter {
+        namespaces: Box::new([("x".into(), "urn:unknown".into())]),
+        path: "/x:foo/x:bar".into(),
+    };
+    assert_eq!(unresolvable.normalize_path(resolve), None);
+}
+
+/// Unsupported XPath constructs bail (`None`); the caller keeps the original.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_unsupported_constructs_bail() {
+    let resolve = |_: &str| -> Option<Box<str>> { None };
+
+    // some unsupported xpath examples
+    for path in [
+        "count(/if:interfaces) > 0",
+        "/a:x | /b:y",
+        "descendant::if:name",
+    ] {
+        let f = DatastoreXPathFilter {
+            namespaces: Box::new([]),
+            path: path.into(),
+        };
+        assert_eq!(f.normalize_path(resolve), None, "should bail for `{path}`");
+    }
+}
+
+/// Instantiated (real key value) predicate containing '/' must not be
+/// mistaken for a path separator.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_instantiated_predicate_with_slash() {
+    let resolve = |_: &str| -> Option<Box<str>> { None };
+
+    let filter = DatastoreXPathFilter {
+        namespaces: Box::new([]),
+        path: "openconfig-interfaces:interfaces/interface[name='TenGigE0/0/0/14']".into(),
+    };
+    assert_eq!(
+        filter.normalize_path(resolve).as_deref(),
+        Some("/openconfig-interfaces:interfaces/interface[name='TenGigE0/0/0/14']"),
+    );
+}
+
+/// A nested (multi-step) predicate path with a module-qualified identityref
+/// value; both are preserved verbatim.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_instantiated_predicate_with_nested_path() {
+    let resolve = |_: &str| -> Option<Box<str>> { None };
+
+    let filter = DatastoreXPathFilter {
+        namespaces: Box::new([]),
+        path:
+            "openconfig-interfaces:interfaces/interface[state/type='iana-if-type:ethernetCsmacd']"
+                .into(),
+    };
+    assert_eq!(
+        filter.normalize_path(resolve).as_deref(),
+        Some(
+            "/openconfig-interfaces:interfaces/interface[state/type='iana-if-type:ethernetCsmacd']"
+        ),
+    );
+}
+
+/// A declared `xmlns` binding combined with an instantiated predicate value:
+/// the predicate's own `if:` prefix resolves to the same module
+/// (`ietf-interfaces`) as the enclosing `interface` step, so it's dropped.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_declared_namespace_with_instantiated_predicate() {
+    let resolve = |uri: &str| -> Option<Box<str>> {
+        match uri {
+            "urn:ietf:params:xml:ns:yang:ietf-interfaces" => Some("ietf-interfaces".into()),
+            _ => None,
+        }
+    };
+
+    let filter = DatastoreXPathFilter {
+        namespaces: Box::new([(
+            "if".into(),
+            "urn:ietf:params:xml:ns:yang:ietf-interfaces".into(),
+        )]),
+        path: "/if:interfaces/if:interface[if:name='GigabitEthernet0/0/0']".into(),
+    };
+    assert_eq!(
+        filter.normalize_path(resolve).as_deref(),
+        Some("/ietf-interfaces:interfaces/interface[name='GigabitEthernet0/0/0']"),
+    );
+}
+
+/// A declared binding that only appears inside a predicate *string literal*
+/// value must not affect module tracking on the location path, and the
+/// literal's content is left untouched (it's data, not a reference) even
+/// though it's shaped like a `prefix:name` token. The predicate's own,
+/// non-literal `if:type` prefix is still resolved/dropped like any other.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_unused_namespace_binding_in_predicate() {
+    let resolve = |uri: &str| -> Option<Box<str>> {
+        match uri {
+            "urn:ietf:params:xml:ns:yang:ietf-interfaces" => Some("ietf-interfaces".into()),
+            _ => None,
+        }
+    };
+
+    let filter = DatastoreXPathFilter {
+        namespaces: Box::new([
+            (
+                "if".into(),
+                "urn:ietf:params:xml:ns:yang:ietf-interfaces".into(),
+            ),
+            (
+                "iana-if-type".into(),
+                "urn:ietf:params:xml:ns:yang:iana-if-type".into(),
+            ),
+        ]),
+        path: "/if:interfaces/if:interface[if:type='iana-if-type:ethernetCsmacd']".into(),
+    };
+    assert_eq!(
+        filter.normalize_path(resolve).as_deref(),
+        Some("/ietf-interfaces:interfaces/interface[type='iana-if-type:ethernetCsmacd']"),
+    );
+}
+
+/// A multi-module path (a step from an augmenting module mid-path) combined
+/// with an instantiated predicate value containing both '/' and ':'; the
+/// predicate's `if:` prefix resolves to the same module as the enclosing
+/// `interface` step and is dropped, while the following `ext:` step (a
+/// different module) keeps its prefix as usual.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_multi_module_with_instantiated_predicate() {
+    let resolve = |uri: &str| -> Option<Box<str>> {
+        match uri {
+            "urn:ietf:params:xml:ns:yang:ietf-interfaces" => Some("ietf-interfaces".into()),
+            "urn:example:oper-ext" => Some("example-oper-ext".into()),
+            _ => None,
+        }
+    };
+
+    let filter = DatastoreXPathFilter {
+        namespaces: Box::new([
+            (
+                "if".into(),
+                "urn:ietf:params:xml:ns:yang:ietf-interfaces".into(),
+            ),
+            ("ext".into(), "urn:example:oper-ext".into()),
+        ]),
+        path: "/if:interfaces/if:interface[if:name='TenGigE0/0/0/14']/ext:oper-status-detail"
+            .into(),
+    };
+    assert_eq!(
+        filter.normalize_path(resolve).as_deref(),
+        Some(
+            "/ietf-interfaces:interfaces/interface[name='TenGigE0/0/0/14']/example-oper-ext:oper-status-detail"
+        ),
+    );
 }
