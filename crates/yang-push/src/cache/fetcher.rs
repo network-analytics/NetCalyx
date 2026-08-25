@@ -393,7 +393,7 @@ impl NetconfYangLibraryFetcher {
             }
         };
 
-        let subscription = client
+        let mut subscription = client
             .get_yang_push_subscription_by_id(subscription_id)
             .await
             .map_err(|err| Box::new((empty.clone(), err.into())))?;
@@ -513,6 +513,39 @@ impl NetconfYangLibraryFetcher {
             Ok(Err(err)) => warn!(host=%host, error=%err, "Error closing SSH connection"),
             Err(err) => {
                 warn!(host=%host, error=%err, "Timeout while closing SSH connection")
+            }
+        }
+        // Normalize the target xpath filter to the canonical module-name,
+        // prefix-on-change form so the downstream pipeline sees one encoding
+        // regardless of how the device reported it (xmlns-declared prefixes vs
+        // module-name base context).
+        if let Target::Datastore(datastore_target) = &mut subscription.target
+            && let DatastoreSelectionFilterObjects::WithInSubscription(DatastoreFilterSpec::Xpath(
+                xpath,
+            )) = &mut datastore_target.selection
+        {
+            match xpath.normalize_path(|uri| {
+                router_yang_library
+                    .find_module_by_datastore_and_ns(&datastore_target.datastore, uri)
+                    .map(|m| m.name().into())
+            }) {
+                Some(normalized) => {
+                    if normalized.as_str() != xpath.path.as_ref() {
+                        debug!(
+                            subscription_id,
+                            from = %xpath.path,
+                            to = %normalized,
+                            "normalized target xpath filter",
+                        );
+                    }
+                    xpath.path = normalized.into_boxed_str();
+                    xpath.namespaces = Box::new([]);
+                }
+                None => warn!(
+                    subscription_id,
+                    path = %xpath.path,
+                    "could not normalize target xpath filter, keeping original",
+                ),
             }
         }
         let subscription_target = subscription.target.try_into().map_err(|err| {
