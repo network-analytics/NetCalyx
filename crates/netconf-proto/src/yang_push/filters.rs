@@ -359,7 +359,7 @@ impl DatastoreXPathFilter {
     /// `/if:interfaces/if:interface`), sorted for determinism. Axis specifiers
     /// and string literals are not treated as prefixes.
     pub fn path_prefixes(&self) -> Vec<String> {
-        let mut prefixes: Vec<String> = crate::xml_utils::find_xpath_prefixes(&self.path)
+        let mut prefixes: Vec<String> = crate::xpath::find_xpath_prefixes(&self.path)
             .into_iter()
             .collect();
         prefixes.sort_unstable();
