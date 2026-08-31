@@ -1143,10 +1143,9 @@ impl ValidationActor {
                         | Some(NotificationVariant::SubscriptionModified(_))
                 ) {
                     // A subscription-started/modified that reached here failed
-                    // to build SubscriptionInfo (e.g.
-                    // missing module version). It will fail
-                    // identically every time, so buffering it and re-fetching
-                    // would loop forever. Drop it permanently.
+                    // to build SubscriptionInfo (e.g. missing module version).
+                    // It will fail identically every time, so buffering it and
+                    // re-fetching would loop forever. Drop it permanently.
                     warn!(
                         peer=%peer,
                         message_id,
@@ -2002,8 +2001,8 @@ mod tests {
             .await
             .unwrap();
 
-        // Nothing should be forwarded; packet is dropped, no fetch is
-        // triggered.
+        // Nothing should be forwarded; packet is dropped,
+        // no fetch is triggered.
         let res = tokio::time::timeout(Duration::from_millis(300), validated_rx.recv()).await;
         assert!(res.is_err(), "malformed packet must not be forwarded");
         assert!(
@@ -2223,8 +2222,8 @@ mod tests {
         let peer = SocketAddr::new(subscription_info.peer_ip(), 0);
         setup_and_load_schema(&udp_notif_tx, &validated_rx, peer).await;
 
-        // Push-update with "enabelled" (typo for "enabled"): an unknown YANG
-        // node that strict validation must reject.
+        // Push-update with "enabelled" (typo for "enabled"):
+        // an unknown YANG node that strict validation must reject.
         let invalid_push_update_payload = serde_json::json!({
             "ietf-yp-notification:envelope": {
                 "event-time": "2026-04-21T13:33:31.007Z",
@@ -2531,8 +2530,8 @@ mod tests {
         tokio::task::yield_now().await;
 
         // Send the duplicate while the fetch is in-flight. With
-        // schema_fetch_pending = true the actor must buffer it rather
-        // than forwarding it unvalidated.
+        // schema_fetch_pending = true the actor must buffer it
+        // rather than forwarding it unvalidated.
         udp_notif_tx.send(make_packet(2)).await.unwrap();
 
         // Both packets must eventually be forwarded with a valid content_id.
@@ -2757,8 +2756,8 @@ mod tests {
             "forwarded SessionInfo must retain the new source port, not the original one"
         );
 
-        // No additional cache fetch must have been triggered: the
-        // peer/subscription must be recognized from the IP alone,
+        // No additional cache fetch must have been triggered:
+        // the peer/subscription must be recognized from the IP alone,
         // regardless of source port.
         assert_eq!(
             fetcher_count.lock().unwrap().len(),
@@ -2851,11 +2850,10 @@ mod tests {
             .unwrap();
 
         // The test fetcher only knows "test-content-id-1" and returns an error
-        // for "updated-content-id-2" (simulating a failed device
-        // fetch). The packet was buffered during the fetch attempt;
-        // after the fetch fails it is forwarded unvalidated. In
-        // production the fetch would succeed and content_id would be
-        // Some.
+        // for "updated-content-id-2" (simulating a failed device fetch). The
+        // packet was buffered during the fetch attempt; after the fetch fails
+        // it is forwarded unvalidated. In production the fetch would succeed
+        // and content_id would be Some.
         let ValidatedNotification {
             cached_content_id: content_id,
             subscription_info: sub_info,
@@ -3035,8 +3033,8 @@ mod tests {
         }
 
         // Messages 3 (deferred SubscriptionModified) and 4 must come after,
-        // once the second fetch (for content-id-2, unknown to the test
-        // fetcher) fails.
+        // once the second fetch (for content-id-2, unknown to the test fetcher)
+        // fails.
         for expected_msg_id in [3u32, 4u32] {
             let notification = tokio::time::timeout(Duration::from_secs(3), validated_rx.recv())
                 .await

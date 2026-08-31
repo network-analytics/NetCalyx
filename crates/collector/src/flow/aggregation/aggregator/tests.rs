@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2025-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -1178,8 +1179,7 @@ fn test_explode_netflowv9_missing_fields() {
 #[test]
 fn test_aggregator_push_netflowv9_and_ipfix_different_flow_types() {
     // Test that IPFIX and NetFlow v9 flows with same key fields are NOT
-    // aggregated together because they have different flow_type
-    // discriminants
+    // aggregated together because they have different flow_type discriminants
     let config = create_test_config(
         Box::new([
             FieldRef::new(IE::sourceIPv4Address, 0),

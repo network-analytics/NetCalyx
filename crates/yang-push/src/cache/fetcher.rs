@@ -416,7 +416,7 @@ impl NetconfYangLibraryFetcher {
                     StreamSelectionFilterObjects::ByReference(name) => {
                         // references are resolved in the NETCONF client,
                         // if we reach this point, there must be a misconfigured
-                        // router,
+                        // router
                         error!(
                             %name,
                             subscription_id,

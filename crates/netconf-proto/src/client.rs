@@ -579,9 +579,9 @@ impl<T: AsyncRead + AsyncWrite + Unpin> NetConfSshClient<T> {
                     );
                 }
                 ModuleFetch::Lead(lease) => {
-                    // We are the leader: perform the RPC. On success publish
-                    // the text to waiters; on error the
-                    // lease drops, freeing them.
+                    // We are the leader: perform the RPC.
+                    // On success publish the text to waiters;
+                    // on error the lease drops, freeing them.
                     let text = self.fetch_module_rpc(name, Some(version)).await?;
                     lease.fulfil(Arc::clone(&text));
                     return Ok(text);

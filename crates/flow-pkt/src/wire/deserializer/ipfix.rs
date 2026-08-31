@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2023-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -213,10 +214,9 @@ impl<'a> ReadablePduWithOneInput<'a, &mut TemplatesMap, LocatedSetParsingError<'
             }
             IPFIX_OPTIONS_TEMPLATE_SET_ID => {
                 let mut option_templates = vec![];
-                // THE RFC is not super clear about
-                // length allowed in the Options
-                // Template set. Like Wireshark implementation, we assume
-                // anything less than 4-octets (min field size)
+                // THE RFC is not super clear about length allowed in the
+                // Options Template set. Like Wireshark implementation,
+                // we assume anything less than 4-octets (min field size)
                 // is padding
                 while buf.len() > 3 {
                     // let (t, option_template) =

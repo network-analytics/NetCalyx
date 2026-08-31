@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2024-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -151,9 +152,9 @@ impl<'a> ReadablePdu<'a, LocatedUdpNotifPacketParsingError<'a>> for UdpNotifPack
         let (header_buf, publisher_id) = be_u32(header_buf)?;
         let (mut header_buf, message_id) = be_u32(header_buf)?;
         let mut options = HashMap::new();
-        // AS per UDP NOTIF RFC: When S is set, MT represents a private space to
-        // be freely used for non standard encodings. When S is set, the
-        // Private Encoding Option SHOULD be present in the UDP-Notif
+        // AS per UDP NOTIF RFC: When S is set, MT represents a private space
+        // to be freely used for non standard encodings. When S is set,
+        // the Private Encoding Option SHOULD be present in the UDP-Notif
         // message header.
         let mut private_is_correct = !s_flag;
         while !header_buf.is_empty() {

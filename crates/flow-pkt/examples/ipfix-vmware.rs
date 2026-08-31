@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2023-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -81,9 +82,9 @@ fn main() {
         ]
     );
 
-    // Deserialize the message from binary format (this will also add the
-    // Template to templates_map, otherwise the packet will be generated
-    // with all the default lengths)
+    // Deserialize the message from binary format
+    // (this will also add the Template to templates_map, otherwise
+    // the packet will be generated with all the default lengths)
     let (_, msg_back) = IpfixPacket::from_wire(Span::new(&buf), &mut templates_map).unwrap();
     assert_eq!(ipfix_template, msg_back);
 

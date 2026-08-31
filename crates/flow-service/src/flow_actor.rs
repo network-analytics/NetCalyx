@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2024-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -342,8 +343,8 @@ impl FlowCollectorActor {
     pub fn decode_pkt(&mut self, next: (BytesMut, SocketAddr)) -> Option<FlowRequest> {
         let (mut buf, addr) = next;
         // If we haven't seen the client before, create a new FlowInfoCodec for
-        // it. FlowInfoCodec handles the decoding/encoding of packets
-        // and caches the templates learned from the client
+        // it. FlowInfoCodec handles the decoding/encoding of packets and caches
+        // the templates learned from the client.
         let mut attrs = vec![
             opentelemetry::KeyValue::new("netcalyx.flow.actor", format!("{}", self.actor_id)),
             opentelemetry::KeyValue::new("network.peer.address", format!("{}", addr.ip())),
@@ -540,8 +541,8 @@ impl FlowCollectorActor {
                 );
                 send_handlers.push(send_handler);
             }
-            // Avoid blocking on sending the packet to the subscribers, and
-            // focus on
+            // Avoid blocking on sending the packet to the subscribers,
+            // and focus on
             futures::future::join_all(send_handlers).await;
         }
     }
@@ -1082,8 +1083,8 @@ impl FlowCollectorActorHandle {
         duration: Duration,
     ) -> Result<Vec<SocketAddr>, FlowCollectorActorHandleError> {
         let (tx, mut rx) = mpsc::channel(self.cmd_buffer_size);
-        // If the command fails, the recv after will fail, no need to double
-        // handle the error
+        // If the command fails, the recv after will fail,
+        // no need to double handle the error
         self.cmd_tx
             .send(FlowCollectorActorCommand::PurgeUnusedPeers(duration, tx))
             .await

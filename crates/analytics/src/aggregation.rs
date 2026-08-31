@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2025-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -143,9 +144,9 @@ impl<Key: Eq + Hash + Clone, AggInit: Clone, AggregatorImpl>
             *current_time = (*current_time).max(ts);
             let window_start = get_window_start(ts);
             let active_windows = self.active_windows.entry(key).or_default();
-            // Aggregates the value in the current window (or create new one if
-            // needed)
 
+            // Aggregates the value in the current window
+            // (or create a new one if needed)
             active_windows
                 .entry(window_start)
                 .or_insert_with(|| AggregatorImpl::init(self.agg_init.clone()))
@@ -584,9 +585,9 @@ mod tests {
             (),
         );
         let (items, expected_results) = get_test_input();
-        // Note this doesn't include the final event since the window doesn't
-        // close without a new event with a timestamp greater than the
-        // current time + lateness
+        // Note this doesn't include the final event since the window
+        // doesn't close without a new event with a timestamp greater
+        // than the current time + lateness
         let expected_on_time: Vec<_> = expected_results[0..expected_results.len() - 1]
             .iter()
             .cloned()

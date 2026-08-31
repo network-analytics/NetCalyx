@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2023-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -162,8 +163,8 @@ impl<
         }
 
         for cap in &self.peer_capabilities {
-            // Check that the capability has not been added before and not in
-            // the reject list
+            // Check that the capability has not been added before
+            // and not in the reject list
             if !self.capabilities.contains(cap) && !self.reject_capabilities.contains(cap) {
                 capabilities.push(cap.clone());
             }
@@ -172,8 +173,8 @@ impl<
         let params = if capabilities.is_empty() {
             vec![]
         } else {
-            // TODO check for param size and spread capabilities across multiple
-            // params or use extended params RFC 9072
+            // TODO check for param size and spread capabilities across
+            // multiple params or use extended params RFC 9072
             vec![BgpOpenMessageParameter::Capabilities(capabilities)]
         };
 
@@ -709,8 +710,8 @@ impl<
                 });
                 let codec = D::new(self);
                 let mut framed = Framed::new(tcp_stream, codec);
-                // Error is ignored since it's optional to send a notification
-                // message
+                // Error is ignored since it's optional to send
+                // a notification message
                 let _ = framed.send(BgpMessage::Notification(notif)).await;
                 let _ = framed.close().await;
             }
@@ -736,8 +737,8 @@ impl<
         if let Some(tracked) = self.tracked_connection.as_mut()
             && let Err(err) = tracked.send(msg.clone()).await
         {
-            // Errors writing to a tracked connection are ignored and we assume
-            // that the connection is not good anymore.
+            // Errors writing to a tracked connection are ignored
+            // and we assume that the connection is not good anymore.
             info!(
                 "[{}][{}] Error writing to tracked connection at state {} : {err:?}",
                 self.peer_key,
@@ -936,8 +937,8 @@ impl<
                 | ConnectionEvent::TcpConnectionConfirmed(_) => {
                     self.connect_retry_timer.take();
                     if conn.open_delay_timer().is_none() {
-                        // Only allowed to stay in this state if open delay
-                        // timer is running
+                        // Only allowed to stay in this state
+                        // if open delay timer is running
                         return Err(FsmStateError::InvalidConnectionStateTransition(
                             event.clone().into(),
                             self.fsm_state,
@@ -1403,11 +1404,10 @@ impl<
             Some((tracked_peer_bgp_id, tracked_created)),
         ) = (main_info, tracked_info)
         {
-            // This is not part of the BGP Spec, currently it's not defined if
-            // the BGP Peer ID signaled in main and tracked
-            // connections are different. We take the one in the
-            // main connection as the reference one and close the
-            // tracked connection.
+            // This is not part of the BGP Spec, currently it's not defined
+            // if the BGP Peer ID signaled in main and tracked connections
+            // are different. We take the one in the main connection as the
+            // reference one and close the tracked connection.
             if tracked_peer_bgp_id != main_peer_bgp_id {
                 return Some(CollisionCheckRet::InvalidTrackedBgpId(tracked_peer_bgp_id));
             }
@@ -1433,9 +1433,9 @@ impl<
         mut connection: Option<&mut Connection<A, I, D>>,
         mut tracked_connection: Option<&mut Connection<A, I, D>>,
     ) -> ConnectionNextEvent<A> {
-        // Looping to till one event is produced. Note this is because we ignore
-        // tracked connection events and we wait for either main
-        // connection event or a collision detection event.
+        // Looping until one event is produced. Note this is because
+        // we ignore tracked connection events and we wait for either
+        // a main connection event or a collision detection event.
         loop {
             let event = tokio::select! {
                 event = Self::get_connection_event(&mut connection) => {

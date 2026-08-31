@@ -170,10 +170,10 @@ mod tests {
             4739,
         );
         // A datagram whose declared Message Length (14) exceeds the bytes
-        // actually present (12). UDP-Notif is datagram oriented: each
-        // datagram is complete on its own and must not be reassembled
-        // across datagrams, so a short datagram is malformed rather
-        // than an incomplete read awaiting more data.
+        // actually present (12). UDP-Notif is datagram oriented: each datagram
+        // is complete on its own and must not be reassembled across datagrams,
+        // so a short datagram is malformed rather than an incomplete read
+        // awaiting more data.
         let truncated = [
             0x21, // version 1, no private space, Media type: 1 = YANG data JSON
             0x0c, // Header length

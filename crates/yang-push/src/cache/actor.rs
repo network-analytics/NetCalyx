@@ -784,8 +784,7 @@ impl<F: YangLibraryFetcher> CacheActor<F> {
                     }
                 };
                 // First, remove all pending requests for this subscription info
-                // that are requested with full subscription
-                // info
+                // that are requested with full subscription info
                 let empty = SubscriptionInfo::new_empty(
                     subscription_info.peer_ip(),
                     subscription_info.id(),
@@ -911,9 +910,8 @@ impl<F: YangLibraryFetcher> CacheActor<F> {
                                         error=%err,
                                         "failed to fetch yang library from device"
                                     );
-                                    // remove the sender we just added since the
-                                    // fetch failed to
-                                    // start
+                                    // remove the sender we just added
+                                    // since the fetch failed to start
                                     entry.remove(entry.len() - 1);
                                     self.stats.device_fetch_failed.add(1, &otl_tags);
                                     return;
@@ -1062,9 +1060,8 @@ impl<F: YangLibraryFetcher> CacheActor<F> {
                                     error=%err,
                                     "failed to fetch yang library from device"
                                 );
-                                // remove the sender we just added since the
-                                // fetch failed to
-                                // start
+                                // remove the sender we just added
+                                // since the fetch failed to start
                                 entry.remove(entry.len() - 1);
                                 self.stats.device_fetch_failed.add(1, &otel_tags);
                                 return;

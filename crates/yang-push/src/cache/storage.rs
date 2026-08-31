@@ -1150,8 +1150,8 @@ impl YangLibraryCache {
             .values()
             .any(|lib_ref| lib_ref.content_id() == yang_lib_ref.content_id());
 
-        // Step 4: Only remove YangLibraryReference and delete files if no
-        // subscriptions remain
+        // Step 4: Only remove YangLibraryReference and delete files
+        // if no subscriptions remain
         if !content_id_still_in_use {
             if let Some(yang_lib_ref) = self.cache_by_content_id.remove(yang_lib_ref.content_id()) {
                 // Remove subscription from the reference's internal list
