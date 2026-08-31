@@ -76,10 +76,10 @@ impl<'a> ReadablePduWithOneInput<'a, &mut BgpParsingContext, LocatedBgpOpenMessa
         let (buf, my_as) = be_u16(buf)?;
         let begin_buf = buf;
         let (buf, hold_time) = be_u16(buf)?;
-        // RFC 4271: If the Hold Time field of the OPEN message is unacceptable, then
-        // the Error Subcode MUST be set to Unacceptable Hold Time. An implementation
-        // MUST reject Hold Time values of one or two seconds. An implementation MAY
-        // reject any proposed Hold Time.
+        // RFC 4271: If the Hold Time field of the OPEN message is unacceptable,
+        // then the Error Subcode MUST be set to Unacceptable Hold Time.
+        // An implementation MUST reject Hold Time values of one or two
+        // seconds. An implementation MAY reject any proposed Hold Time.
         if hold_time == 1 || hold_time == 2 {
             return Err(nom::Err::Error(LocatedBgpOpenMessageParsingError::new(
                 begin_buf,
@@ -89,11 +89,12 @@ impl<'a> ReadablePduWithOneInput<'a, &mut BgpParsingContext, LocatedBgpOpenMessa
         let (buf, bgp_id) = be_u32(buf)?;
         let begin_buf = buf;
         let bgp_id = Ipv4Addr::from(bgp_id);
-        // RFC 4271: If the BGP Identifier field of the OPEN message is syntactically
-        // incorrect, then the Error Subcode MUST be set to Bad BGP Identifier.
-        // Syntactic correctness means that the BGP Identifier field represents
-        // a valid unicast IP host address. NOTE: not all BGP implementation
-        // check for syntactic correctness
+        // RFC 4271: If the BGP Identifier field of the OPEN message is
+        // syntactically incorrect, then the Error Subcode MUST be set
+        // to Bad BGP Identifier. Syntactic correctness means that the
+        // BGP Identifier field represents a valid unicast IP host
+        // address. NOTE: not all BGP implementation check for syntactic
+        // correctness
         if bgp_id.is_broadcast() || bgp_id.is_multicast() || bgp_id.is_unspecified() {
             return Err(nom::Err::Error(LocatedBgpOpenMessageParsingError::new(
                 begin_buf,
@@ -155,10 +156,13 @@ fn parse_capability_param<'a>(
                     nom::Err::Incomplete(needed) => Err(nom::Err::Incomplete(needed))?,
                     nom::Err::Error(err) => {
                         if !ctx.fail_on_capability_error {
-                            // Advance the parser and ignore malformed capability
-                            // RFC 5492 defines that a BGP speaker should ignore capabilities it
+                            // Advance the parser and ignore malformed
+                            // capability
+                            // RFC 5492 defines that a BGP speaker should ignore
+                            // capabilities it
                             // does not understand and not report any error.
-                            // It will only report a notification if the capability is
+                            // It will only report a notification if the
+                            // capability is
                             // understood but not supported by the speaker
                             let (tmp, _code) = be_u8(capabilities_buf)?;
                             let (tmp, _value) = nom::multi::length_count(be_u8, be_u8)(tmp)?;
@@ -172,10 +176,13 @@ fn parse_capability_param<'a>(
                     }
                     nom::Err::Failure(failure) => {
                         if !ctx.fail_on_capability_error {
-                            // Advance the parser and ignore malformed capability
-                            // RFC 5492 defines that a BGP speaker should ignore capabilities it
+                            // Advance the parser and ignore malformed
+                            // capability
+                            // RFC 5492 defines that a BGP speaker should ignore
+                            // capabilities it
                             // does not understand and not report any error.
-                            // It will only report a notification if the capability is
+                            // It will only report a notification if the
+                            // capability is
                             // understood but not supported by the speaker
                             let (tmp, _code) = be_u8(capabilities_buf)?;
                             let (tmp, _value) = nom::multi::length_count(be_u8, be_u8)(tmp)?;

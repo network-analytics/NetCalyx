@@ -282,13 +282,15 @@ fn main() -> anyhow::Result<()> {
     let runtime = runtime_builder.build()?;
 
     // Dedicated runtime for the OTEL metrics PeriodicReader so its export task
-    // doesn't compete with the collection/publishing pipeline for worker threads.
+    // doesn't compete with the collection/publishing pipeline for worker
+    // threads.
     let telemetry_runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
         .enable_all()
         .build()?;
     let meter_provider = {
-        // `.enter()` makes the tokio::spawn done inside build() bind to telemetry_runtime.
+        // `.enter()` makes the tokio::spawn done inside build() bind to
+        // telemetry_runtime.
         let _guard = telemetry_runtime.enter();
         init_open_telemetry(&config.telemetry).map_err(|err| anyhow!(err))?
     };

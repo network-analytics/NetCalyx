@@ -51,8 +51,8 @@ impl ProtocolHandler<UdpNotifPacket, UdpPacketCodec, UdpPacketCodecError>
                 .or_insert((UdpPacketCodec::default(), BytesMut::new()));
             buffer.extend_from_slice(packet_data);
 
-            // because of implementation specification UDP-Notif exports maximum 1 message
-            // per packet payload
+            // because of implementation specification UDP-Notif exports maximum
+            // 1 message per packet payload
             let mut results = Vec::new();
             decode_buffer(buffer, codec, flow_key, &mut results);
             if !results.is_empty() {
@@ -71,7 +71,8 @@ impl ProtocolHandler<UdpNotifPacket, UdpPacketCodec, UdpPacketCodecError>
                 let (flow_key, udp_notif_packet) = m;
                 let mut value = serde_json::to_value(&udp_notif_packet)
                     .expect("Couldn't serialize UDP-Notif message to json");
-                // Convert when possible inner payload into human-readable format
+                // Convert when possible inner payload into human-readable
+                // format
                 match udp_notif_packet.media_type() {
                     MediaType::YangDataJson => {
                         let payload = serde_json::from_slice(&udp_notif_packet.payload())
@@ -168,10 +169,11 @@ mod tests {
             IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)),
             4739,
         );
-        // A datagram whose declared Message Length (14) exceeds the bytes actually
-        // present (12). UDP-Notif is datagram oriented: each datagram is complete on
-        // its own and must not be reassembled across datagrams, so a short datagram
-        // is malformed rather than an incomplete read awaiting more data.
+        // A datagram whose declared Message Length (14) exceeds the bytes
+        // actually present (12). UDP-Notif is datagram oriented: each
+        // datagram is complete on its own and must not be reassembled
+        // across datagrams, so a short datagram is malformed rather
+        // than an incomplete read awaiting more data.
         let truncated = [
             0x21, // version 1, no private space, Media type: 1 = YANG data JSON
             0x0c, // Header length
@@ -193,10 +195,12 @@ mod tests {
                 UdpPacketCodecError::InvalidMessageLength(14)
             )]),
         );
-        // The malformed bytes must be cleared, never retained for a later datagram.
+        // The malformed bytes must be cleared, never retained for a later
+        // datagram.
         assert!(exporter_peers.get(&flow_key).unwrap().1.is_empty());
 
-        // A subsequent complete datagram decodes independently of the prior one.
+        // A subsequent complete datagram decodes independently of the prior
+        // one.
         let complete = [
             0x21, // version 1, no private space, Media type: 1 = YANG data JSON
             0x0c, // Header length

@@ -550,8 +550,9 @@ impl<T: AsyncRead + AsyncWrite + Unpin> NetConfSshClient<T> {
             return self.fetch_module_rpc(name, None).await;
         };
 
-        // `module_cache` is a cheap-to-clone handle; clone it so the fetch below
-        // can borrow `&mut self` without conflicting with the cache borrow.
+        // `module_cache` is a cheap-to-clone handle; clone it so the fetch
+        // below can borrow `&mut self` without conflicting with the
+        // cache borrow.
         let cache = self.module_cache.clone();
         loop {
             match cache.begin_fetch(name, version) {
@@ -570,15 +571,17 @@ impl<T: AsyncRead + AsyncWrite + Unpin> NetConfSshClient<T> {
                     if let Some(text) = waiter.wait().await {
                         return Ok(text);
                     }
-                    // The leader failed; retry — we become a new leader or waiter.
+                    // The leader failed; retry — we become a new leader or
+                    // waiter.
                     debug!(
                         "[{}] leader fetch for `{name}` revision {version} failed, retrying",
                         self.peer
                     );
                 }
                 ModuleFetch::Lead(lease) => {
-                    // We are the leader: perform the RPC. On success publish the
-                    // text to waiters; on error the lease drops, freeing them.
+                    // We are the leader: perform the RPC. On success publish
+                    // the text to waiters; on error the
+                    // lease drops, freeing them.
                     let text = self.fetch_module_rpc(name, Some(version)).await?;
                     lease.fulfil(Arc::clone(&text));
                     return Ok(text);
@@ -892,8 +895,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin> NetConfSshClient<T> {
                 "[{}] Raw <get> response for subscription {id}: `{data}`",
                 self.peer
             );
-            // Parse the response streams if any returned, filters if any returned
-            // and then the subscription details
+            // Parse the response streams if any returned, filters if any
+            // returned and then the subscription details
             let mut reader = NsReader::from_str(data);
             reader.config_mut().trim_text(true);
             let mut parser = crate::xml_utils::XmlParser::new(reader)?;

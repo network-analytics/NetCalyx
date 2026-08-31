@@ -194,8 +194,8 @@ impl ReassemblyBuffer {
 
         // Per draft-ietf-netconf-udp-notif Section 4.1, all options (other than
         // the segmentation option) are carried on the first segment and are
-        // appended to the reassembled header. Options on subsequent segments are
-        // ignored.
+        // appended to the reassembled header. Options on subsequent segments
+        // are ignored.
         let options: HashMap<_, _> = first_segment
             .options()
             .iter()
@@ -402,10 +402,11 @@ impl UdpPacketCodec {
 
         // Detect duplicate segment numbers: a segment whose (publisher_id,
         // message_id, seg_no) triple is already present in the buffer is a
-        // network retransmission and MUST be dropped (draft-ietf-netconf-udp-notif
-        // §4.1). Note: if a sender reuses a message_id before the old
-        // reassembly buffer has timed out, new segments will be dropped here
-        // too until the old buffer is evicted by the timeout. This is bounded
+        // network retransmission and MUST be dropped
+        // (draft-ietf-netconf-udp-notif §4.1). Note: if a sender reuses
+        // a message_id before the old reassembly buffer has timed out,
+        // new segments will be dropped here too until the old buffer is
+        // evicted by the timeout. This is bounded
         // by reassembly_timeout.
         let is_duplicate = self
             .incomplete_messages
@@ -418,8 +419,8 @@ impl UdpPacketCodec {
             return Ok(None);
         }
 
-        // Enforce the per-message segment cap (draft-ietf-netconf-udp-notif §5.2):
-        // reject if adding this segment would exceed the limit.
+        // Enforce the per-message segment cap (draft-ietf-netconf-udp-notif
+        // §5.2): reject if adding this segment would exceed the limit.
         if self
             .incomplete_messages
             .get(&message_key)
@@ -466,7 +467,8 @@ impl Decoder for UdpPacketCodec {
     #[inline]
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         // Evict reassembly buffers that have exceeded the configured timeout,
-        // accumulating the count into reassembly_events for the caller to report.
+        // accumulating the count into reassembly_events for the caller to
+        // report.
         let now = Instant::now();
         let before = self.incomplete_messages.len();
         self.incomplete_messages
@@ -489,7 +491,8 @@ impl Decoder for UdpPacketCodec {
         let pkt_buf = buf.split_to(buf.len());
         match UdpNotifPacket::from_wire(Span::new(pkt_buf.chunk())) {
             Ok((span, pkt)) => {
-                // Check that the message length matches the actual length of the message
+                // Check that the message length matches the actual length of
+                // the message
                 if span.location_offset() != msg_len as usize || !span.is_empty() {
                     return Err(UdpPacketCodecError::InvalidMessageLength(msg_len));
                 }
@@ -827,7 +830,8 @@ mod tests {
 
         std::thread::sleep(Duration::from_millis(5));
 
-        // An empty-buffer decode drives the eviction pass without consuming data.
+        // An empty-buffer decode drives the eviction pass without consuming
+        // data.
         let mut empty = BytesMut::new();
         assert_eq!(codec.decode(&mut empty), Ok(None));
         assert_eq!(codec.incomplete_messages_count(), 0);

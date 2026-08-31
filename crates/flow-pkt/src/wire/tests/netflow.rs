@@ -751,8 +751,8 @@ fn test_zero_length_fields() {
         0, 0, 91, 0, 0, 0, 0, 91, 0, 0, 4, 0, 0, 0, 0, 32, 0, 0,
     ];
     let mut templates_map = HashMap::new();
-    // The test here will produce invalid packet, but what we are testing for is not
-    // crashing due to divide by zero
+    // The test here will produce invalid packet, but what we are testing for is
+    // not crashing due to divide by zero
     let ret = NetFlowV9Packet::from_wire(Span::new(&good_template_wire), &mut templates_map);
     assert!(ret.is_err());
 }
@@ -780,8 +780,8 @@ fn test_records_len_larger_than_count() {
         123, 123, 123, 123, 255, 0, 0,
     ];
     let mut templates_map = HashMap::new();
-    // The test here will produce invalid packet, but what we are testing for is not
-    // crashing due subtracting count of records from the templates
+    // The test here will produce invalid packet, but what we are testing for is
+    // not crashing due subtracting count of records from the templates
     let ret = NetFlowV9Packet::from_wire(Span::new(&good_template_wire), &mut templates_map);
     assert!(ret.is_err());
 }

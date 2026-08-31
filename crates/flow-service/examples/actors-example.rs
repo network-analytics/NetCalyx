@@ -21,9 +21,9 @@ use std::time::Duration;
 use tracing::{debug, error, info};
 
 fn init_tracing() {
-    // Very simple setup at the moment to validate the instrumentation in the code
-    // is working in the future that should be configured automatically based on
-    // configuration options
+    // Very simple setup at the moment to validate the instrumentation in the
+    // code is working in the future that should be configured automatically
+    // based on configuration options
     let subscriber = tracing_subscriber::FmtSubscriber::builder()
         .with_max_level(tracing::Level::DEBUG)
         .with_writer(std::io::stderr)

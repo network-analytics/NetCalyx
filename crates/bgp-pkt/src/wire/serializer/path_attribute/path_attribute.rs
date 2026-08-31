@@ -177,7 +177,8 @@ pub enum OriginWritingError {
 }
 
 impl WritablePduWithOneInput<bool, OriginWritingError> for Origin {
-    // One octet length (if extended is not enabled) and second for the origin value
+    // One octet length (if extended is not enabled) and second for the origin
+    // value
     const BASE_LENGTH: usize = 2;
 
     fn len(&self, extended_length: bool) -> usize {

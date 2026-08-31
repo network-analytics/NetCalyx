@@ -689,7 +689,8 @@ impl ValidationActor {
         let publisher_id = packet.publisher_id();
         let mut peer_tags = Self::peer_tags_from_packet(peer, packet);
 
-        // Decode the UDP-Notif packet to get subscription ID and payload information
+        // Decode the UDP-Notif packet to get subscription ID and payload
+        // information
         match UdpNotifPacketDecoded::try_from(packet) {
             Ok(decoded) => {
                 let notif_contents = decoded.payload().notification_contents();
@@ -1004,8 +1005,9 @@ impl ValidationActor {
             .map(|x| x.to_string())
             .unwrap_or("UNKNOWN".to_string());
 
-        // Defer started/modified notifications while a fetch is already in-flight
-        // for this id, so a stale response can never clobber a newer generation.
+        // Defer started/modified notifications while a fetch is already
+        // in-flight for this id, so a stale response can never clobber
+        // a newer generation.
         if let Some(notif_contents) = decoded.payload().notification_contents()
             && matches!(
                 notif_contents,
@@ -1052,12 +1054,15 @@ impl ValidationActor {
                         return Ok(Some(subscription_info));
                     }
                     Some(None) => {
-                        // Cache entry exists but schema not yet available. We distinguish:
-                        // - fetch in-flight (schema_fetch_pending = true): buffer the packet so it
-                        //   is validated once the response arrives, instead of slipping through
+                        // Cache entry exists but schema not yet available. We
+                        // distinguish:
+                        // - fetch in-flight (schema_fetch_pending = true):
+                        //   buffer the packet so it is validated once the
+                        //   response arrives, instead of slipping through
                         //   unvalidated.
-                        // - fetch already completed with no schema (schema_fetch_pending = false):
-                        //   forward unvalidated as usual; no point buffering.
+                        // - fetch already completed with no schema
+                        //   (schema_fetch_pending = false): forward unvalidated
+                        //   as usual; no point buffering.
                         let fetch_pending = self
                             .peer_cache
                             .get(&peer.ip())
@@ -1137,9 +1142,10 @@ impl ValidationActor {
                     Some(NotificationVariant::SubscriptionStarted(_))
                         | Some(NotificationVariant::SubscriptionModified(_))
                 ) {
-                    // A subscription-started/modified that reached here failed to
-                    // build SubscriptionInfo (e.g. missing module version). It will
-                    // fail identically every time, so buffering it and re-fetching
+                    // A subscription-started/modified that reached here failed
+                    // to build SubscriptionInfo (e.g.
+                    // missing module version). It will fail
+                    // identically every time, so buffering it and re-fetching
                     // would loop forever. Drop it permanently.
                     warn!(
                         peer=%peer,
@@ -1302,7 +1308,8 @@ impl ValidationActor {
         subscription_cache.schema_fetch_pending = false;
         let buffered_packets = std::mem::take(&mut subscription_cache.buffered_packets);
         let drained = buffered_packets.len();
-        // Update the per-peer counter while we still hold the peer_cache borrow.
+        // Update the per-peer counter while we still hold the peer_cache
+        // borrow.
         peer_cache.total_buffered -= drained;
         let remaining = peer_cache.total_buffered;
         for message in buffered_packets {
@@ -1995,7 +2002,8 @@ mod tests {
             .await
             .unwrap();
 
-        // Nothing should be forwarded; packet is dropped, no fetch is triggered.
+        // Nothing should be forwarded; packet is dropped, no fetch is
+        // triggered.
         let res = tokio::time::timeout(Duration::from_millis(300), validated_rx.recv()).await;
         assert!(res.is_err(), "malformed packet must not be forwarded");
         assert!(
@@ -2165,7 +2173,8 @@ mod tests {
             handle,
         ) = setup_validation_actor();
 
-        // YangDataJson with bytes that are not valid JSON → serde_json parse error.
+        // YangDataJson with bytes that are not valid JSON → serde_json parse
+        // error.
         udp_notif_tx
             .send(Arc::new(UdpNotifRequest::new(
                 SessionInfo::new(
@@ -2214,8 +2223,8 @@ mod tests {
         let peer = SocketAddr::new(subscription_info.peer_ip(), 0);
         setup_and_load_schema(&udp_notif_tx, &validated_rx, peer).await;
 
-        // Push-update with "enabelled" (typo for "enabled"): an unknown YANG node
-        // that strict validation must reject.
+        // Push-update with "enabelled" (typo for "enabled"): an unknown YANG
+        // node that strict validation must reject.
         let invalid_push_update_payload = serde_json::json!({
             "ietf-yp-notification:envelope": {
                 "event-time": "2026-04-21T13:33:31.007Z",
@@ -2299,8 +2308,8 @@ mod tests {
         let peer = SocketAddr::new(subscription_info.peer_ip(), 0);
         setup_and_load_schema(&udp_notif_tx, &validated_rx, peer).await;
 
-        // Push-update with "enabelled" (typo for "enabled"): an unknown YANG node
-        // that only strict anydata validation would reject.
+        // Push-update with "enabelled" (typo for "enabled"): an unknown YANG
+        // node that only strict anydata validation would reject.
         let invalid_push_update_payload = serde_json::json!({
             "ietf-yp-notification:envelope": {
                 "event-time": "2026-04-21T13:33:31.007Z",
@@ -2429,8 +2438,8 @@ mod tests {
             .await
             .unwrap();
 
-        // TODO(libyang): should be `res.is_err()` once libyang enforces mandatory nodes
-        // inside anydata.
+        // TODO(libyang): should be `res.is_err()` once libyang enforces
+        // mandatory nodes inside anydata.
         let res = tokio::time::timeout(Duration::from_millis(300), validated_rx.recv()).await;
         assert!(
             res.is_ok(),
@@ -2517,11 +2526,13 @@ mod tests {
         // Send first SubscriptionStarted. This triggers the schema fetch and
         // sets schema_fetch_pending = true.
         udp_notif_tx.send(make_packet(1)).await.unwrap();
-        // Yield so the actor processes the first packet before the duplicate is queued.
+        // Yield so the actor processes the first packet before the duplicate is
+        // queued.
         tokio::task::yield_now().await;
 
-        // Send the duplicate while the fetch is in-flight. With schema_fetch_pending =
-        // true the actor must buffer it rather than forwarding it unvalidated.
+        // Send the duplicate while the fetch is in-flight. With
+        // schema_fetch_pending = true the actor must buffer it rather
+        // than forwarding it unvalidated.
         udp_notif_tx.send(make_packet(2)).await.unwrap();
 
         // Both packets must eventually be forwarded with a valid content_id.
@@ -2543,7 +2554,8 @@ mod tests {
             assert!(!sub_info.is_empty());
         }
 
-        // Exactly one cache fetch must have been triggered for both identical packets.
+        // Exactly one cache fetch must have been triggered for both identical
+        // packets.
         assert_eq!(
             fetcher_count.lock().unwrap().len(),
             1,
@@ -2572,7 +2584,8 @@ mod tests {
         ) = setup_validation_actor();
         let peer = SocketAddr::new(subscription_info.peer_ip(), 0);
 
-        // Load the schema via the first SubscriptionStarted and drain the result.
+        // Load the schema via the first SubscriptionStarted and drain the
+        // result.
         setup_and_load_schema(&udp_notif_tx, &validated_rx, peer).await;
         assert_eq!(
             fetcher_count.lock().unwrap().len(),
@@ -2744,8 +2757,9 @@ mod tests {
             "forwarded SessionInfo must retain the new source port, not the original one"
         );
 
-        // No additional cache fetch must have been triggered: the peer/subscription
-        // must be recognized from the IP alone, regardless of source port.
+        // No additional cache fetch must have been triggered: the
+        // peer/subscription must be recognized from the IP alone,
+        // regardless of source port.
         assert_eq!(
             fetcher_count.lock().unwrap().len(),
             1,
@@ -2836,10 +2850,11 @@ mod tests {
             .await
             .unwrap();
 
-        // The test fetcher only knows "test-content-id-1" and returns an error for
-        // "updated-content-id-2" (simulating a failed device fetch). The packet was
-        // buffered during the fetch attempt; after the fetch fails it is forwarded
-        // unvalidated. In production the fetch would succeed and content_id would be
+        // The test fetcher only knows "test-content-id-1" and returns an error
+        // for "updated-content-id-2" (simulating a failed device
+        // fetch). The packet was buffered during the fetch attempt;
+        // after the fetch fails it is forwarded unvalidated. In
+        // production the fetch would succeed and content_id would be
         // Some.
         let ValidatedNotification {
             cached_content_id: content_id,
@@ -2855,8 +2870,9 @@ mod tests {
         );
         assert!(!sub_info.is_empty());
 
-        // A second device fetch must have been triggered for the new content-id;
-        // the cache must not silently reuse the old schema when content-id changes.
+        // A second device fetch must have been triggered for the new
+        // content-id; the cache must not silently reuse the old schema
+        // when content-id changes.
         assert_eq!(
             fetcher_count.lock().unwrap().len(),
             2,
@@ -3003,7 +3019,8 @@ mod tests {
             .await
             .unwrap();
 
-        // Messages 1 and 2 must be validated with the first (content-id-1) schema.
+        // Messages 1 and 2 must be validated with the first (content-id-1)
+        // schema.
         for expected_msg_id in [1u32, 2u32] {
             let notification = tokio::time::timeout(Duration::from_secs(3), validated_rx.recv())
                 .await
@@ -3017,8 +3034,9 @@ mod tests {
             );
         }
 
-        // Messages 3 (deferred SubscriptionModified) and 4 must come after, once the
-        // second fetch (for content-id-2, unknown to the test fetcher) fails.
+        // Messages 3 (deferred SubscriptionModified) and 4 must come after,
+        // once the second fetch (for content-id-2, unknown to the test
+        // fetcher) fails.
         for expected_msg_id in [3u32, 4u32] {
             let notification = tokio::time::timeout(Duration::from_secs(3), validated_rx.recv())
                 .await

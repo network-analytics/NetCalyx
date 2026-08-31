@@ -245,7 +245,8 @@ impl<'a> ReadablePdu<'a, LocatedBgpCapabilityParsingError<'a>> for BgpCapability
                 error:
                     BgpCapabilityParsingError::UndefinedCapabilityCode(UndefinedBgpCapabilityCode(_)),
             })) => {
-                // Parse code again, since nom won't advance the buffer on map_res error
+                // Parse code again, since nom won't advance the buffer on
+                // map_res error
                 let (buf, code) = be_u8(buf)?;
                 parse_unrecognized_capability(code, buf)
             }

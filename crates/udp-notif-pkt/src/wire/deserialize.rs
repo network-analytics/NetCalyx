@@ -51,7 +51,8 @@ impl<'a> ReadablePdu<'a, LocatedUdpNotifOptionParsingError<'a>> for UdpNotifOpti
                 let (value_buf, high) = nom::number::complete::u8(value_buf)?;
                 let (_value_buf, low) = nom::number::complete::u8(value_buf)?;
                 let number = ((high as u16) << 7) | ((low as u16) >> 1);
-                // Extract the L flag (the least significant bit of the last byte)
+                // Extract the L flag (the least significant bit of the last
+                // byte)
                 let last = (low & 0x01) != 0;
 
                 Ok((buf, UdpNotifOption::Segment { number, last }))
@@ -150,9 +151,10 @@ impl<'a> ReadablePdu<'a, LocatedUdpNotifPacketParsingError<'a>> for UdpNotifPack
         let (header_buf, publisher_id) = be_u32(header_buf)?;
         let (mut header_buf, message_id) = be_u32(header_buf)?;
         let mut options = HashMap::new();
-        // AS per UDP NOTIF RFC: When S is set, MT represents a private space to be
-        // freely used for non standard encodings. When S is set, the Private
-        // Encoding Option SHOULD be present in the UDP-Notif message header.
+        // AS per UDP NOTIF RFC: When S is set, MT represents a private space to
+        // be freely used for non standard encodings. When S is set, the
+        // Private Encoding Option SHOULD be present in the UDP-Notif
+        // message header.
         let mut private_is_correct = !s_flag;
         while !header_buf.is_empty() {
             let (t, option) = parse_into_located::<

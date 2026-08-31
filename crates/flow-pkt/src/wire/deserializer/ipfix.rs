@@ -215,8 +215,9 @@ impl<'a> ReadablePduWithOneInput<'a, &mut TemplatesMap, LocatedSetParsingError<'
                 let mut option_templates = vec![];
                 // THE RFC is not super clear about
                 // length allowed in the Options
-                // Template set. Like Wireshark implementation, we assume anything
-                // less than 4-octets (min field size) is padding
+                // Template set. Like Wireshark implementation, we assume
+                // anything less than 4-octets (min field size)
+                // is padding
                 while buf.len() > 3 {
                     // let (t, option_template) =
                     //     parse_into_located_one_input(buf, templates_map)?;
@@ -248,7 +249,8 @@ impl<'a> ReadablePduWithOneInput<'a, &mut TemplatesMap, LocatedSetParsingError<'
                         SetParsingError::NoTemplateDefinedFor(id),
                     )));
                 };
-                // since we could have vlen fields, we can only state a min_record_len here
+                // since we could have vlen fields, we can only state a
+                // min_record_len here
                 let min_record_length = template
                     .scope_fields_specs
                     .iter()
@@ -288,7 +290,8 @@ impl<'a> ReadablePduWithOneInput<'a, &mut TemplatesMap, LocatedSetParsingError<'
                     buf = t;
                 }
 
-                // We can safely unwrap DataSetId here since we already checked the range
+                // We can safely unwrap DataSetId here since we already checked
+                // the range
                 Set::Data {
                     id: DataSetId::new(id).unwrap(),
                     records: records.into_boxed_slice(),
@@ -356,8 +359,8 @@ impl<'a>
     ) -> IResult<Span<'a>, Self, LocatedOptionsTemplateRecordParsingError<'a>> {
         let input = buf;
         let (buf, template_id) = be_u16(buf)?;
-        // from RFC7011: Each Template Record is given a unique Template ID in the range
-        // 256 to 65535.
+        // from RFC7011: Each Template Record is given a unique Template ID in
+        // the range 256 to 65535.
         if template_id < 256 {
             return Err(nom::Err::Error(
                 LocatedOptionsTemplateRecordParsingError::new(
@@ -500,8 +503,8 @@ impl<'a> ReadablePduWithOneInput<'a, &mut TemplatesMap, LocatedTemplateRecordPar
     ) -> IResult<Span<'a>, Self, LocatedTemplateRecordParsingError<'a>> {
         let input = buf;
         let (buf, template_id) = be_u16(buf)?;
-        // from RFC7011: Each Template Record is given a unique Template ID in the range
-        // 256 to 65535.
+        // from RFC7011: Each Template Record is given a unique Template ID in
+        // the range 256 to 65535.
         if template_id < 256 {
             return Err(nom::Err::Error(LocatedTemplateRecordParsingError::new(
                 input,
