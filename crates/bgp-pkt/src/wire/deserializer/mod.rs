@@ -241,8 +241,8 @@ impl<'a> ReadablePduWithTwoInputs<'a, u8, Span<'a>, LocatedIpv4PrefixParsingErro
         prefix_len: u8,
         prefix_location: Span<'a>,
     ) -> IResult<Span<'a>, Self, LocatedIpv4PrefixParsingError<'a>> {
-        // The prefix value must fall into the octet boundary, even if the prefix_len
-        // doesn't. For example,
+        // The prefix value must fall into the octet boundary, even if the
+        // prefix_len doesn't. For example,
         // prefix_len=24 => prefix_size=24 while prefix_len=19 => prefix_size=24
         let prefix_size = if prefix_len >= u8::MAX - 7 {
             u8::MAX
@@ -290,8 +290,8 @@ impl<'a> ReadablePduWithTwoInputs<'a, u8, Span<'a>, LocatedIpv6PrefixParsingErro
         prefix_len: u8,
         prefix_location: Span<'a>,
     ) -> IResult<Span<'a>, Self, LocatedIpv6PrefixParsingError<'a>> {
-        // The prefix value must fall into the octet boundary, even if the prefix_len
-        // doesn't. For example,
+        // The prefix value must fall into the octet boundary, even if the
+        // prefix_len doesn't. For example,
         // prefix_len=24 => prefix_size=24 while prefix_len=19 => prefix_size=24
         let prefix_size = if prefix_len >= u8::MAX - 7 {
             u8::MAX
@@ -510,8 +510,8 @@ impl<'a> ReadablePduWithOneInput<'a, &mut BgpParsingContext, LocatedBgpMessagePa
             }
         })(buf)?;
 
-        // Parse both length and type together, since we need to do input validation on
-        // the length based on the type of the message
+        // Parse both length and type together, since we need to do input
+        // validation on the length based on the type of the message
         let (buf, (_, message_type, remainder_buf)) = match parse_bgp_message_length_and_type(buf) {
             Ok(value) => value,
             Err(err) => return Err(into_located_bgp_message_parsing_error(err)),
@@ -580,8 +580,8 @@ impl From<BgpMessageParsingError> for BgpNotificationMessage {
                 BgpNotificationMessage::UpdateMessageError(update_err.into())
             }
             BgpMessageParsingError::BgpNotificationMessageParsingError(_notification) => {
-                // Notification messages parsing should be ignored and consider a session
-                // closed.
+                // Notification messages parsing should be ignored and consider
+                // a session closed.
                 BgpNotificationMessage::FiniteStateMachineError(
                     FiniteStateMachineError::Unspecific { value: vec![] },
                 )

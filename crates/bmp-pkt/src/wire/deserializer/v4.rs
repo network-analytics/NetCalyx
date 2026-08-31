@@ -181,7 +181,8 @@ impl<'a>
         bgp_ctx.set_asn4(peer_header.is_asn4());
 
         // Determine if we need to track Adj-RIB-Out based on Peer Type,
-        // which is useful to select ADD-Path behavior for either sending or receive
+        // which is useful to select ADD-Path behavior for either sending or
+        // receive
         let adj_rib_out = match peer_header.peer_type() {
             BmpPeerType::GlobalInstancePeer { adj_rib_out, .. }
             | BmpPeerType::RdInstancePeer { adj_rib_out, .. }
@@ -190,8 +191,8 @@ impl<'a>
         };
 
         // Context represents what we learnt from the BGP Open
-        // We do not want to alter it permanently based on TLVs that are punctual in the
-        // messages
+        // We do not want to alter it permanently based on TLVs that are
+        // punctual in the messages
         let mut ctx_clone = bgp_ctx.clone();
 
         // Can't use parse_till_empty_into_with_one_input_located because
@@ -202,8 +203,9 @@ impl<'a>
             let mut tlvs = Vec::new();
             let mut bgp_pdu = None;
             while !buf.is_empty() {
-                // Peek the TLV Type, if we have a BGP PDU we keep it for later and we'll decode
-                // it when we've decoded all the Stateless Parsing TLVs on which
+                // Peek the TLV Type, if we have a BGP PDU we keep it for later
+                // and we'll decode it when we've decoded all
+                // the Stateless Parsing TLVs on which
                 // the PDU decoding depends
                 match nom::combinator::peek(be_u16)(buf)? {
                     (_, tlv_type)
@@ -302,8 +304,8 @@ impl<'a>
         ctx: &mut BgpParsingContext,
         adj_rib_out: bool,
     ) -> IResult<Span<'a>, Self, LocatedRouteMonitoringTlvParsingError<'a>> {
-        // Can't use read_tlv_header_t16_l16 because Index is in the middle of the
-        // header and not counted in Length
+        // Can't use read_tlv_header_t16_l16 because Index is in the middle of
+        // the header and not counted in Length
         let (span, tlv_type) = be_u16(buf)?;
         let input = buf;
         let (span, tlv_length) = be_u16(span)?;

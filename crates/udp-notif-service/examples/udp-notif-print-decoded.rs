@@ -74,16 +74,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
     while let Some(next) = stream.next().await {
         match next {
             Ok((mut buf, addr)) => {
-                // Peek at segment metadata — we'll use this after draining codec events
-                // so that eviction cleanup runs before we increment the pending counter.
+                // Peek at segment metadata — we'll use this after draining
+                // codec events so that eviction cleanup runs
+                // before we increment the pending counter.
                 let seg_info = peek_segment_info(&buf);
 
-                // If we haven't seen the client before, create a new UdpPacketCodec for it.
-                // UdpPacketCodec handles the decoding/encoding of udp-notif packets.
+                // If we haven't seen the client before, create a new
+                // UdpPacketCodec for it. UdpPacketCodec handles
+                // the decoding/encoding of udp-notif packets.
                 let codec = clients.entry(addr).or_default();
                 let result = codec.decode(&mut buf);
 
-                // Drain reassembly event counts and log any anomalies with peer context.
+                // Drain reassembly event counts and log any anomalies with peer
+                // context.
                 let reassembly_events = codec.take_reassembly_events();
                 if reassembly_events.timeout_evictions > 0 {
                     warn!(
@@ -91,8 +94,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
                         evicted = reassembly_events.timeout_evictions,
                         "evicted timed-out reassembly buffers"
                     );
-                    // We don't know which (publisher_id, message_id) keys were evicted,
-                    // so clear all pending state for this peer to avoid stale counts.
+                    // We don't know which (publisher_id, message_id) keys were
+                    // evicted, so clear all pending state
+                    // for this peer to avoid stale counts.
                     pending.remove(&addr);
                 }
                 if reassembly_events.duplicate_drops > 0 {
@@ -103,8 +107,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
                     );
                 }
 
-                // Now that stale pending state has been cleared, update the counter
-                // for the segment that was just processed.
+                // Now that stale pending state has been cleared, update the
+                // counter for the segment that was just
+                // processed.
                 if let Some((pub_id, msg_id, seg_no, is_last)) = seg_info {
                     let received = pending
                         .entry(addr)
@@ -127,10 +132,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
                     Ok(Some(msg)) => {
                         let pub_id = msg.publisher_id();
                         let msg_id = msg.message_id();
-                        // Always clean up the pending counter using the message's own IDs,
-                        // regardless of seg_info. This handles the case where the
-                        // reassembly-triggering segment had no Segment option (e.g. a
-                        // single-segment retransmission after a prior segmented run timed out).
+                        // Always clean up the pending counter using the
+                        // message's own IDs, regardless
+                        // of seg_info. This handles the case where the
+                        // reassembly-triggering segment had no Segment option
+                        // (e.g. a single-segment
+                        // retransmission after a prior segmented run timed
+                        // out).
                         if let Some(total) = pending
                             .get_mut(&addr)
                             .and_then(|m| m.remove(&(pub_id, msg_id)))

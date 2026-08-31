@@ -210,8 +210,8 @@ impl<'a>
         } else {
             prefix_len.div_ceil(8)
         };
-        // consuming only the bytes specified by the prefix length field, since MPLS
-        // stack is read until the last bit is set.
+        // consuming only the bytes specified by the prefix length field, since
+        // MPLS stack is read until the last bit is set.
         let (buf, prefix_buf) = nom::bytes::complete::take(prefix_bytes)(buf)?;
         let (prefix_buf, label_stack) =
             parse_mpls_label_stack(prefix_buf, is_unreach, multiple_labels_limit).map_err(
@@ -286,8 +286,8 @@ impl<'a>
         } else {
             prefix_len.div_ceil(8)
         };
-        // consuming only the bytes specified by the prefix length field, since MPLS
-        // stack is read until the last bit is set.
+        // consuming only the bytes specified by the prefix length field, since
+        // MPLS stack is read until the last bit is set.
         let (buf, prefix_buf) = nom::bytes::complete::take(prefix_bytes)(buf)?;
         let (prefix_buf, label_stack) =
             parse_mpls_label_stack(prefix_buf, is_unreach, multiple_labels_limit).map_err(

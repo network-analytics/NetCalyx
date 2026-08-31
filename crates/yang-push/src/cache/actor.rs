@@ -783,8 +783,9 @@ impl<F: YangLibraryFetcher> CacheActor<F> {
                         None
                     }
                 };
-                // First, remove all pending requests for this subscription info that are
-                // requested with full subscription info
+                // First, remove all pending requests for this subscription info
+                // that are requested with full subscription
+                // info
                 let empty = SubscriptionInfo::new_empty(
                     subscription_info.peer_ip(),
                     subscription_info.id(),
@@ -874,7 +875,8 @@ impl<F: YangLibraryFetcher> CacheActor<F> {
                     }
                     None => {
                         // YANG Library Reference is not found in the cache.
-                        // Start a new worker to fetch the YANG Library from the server.
+                        // Start a new worker to fetch the YANG Library from the
+                        // server.
                         self.stats.cache_misses.add(1, &otl_tags);
                         let entry = self
                             .pending_requests
@@ -909,7 +911,8 @@ impl<F: YangLibraryFetcher> CacheActor<F> {
                                         error=%err,
                                         "failed to fetch yang library from device"
                                     );
-                                    // remove the sender we just added since the fetch failed to
+                                    // remove the sender we just added since the
+                                    // fetch failed to
                                     // start
                                     entry.remove(entry.len() - 1);
                                     self.stats.device_fetch_failed.add(1, &otl_tags);
@@ -1059,7 +1062,8 @@ impl<F: YangLibraryFetcher> CacheActor<F> {
                                     error=%err,
                                     "failed to fetch yang library from device"
                                 );
-                                // remove the sender we just added since the fetch failed to
+                                // remove the sender we just added since the
+                                // fetch failed to
                                 // start
                                 entry.remove(entry.len() - 1);
                                 self.stats.device_fetch_failed.add(1, &otel_tags);

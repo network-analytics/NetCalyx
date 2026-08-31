@@ -85,9 +85,9 @@ fn main() {
             0x01, 0xd2, 0x00, 0x01, 0x01, 0xd3, 0x00, 0x01, 0x01, 0xf4, 0x00, 0x01
         ]
     );
-    // Deserialize the message from binary format (this will also add the Template
-    // to templates_map, otherwise the packet will be generated with all the
-    // default lengths)
+    // Deserialize the message from binary format (this will also add the
+    // Template to templates_map, otherwise the packet will be generated
+    // with all the default lengths)
     let (_, msg_back) = IpfixPacket::from_wire(Span::new(&buf), &mut templates_map).unwrap();
     assert_eq!(ipfix_template, msg_back);
 
