@@ -94,9 +94,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
                         evicted = reassembly_events.timeout_evictions,
                         "evicted timed-out reassembly buffers"
                     );
-                    // We don't know which (publisher_id, message_id) keys were
-                    // evicted, so clear all pending state
-                    // for this peer to avoid stale counts.
+                    // We don't know which (publisher_id, message_id) keys
+                    // were evicted, so clear all pending state for this peer
+                    // to avoid stale counts.
                     pending.remove(&addr);
                 }
                 if reassembly_events.duplicate_drops > 0 {
@@ -107,9 +107,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
                     );
                 }
 
-                // Now that stale pending state has been cleared, update the
-                // counter for the segment that was just
-                // processed.
+                // Now that stale pending state has been cleared, update
+                // the counter for the segment that was just processed.
                 if let Some((pub_id, msg_id, seg_no, is_last)) = seg_info {
                     let received = pending
                         .entry(addr)
@@ -133,10 +132,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
                         let pub_id = msg.publisher_id();
                         let msg_id = msg.message_id();
                         // Always clean up the pending counter using the
-                        // message's own IDs, regardless
-                        // of seg_info. This handles the case where the
-                        // reassembly-triggering segment had no Segment option
-                        // (e.g. a single-segment
+                        // message's own IDs, regardless of seg_info. This
+                        // handles the case where the reassembly-triggering
+                        // segment had no Segment option (e.g. a single-segment
                         // retransmission after a prior segmented run timed
                         // out).
                         if let Some(total) = pending

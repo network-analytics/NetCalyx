@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2023-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -109,8 +110,8 @@ impl BgpListener<SocketAddr, TcpStream> {
                 if !self.allow_dynamic_peers {
                     info!("No peer configured for: {peer_addr}");
                 } else {
-                    // TODO: rewrite for more clear logic and dynamic peer
-                    // handling factory
+                    // TODO: rewrite for more clear logic
+                    // and dynamic peer handling factory
                     if let Ok((mut rx, mut peer_handle)) =
                         peer_supervisor.dynamic_peer(peer_key, peer_addr, TcpActiveConnect)
                     {

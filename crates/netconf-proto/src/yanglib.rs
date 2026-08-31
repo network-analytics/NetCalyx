@@ -406,11 +406,10 @@ impl YangLibrary {
         let registered_schema_result = client.register_schema(&subject, schema, false).await;
         let registered_schema = match registered_schema_result {
             Ok(registered_schema) => {
-                // version number is only returned from schema registry 7.4 and
-                // higher older versions don't return the
-                // version number, thus we need to make
-                // more calls to the schema registry to obtain the version
-                // number.
+                // version number is only returned from schema registry 7.4
+                // and higher, older versions don't return the version number,
+                // thus we need to make more calls to the schema registry to
+                // obtain the version number.
                 if registered_schema.version.is_none() {
                     let schema = client
                         .get_by_subject_and_id(Some(&subject), registered_schema.id.unwrap(), None)

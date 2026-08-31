@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2025-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -82,11 +83,10 @@ impl ProtocolHandler<(BgpMessage, BgpParsingIgnoredErrors), BgpCodec, BgpCodecDe
             DecodeOutcome::Success(m) => {
                 let (flow_key, (bgp_message, bgp_parsing_error)) = m;
                 if !bgp_parsing_error.eq(&BgpParsingIgnoredErrors::default()) {
-                    // the bgp message was parsed with some ignored errors, we
-                    // will not serialize it we will report
-                    // that some ignored errors were found and that this
-                    // behavior by the CLI tool is not
-                    // expected
+                    // the bgp message was parsed with some ignored errors,
+                    // we will not serialize it we will report that some ignored
+                    // errors were found and that this behavior by the CLI tool
+                    // is not expected
                     return Ok(serde_json::Value::String("Encountered BGP parsing errors that were ignored during the decoding of the bgp message, this behaviour is not expected, please file a bug report to the developers".to_string()));
                 }
                 serialize_success(flow_key, bgp_message)
@@ -177,8 +177,8 @@ mod tests {
             &mut exporter_peers,
         );
         assert!(result1.is_none());
-        // The buffer for this flow key should now contain the first part, so
-        // not empty
+        // The buffer for this flow key should now contain the first part,
+        // so not empty
         assert!(!exporter_peers.get(&flow_key).unwrap().1.is_empty());
 
         // Second packet completes it

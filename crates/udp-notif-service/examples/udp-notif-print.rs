@@ -48,8 +48,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
         match next {
             Ok((mut buf, addr)) => {
                 // If we haven't seen the client before, create a new
-                // UdpPacketCodec for it. UdpPacketCodec handles
-                // the decoding/encoding of udp-notif packets.
+                // UdpPacketCodec for it. UdpPacketCodec handles the
+                // decoding/encoding of udp-notif packets.
                 let result = clients
                     .entry(addr)
                     .or_insert(UdpPacketCodec::default())

@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2023-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -868,9 +869,8 @@ fn update_treatment(errors: &BgpParsingIgnoredErrors) -> UpdateTreatment {
             | PathAttributeParsingError::MultiExitDiscriminatorError(_)
             | PathAttributeParsingError::LocalPreferenceError(_) => {
                 // RFC 7606 "Treat-as-withdraw" MUST be used for the cases that
-                // specify a session reset and involve any of
-                // the attributes ORIGIN, AS_PATH,  NEXT_HOP,
-                // MULTI_EXIT_DISC, or LOCAL_PREF.
+                // specify a session reset and involve any of the attributes
+                // ORIGIN, AS_PATH, NEXT_HOP, MULTI_EXIT_DISC, or LOCAL_PREF.
                 if treatment < UpdateTreatment::TreatAsWithdraw {
                     treatment = UpdateTreatment::TreatAsWithdraw
                 }
@@ -885,22 +885,22 @@ fn update_treatment(errors: &BgpParsingIgnoredErrors) -> UpdateTreatment {
             | PathAttributeParsingError::ExtendedCommunitiesError(_)
             | PathAttributeParsingError::ExtendedCommunitiesErrorIpv6(_)
             | PathAttributeParsingError::LargeCommunitiesError(_) => {
-                // RFC 7606 An UPDATE message with a malformed Community
-                // attribute SHALL be handled using the approach
-                // of "treat-as-withdraw".
+                // RFC 7606 An UPDATE message with a malformed
+                // Community attribute SHALL be handled using
+                // the approach of "treat-as-withdraw".
                 if treatment < UpdateTreatment::TreatAsWithdraw {
                     treatment = UpdateTreatment::TreatAsWithdraw
                 }
             }
             PathAttributeParsingError::OriginatorError(_) => {
-                // RFC 7606  If malformed, the UPDATE message SHALL be handled
+                // RFC 7606 If malformed, the UPDATE message SHALL be handled
                 // using the approach of "treat-as-withdraw".
                 if treatment < UpdateTreatment::TreatAsWithdraw {
                     treatment = UpdateTreatment::TreatAsWithdraw
                 }
             }
             PathAttributeParsingError::ClusterListError(_) => {
-                // RFC 7606  If malformed, the UPDATE message SHALL be handled
+                // RFC 7606 If malformed, the UPDATE message SHALL be handled
                 // using the approach of "treat-as-withdraw".
                 if treatment < UpdateTreatment::TreatAsWithdraw {
                     treatment = UpdateTreatment::TreatAsWithdraw
@@ -917,8 +917,7 @@ fn update_treatment(errors: &BgpParsingIgnoredErrors) -> UpdateTreatment {
                     MpReachParsingError::UndefinedAddressFamily(_)
                     | MpReachParsingError::UndefinedSubsequentAddressFamily(_) => {
                         // AFI/SAFI is not supported, this would've been blocked
-                        // from open message
-                        // in the first place
+                        // from open message in the first place
                         if treatment < UpdateTreatment::SessionReset {
                             treatment = UpdateTreatment::SessionReset
                         }
@@ -1053,8 +1052,7 @@ fn update_treatment(errors: &BgpParsingIgnoredErrors) -> UpdateTreatment {
                     MpUnreachParsingError::UndefinedAddressFamily(_)
                     | MpUnreachParsingError::UndefinedSubsequentAddressFamily(_) => {
                         // AFI/SAFI is not supported, this would've been blocked
-                        // from open message
-                        // in the first place
+                        // from open message in the first place
                         if treatment < UpdateTreatment::SessionReset {
                             treatment = UpdateTreatment::SessionReset
                         }
@@ -1174,13 +1172,12 @@ fn update_treatment(errors: &BgpParsingIgnoredErrors) -> UpdateTreatment {
                 // Keep treatment as is
             }
             PathAttributeParsingError::InvalidPathAttribute(err, _) => {
-                // RFC 7606:  If the value of either the Optional or Transitive
-                // bits in the Attribute Flags is in conflict
-                // with their specified values, then the
-                // attribute MUST be treated as malformed and the
-                // "treat-as-withdraw" approach used, unless the
-                // specification for the attribute mandates different handling
-                // for incorrect Attribute Flags.
+                // RFC 7606: If the value of either the Optional or Transitive
+                // bits in the Attribute Flags is in conflict with their
+                // specified values, then the attribute MUST be treated
+                // as malformed and the "treat-as-withdraw" approach used,
+                // unless the specification for the attribute mandates
+                // different handling for incorrect Attribute Flags.
                 match err {
                     InvalidPathAttribute::InvalidOptionalFlagValue(_)
                     | InvalidPathAttribute::InvalidTransitiveFlagValue(_) => {
@@ -1224,8 +1221,8 @@ fn handle_open_message<A>(
             }),
         );
     }
-    // TODO: check BGP ID according to RFC4271: If the BGP Identifier field of
-    // the OPEN message is syntactically incorrect, then the Error Subcode
+    // TODO: check BGP ID according to RFC4271: If the BGP Identifier field
+    // of the OPEN message is syntactically incorrect, then the Error Subcode
     // MUST be set to Bad BGP Identifier. Syntactic correctness means that
     // the BGP Identifier field represents a valid unicast IP host address.
 
@@ -1243,10 +1240,9 @@ fn handle_update_message<A>(
     update: BgpUpdateMessage,
     parsing_errors: BgpParsingIgnoredErrors,
 ) -> Option<ConnectionEvent<A>> {
-    // RFC 7606 If any of the well-known mandatory attributes are not present in
-    // an UPDATE message, then "treat-as-withdraw" MUST be used. (Note that
-    // [RFC4760] reclassifies NEXT_HOP as what is effectively
-    // discretionary.)
+    // RFC 7606: If any of the well-known mandatory attributes are not present
+    // in an UPDATE message, then "treat-as-withdraw" MUST be used. (Note that
+    // [RFC4760] reclassifies NEXT_HOP as what is effectively discretionary.)
     let end_of_rib = update.end_of_rib();
     let mut has_origin = false;
     let mut has_asn_path = false;
@@ -1302,9 +1298,9 @@ fn handle_update_message<A>(
     }
     if bgp_mp_reach_count > 1 || bgp_mp_unreach_count > 1 {
         // RFC7606: If the MP_REACH_NLRI attribute or the MP_UNREACH_NLRI
-        // [RFC4760] attribute appears more than once in the UPDATE
-        // message, then a NOTIFICATION message MUST be sent with the
-        // Error Subcode "Malformed Attribute List".
+        // [RFC4760] attribute appears more than once in the UPDATE message,
+        // then a NOTIFICATION message MUST be sent with the Error Subcode
+        // "Malformed Attribute List".
         return Some(ConnectionEvent::UpdateMsgErr(
             UpdateMessageError::MalformedAttributeList { value: vec![] },
         ));

@@ -665,9 +665,9 @@ impl<'a, R: io::BufRead> XmlParser<'a, R> {
             }
 
             // Record prefix usage on Start/Empty. We resolve NOW so that
-            // bindings declared on inner elements are captured even
-            // after those elements close and their bindings are
-            // popped from the resolver stack.
+            // bindings declared on inner elements are captured even after
+            // those elements close and their bindings are popped from the
+            // resolver stack.
             if let Event::Start(e) | Event::Empty(e) = self.peek() {
                 Self::record_element_usage(e, &self.ns_reader, &mut namespaces);
             }
@@ -792,8 +792,8 @@ impl<'a, R: io::BufRead> XmlParser<'a, R> {
             out.insert(prefix, String::from_utf8_lossy(uri).into_owned());
         }
 
-        // Attributes: only prefixed ones carry a namespace; xmlns* are
-        // bindings, not usages, so skip them.
+        // Attributes: only prefixed ones carry a namespace;
+        // xmlns* are bindings, not usages, so skip them.
         for attr in e.attributes().flatten() {
             let key = attr.key.as_ref();
             if key == b"xmlns" || key.starts_with(b"xmlns:") {

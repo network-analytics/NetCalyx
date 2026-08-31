@@ -406,8 +406,7 @@ impl UdpPacketCodec {
         // (draft-ietf-netconf-udp-notif §4.1). Note: if a sender reuses
         // a message_id before the old reassembly buffer has timed out,
         // new segments will be dropped here too until the old buffer is
-        // evicted by the timeout. This is bounded
-        // by reassembly_timeout.
+        // evicted by the timeout. This is bounded by reassembly_timeout.
         let is_duplicate = self
             .incomplete_messages
             .get(&message_key)

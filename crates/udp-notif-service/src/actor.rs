@@ -1127,8 +1127,8 @@ impl ActorHandle {
         duration: Duration,
     ) -> Result<Vec<SocketAddr>, ActorHandleError> {
         let (tx, mut rx) = mpsc::channel(self.cmd_buffer_size);
-        // If the command fails, the recv after will fail, no need to double
-        // handle the error
+        // If the command fails, the recv after will fail,
+        // no need to double handle the error
         self.cmd_tx
             .send(ActorCommand::PurgeUnusedPeers(duration, tx))
             .await

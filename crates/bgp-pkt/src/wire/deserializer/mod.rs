@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2022-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -241,8 +242,8 @@ impl<'a> ReadablePduWithTwoInputs<'a, u8, Span<'a>, LocatedIpv4PrefixParsingErro
         prefix_len: u8,
         prefix_location: Span<'a>,
     ) -> IResult<Span<'a>, Self, LocatedIpv4PrefixParsingError<'a>> {
-        // The prefix value must fall into the octet boundary, even if the
-        // prefix_len doesn't. For example,
+        // The prefix value must fall into the octet boundary,
+        // even if the prefix_len doesn't. For example,
         // prefix_len=24 => prefix_size=24 while prefix_len=19 => prefix_size=24
         let prefix_size = if prefix_len >= u8::MAX - 7 {
             u8::MAX
@@ -290,8 +291,8 @@ impl<'a> ReadablePduWithTwoInputs<'a, u8, Span<'a>, LocatedIpv6PrefixParsingErro
         prefix_len: u8,
         prefix_location: Span<'a>,
     ) -> IResult<Span<'a>, Self, LocatedIpv6PrefixParsingError<'a>> {
-        // The prefix value must fall into the octet boundary, even if the
-        // prefix_len doesn't. For example,
+        // The prefix value must fall into the octet boundary,
+        // even if the prefix_len doesn't. For example,
         // prefix_len=24 => prefix_size=24 while prefix_len=19 => prefix_size=24
         let prefix_size = if prefix_len >= u8::MAX - 7 {
             u8::MAX
@@ -580,8 +581,8 @@ impl From<BgpMessageParsingError> for BgpNotificationMessage {
                 BgpNotificationMessage::UpdateMessageError(update_err.into())
             }
             BgpMessageParsingError::BgpNotificationMessageParsingError(_notification) => {
-                // Notification messages parsing should be ignored and consider
-                // a session closed.
+                // Notification messages parsing should be ignored
+                // and consider a session closed.
                 BgpNotificationMessage::FiniteStateMachineError(
                     FiniteStateMachineError::Unspecific { value: vec![] },
                 )

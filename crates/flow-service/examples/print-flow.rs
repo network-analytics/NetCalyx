@@ -48,9 +48,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>
         match next {
             Ok((mut buf, addr)) => {
                 // If we haven't seen the client before, create a new
-                // FlowInfoCodec for it. FlowInfoCodec handles
-                // the decoding/encoding of packets and caches
-                // the templates learned from the client
+                // FlowInfoCodec for it. FlowInfoCodec handles the
+                // decoding/encoding of packets and caches the templates
+                // learned from the client
                 let result = clients
                     .entry(addr)
                     .or_insert(FlowInfoCodec::default())

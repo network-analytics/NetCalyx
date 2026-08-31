@@ -563,8 +563,8 @@ id=2:4200137808:1003 ip=192.168.100.1 out=127"#;
             .unwrap();
         result.sort();
 
-        // Should generate two operations: one for ingress VRF, one for egress
-        // VRF
+        // Should generate two operations:
+        // one for ingress VRF, one for egress VRF
         assert_eq!(result.len(), 2);
 
         let mut expected = vec![

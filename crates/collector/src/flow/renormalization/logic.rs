@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2026-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -386,9 +387,9 @@ pub(crate) fn renormalize(
     stats: &RenormalizationStats,
     stats_tags: &[KeyValue],
 ) -> FlowInfo {
-    // If there is any packet sampling information in the packet, then we adjust
-    // the flow packets and bytes and then add the isRenormalized boolean
-    // field to true. Otherwise, we leave the flow as is.
+    // If there is any packet sampling information in the packet, then
+    // we adjust the flow packets and bytes and add the isRenormalized
+    // boolean field to true. Otherwise, we leave the flow as it is.
     match info {
         FlowInfo::NetFlowV9(pkt) => {
             let sys_up_time = pkt.sys_up_time();
