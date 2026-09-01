@@ -537,7 +537,7 @@ impl NetconfYangLibraryFetcher {
             host=%host,
             peer_ip=%peer_ip,
             subscription_id,
-            router_content_id=yang_lib.content_id(),
+            router_content_id=subscription_info.content_id(),
             target=%subscription_info.target(),
             cached_content_id=yang_lib.content_id(),
             schema_count = schemas.len(),
