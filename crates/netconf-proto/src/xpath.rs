@@ -26,32 +26,32 @@
 
 use std::collections::HashSet;
 
-/// Find the prefixes used within an Xpath expression (e.g. the `if` in
-/// `/if:interfaces/if:interface`). String literals are skipped and axis
-/// specifiers (`child::`) are not treated as prefixes.
+/// Find the prefixes used within an XPath expression (e.g. the `if` in
+/// `/if:interfaces/if:interface`). Axis specifiers (`child::`) are never
+/// treated as prefixes.
+///
+/// A string literal (`'...'` / `"..."`) is opaque data, unless its entire
+/// content is itself shaped like one QName (e.g. `ianaift` in
+/// `'ianaift:ethernetCsmacd'`), in which case its prefix is reported too.
 pub(crate) fn find_xpath_prefixes(xpath: &str) -> HashSet<String> {
     let mut prefixes = HashSet::new();
     let mut chars = xpath.char_indices().peekable();
-    let mut in_single = false;
-    let mut in_double = false;
 
     while let Some((i, c)) = chars.next() {
-        // Skip over string literals — colons inside them aren't prefixes.
-        if in_single {
-            if c == '\'' {
-                in_single = false;
-            }
-            continue;
-        }
-        if in_double {
-            if c == '"' {
-                in_double = false;
-            }
-            continue;
-        }
         match c {
-            '\'' => in_single = true,
-            '"' => in_double = true,
+            quote @ ('\'' | '"') => {
+                let content_start = i + quote.len_utf8();
+                let Some(rel_end) = xpath[content_start..].find(quote) else {
+                    break; // unterminated literal (malformed xpath)
+                };
+                let content_end = content_start + rel_end;
+                if let Some((Some(prefix), _)) = parse_node_test(&xpath[content_start..content_end])
+                {
+                    prefixes.insert(prefix.to_string());
+                }
+                while chars.next_if(|&(idx, _)| idx < content_end).is_some() {}
+                chars.next(); // consume the closing quote
+            }
             c if c.is_ascii_alphabetic() || c == '_' => {
                 let start = i;
                 let mut end = i + c.len_utf8();
@@ -369,17 +369,50 @@ mod tests {
     }
 
     #[test]
-    fn test_find_xpath_prefixes_skips_colons_inside_string_literals() {
-        // Single-quoted identityref comparisons (RFC 7950 §9.10),
-        // double-quoted variants, and mixed-quote expressions.
+    fn test_find_xpath_prefixes_only_whole_qname_literals_are_reported() {
+        // A colon inside a literal is only a prefix reference when the
+        // *entire* literal is shaped like one QName (RFC 7950 §9.10
+        // identityref lexical form) - a colon buried in a larger string, or
+        // one with surrounding whitespace/extra separators, is just data.
         let cases: &[(&str, HashSet<String>)] = &[
-            ("../crypto = 'mc:aes'", HashSet::new()),
-            ("name() = \"ns:bogus\"", HashSet::new()),
-            ("@a:x = 'p:q' or @b:y = \"r:s\"", set(["a", "b"])),
+            // Whole-literal QNames: reported, same as any other reference.
+            ("../crypto = 'mc:aes'", set(["mc"])),
+            ("name() = \"ns:bogus\"", set(["ns"])),
+            ("@a:x = 'p:q' or @b:y = \"r:s\"", set(["a", "b", "p", "r"])),
+            // Not a whole QName: colon is part of a larger string, skipped.
+            ("@a:x = 'http://example.com:8080'", set(["a"])),
+            ("contains(., 'note: value')", HashSet::new()),
+            ("@a:x = 'a:b:c'", set(["a"])),
         ];
         for (expr, expected) in cases {
             assert_prefixes(expr, expected.clone());
         }
+    }
+
+    #[test]
+    fn test_find_xpath_prefixes_reproduces_whole_qname_literal_subscriptions() {
+        // `hw-hwt` appears only inside the literal value, never as a
+        // node-name reference, but its module must still be fetched to
+        // validate the comparison.
+        assert_prefixes(
+            "/hw:hardware/hw:component[hw-hw:sub-class='hw-hwt:ethernetCsmacd-xcvr-link']/bbf-hw-xcvr:transceiver-link",
+            set(["hw", "hw-hw", "hw-hwt", "bbf-hw-xcvr"]),
+        );
+
+        // Two predicates in the same path, one with a whole-QName literal
+        // (`ianahw`) and one with a plain literal (`'rpm'`, no colon) that
+        // contributes nothing.
+        assert_prefixes(
+            "/hw:hardware/hw:component[hw:class='ianahw:sensor']/hw:sensor-data[hw:value-type='rpm']",
+            set(["hw", "ianahw"]),
+        );
+
+        // The whole-QName literal predicate is the last step in the path,
+        // with nothing after the closing `]`.
+        assert_prefixes(
+            "/if:interfaces/if:interface[if:type='ianaift:gpon']",
+            set(["if", "ianaift"]),
+        );
     }
 
     #[test]
@@ -407,15 +440,16 @@ mod tests {
 
     #[test]
     fn test_find_xpath_prefixes_real_world_yang_expressions() {
-        // ietf-interfaces-style `must`: only `if:` is a live prefix;
-        // the `ianaift:*` tokens are identityref values inside string
-        // literals and must not be reported.
+        // ietf-interfaces-style `must`: `if:` is a live prefix, and the
+        // `ianaift:*` tokens are whole-literal identityref QNames, so their
+        // prefix is reported too (its module must be resolvable to validate
+        // the comparison).
         let must_expr = "(/if:interfaces/if:interface[if:name=current()]/if:type \
                          = 'ianaift:ethernetCsmacd') \
                          or \
                          (/if:interfaces/if:interface[if:name=current()]/if:type \
                          = 'ianaift:ieee8023adLag')";
-        assert_prefixes(must_expr, set(["if"]));
+        assert_prefixes(must_expr, set(["if", "ianaift"]));
 
         // Multi-module subscriber filter for yp:datastore-xpath-filter.
         let filter_expr = "/if:interfaces/if:interface[if:name='eth0'] \
