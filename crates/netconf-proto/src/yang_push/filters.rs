@@ -356,11 +356,23 @@ pub struct DatastoreXPathFilter {
 }
 
 impl DatastoreXPathFilter {
-    /// Prefixes used in the xpath `path` (e.g. the `if` in
-    /// `/if:interfaces/if:interface`)
+    /// Prefixes required to resolve `path`'s target modules: every prefix
+    /// used as a node name (e.g. the `if` in `/if:interfaces/if:interface`),
+    /// plus any prefix seen only inside a whole-QName-shaped predicate
+    /// literal that also has a declared `xmlns` binding on this filter. A
+    /// literal-shaped prefix with no declared binding is dropped rather than
+    /// treated as required
     pub fn path_prefixes(&self) -> Vec<String> {
-        let mut prefixes: Vec<String> = find_xpath_prefixes(&self.path).into_iter().collect();
+        let found = find_xpath_prefixes(&self.path);
+        let mut prefixes: Vec<String> = found.structural.into_iter().collect();
+        prefixes.extend(
+            found
+                .literal_only
+                .into_iter()
+                .filter(|p| self.namespace_uri(p).is_some()),
+        );
         prefixes.sort_unstable();
+        prefixes.dedup();
         prefixes
     }
 
@@ -435,8 +447,14 @@ impl DatastoreXPathFilter {
                         Some(p.into())
                     }
                 }
-                // Bare wildcard cannot be module-qualified; leave it as-is.
-                None if local == "*" => None,
+                // A bare wildcard can't be module-qualified and its matched
+                // node's module is unknown, so tracking is reset: a
+                // following unprefixed step must not inherit the module from
+                // before the wildcard.
+                None if local == "*" => {
+                    current_module = None;
+                    None
+                }
                 None => current_module.clone(),
             };
             match module {
