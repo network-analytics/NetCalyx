@@ -212,6 +212,11 @@ pub fn strip_xpath_predicates(path: &str) -> String {
             }
         }
     }
+    // Unbalanced brackets/quotes: return the original rather than a
+    // silently truncated path.
+    if depth != 0 || in_single || in_double {
+        return path.to_string();
+    }
     out
 }
 
@@ -493,6 +498,19 @@ mod tests {
             strip_xpath_predicates("/if:interfaces/if:interface"),
             "/if:interfaces/if:interface"
         );
+    }
+
+    /// Unbalanced brackets/quotes must return the original path, not a
+    /// silently truncated one.
+    #[test]
+    fn test_strip_xpath_predicates_unbalanced_input_returns_original() {
+        for path in [
+            "/if:interfaces/if:interface[if:name='eth0'",
+            "/if:interfaces/if:interface[if:name='eth0]",
+            "/a:x[a:y=\"unterminated]/a:z",
+        ] {
+            assert_eq!(strip_xpath_predicates(path), path);
+        }
     }
 
     #[test]

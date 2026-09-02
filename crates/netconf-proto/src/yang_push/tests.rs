@@ -1026,6 +1026,8 @@ fn test_datastore_xpath_filter_normalize_path_unsupported_constructs_bail() {
         "count(/if:interfaces) > 0",
         "/a:x | /b:y",
         "descendant::if:name",
+        "/a:x//a:y",
+        "/a:x/",
     ] {
         let f = DatastoreXPathFilter {
             namespaces: Box::new([]),
