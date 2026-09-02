@@ -412,9 +412,15 @@ impl DatastoreXPathFilter {
             if i > 0 {
                 out.push('/');
             }
-            // Empty segment: leading '/' (absolute) or '//' (descendant).
+            // Empty segment: leading '/' (absolute) is expected only at
+            // i == 0. Any other empty segment implies '//' (descendant
+            // axis) or a trailing '/', neither of which this child-axis-only
+            // normalizer supports.
             if seg.is_empty() {
-                continue;
+                if i == 0 {
+                    continue;
+                }
+                return None;
             }
             // Split the node test from any trailing predicate(s).
             let head_end = seg.find('[').unwrap_or(seg.len());
