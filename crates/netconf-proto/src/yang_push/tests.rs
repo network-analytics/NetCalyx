@@ -817,6 +817,26 @@ fn test_datastore_xpath_filter_path_prefixes_unprefixed_steps_are_empty() {
     assert!(filter.path_prefixes().is_empty());
 }
 
+/// A literal-shaped prefix (e.g. `ge` in `'ge:0'`) is only kept when it also
+/// has a declared `xmlns` binding; undeclared ones are dropped.
+#[test]
+fn test_datastore_xpath_filter_path_prefixes_undeclared_literal_is_dropped() {
+    let declared = DatastoreXPathFilter {
+        namespaces: Box::new([
+            ("hw".into(), "urn:example:yang:hw".into()),
+            ("hw-hwt".into(), "urn:example:yang:hw-hwt".into()),
+        ]),
+        path: "/hw:hardware/hw:component[hw:sub-class='hw-hwt:ethernetCsmacd-xcvr-link']".into(),
+    };
+    assert_eq!(declared.path_prefixes(), vec!["hw", "hw-hwt"]);
+
+    let undeclared = DatastoreXPathFilter {
+        namespaces: Box::new([("hw".into(), "urn:example:yang:hw".into())]),
+        path: "/hw:hardware/hw:interface[hw:name='ge:0']".into(),
+    };
+    assert_eq!(undeclared.path_prefixes(), vec!["hw"]);
+}
+
 /// A declared `xmlns` binding and an undeclared, module-name-as-prefix
 /// encoding of the same target must converge onto the same canonical form.
 #[test]
@@ -877,6 +897,29 @@ fn test_datastore_xpath_filter_normalize_path_multi_module_emits_prefix_only_on_
     assert_eq!(
         multi.normalize_path(resolve).as_deref(),
         Some("/example-a:root/child/leaf/example-b:sibling"),
+    );
+}
+
+/// A bare wildcard's matched node has an unknown module, so the tracked
+/// module is reset: an explicit prefix on the following step must not be
+/// dropped as redundant, even if it happens to match the pre-wildcard
+/// module.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_wildcard_resets_tracked_module() {
+    let resolve = |uri: &str| -> Option<Box<str>> {
+        match uri {
+            "urn:example:yang:example-a" => Some("example-a".into()),
+            _ => None,
+        }
+    };
+
+    let filter = DatastoreXPathFilter {
+        namespaces: Box::new([("a".into(), "urn:example:yang:example-a".into())]),
+        path: "/a:root/*/a:leaf".into(),
+    };
+    assert_eq!(
+        filter.normalize_path(resolve).as_deref(),
+        Some("/example-a:root/*/example-a:leaf"),
     );
 }
 

@@ -26,15 +26,39 @@
 
 use std::collections::HashSet;
 
+/// Prefixes found in an XPath expression, split by how they were
+/// referenced.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(crate) struct XpathPrefixes {
+    /// Used as an actual node/attribute-name reference (`prefix:name`
+    /// outside a string literal). Always required, whether resolved via a
+    /// declared `xmlns` binding or, if undeclared, as the module name
+    /// itself (RFC 8641 base XPath context).
+    pub(crate) structural: HashSet<String>,
+    /// Seen only inside a string literal shaped like one whole QName (e.g.
+    /// `hw-hwt` in `'hw-hwt:ethernetCsmacd-xcvr-link'`). Only meaningful
+    /// with a declared `xmlns` binding (RFC 7950 §9.10.3); undeclared
+    /// entries are likely incidental text and should be dropped, not
+    /// resolved.
+    pub(crate) literal_only: HashSet<String>,
+}
+
+impl XpathPrefixes {
+    /// Whether `prefix` was referenced anywhere, regardless of category.
+    pub(crate) fn contains(&self, prefix: &str) -> bool {
+        self.structural.contains(prefix) || self.literal_only.contains(prefix)
+    }
+}
+
 /// Find the prefixes used within an XPath expression (e.g. the `if` in
-/// `/if:interfaces/if:interface`). Axis specifiers (`child::`) are never
-/// treated as prefixes.
-///
-/// A string literal (`'...'` / `"..."`) is opaque data, unless its entire
-/// content is itself shaped like one QName (e.g. `ianaift` in
-/// `'ianaift:ethernetCsmacd'`), in which case its prefix is reported too.
-pub(crate) fn find_xpath_prefixes(xpath: &str) -> HashSet<String> {
-    let mut prefixes = HashSet::new();
+/// `/if:interfaces/if:interface`), split into [`XpathPrefixes::structural`]
+/// (node/attribute-name references) and [`XpathPrefixes::literal_only`]
+/// (whole-string QName-shaped literal values, e.g. `ianaift` in
+/// `'ianaift:ethernetCsmacd'`). Axis specifiers (`child::`) are never
+/// treated as prefixes. A literal that isn't shaped like a whole QName is
+/// opaque data and contributes nothing.
+pub(crate) fn find_xpath_prefixes(xpath: &str) -> XpathPrefixes {
+    let mut prefixes = XpathPrefixes::default();
     let mut chars = xpath.char_indices().peekable();
 
     while let Some((i, c)) = chars.next() {
@@ -47,7 +71,7 @@ pub(crate) fn find_xpath_prefixes(xpath: &str) -> HashSet<String> {
                 let content_end = content_start + rel_end;
                 if let Some((Some(prefix), _)) = parse_node_test(&xpath[content_start..content_end])
                 {
-                    prefixes.insert(prefix.to_string());
+                    prefixes.literal_only.insert(prefix.to_string());
                 }
                 while chars.next_if(|&(idx, _)| idx < content_end).is_some() {}
                 chars.next(); // consume the closing quote
@@ -70,7 +94,7 @@ pub(crate) fn find_xpath_prefixes(xpath: &str) -> HashSet<String> {
                     look.next();
                     let is_axis = matches!(look.peek(), Some(&(_, ':')));
                     if !is_axis {
-                        prefixes.insert(xpath[start..end].to_string());
+                        prefixes.structural.insert(xpath[start..end].to_string());
                         chars.next(); // consume the ':'
                     }
                 }
@@ -271,11 +295,13 @@ mod tests {
     }
 
     fn assert_prefixes(expr: &str, expected: HashSet<String>) {
-        assert_eq!(
-            find_xpath_prefixes(expr),
-            expected,
-            "unexpected prefix set for: {expr}"
-        );
+        let found = find_xpath_prefixes(expr);
+        let all: HashSet<String> = found
+            .structural
+            .into_iter()
+            .chain(found.literal_only)
+            .collect();
+        assert_eq!(all, expected, "unexpected prefix set for: {expr}");
     }
 
     #[test]
@@ -418,6 +444,20 @@ mod tests {
             "/if:interfaces/if:interface[if:type='ianaift:gpon']",
             set(["if", "ianaift"]),
         );
+    }
+
+    /// A prefix used as a node name lands in `structural`, a prefix seen
+    /// only inside a whole-QName-shaped literal lands in `literal_only`.
+    /// Whether the latter also has a declared binding is not this
+    /// function's concern — it has no visibility into declared bindings —
+    /// that gate lives with callers (e.g. `DatastoreXPathFilter::path_prefixes`).
+    #[test]
+    fn test_find_xpath_prefixes_splits_structural_from_literal_only() {
+        let found = find_xpath_prefixes(
+            "/hw:hardware/hw:component[hw-hw:sub-class='hw-hwt:ethernetCsmacd-xcvr-link']",
+        );
+        assert_eq!(found.structural, set(["hw", "hw-hw"]));
+        assert_eq!(found.literal_only, set(["hw-hwt"]));
     }
 
     #[test]

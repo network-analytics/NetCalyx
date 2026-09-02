@@ -1238,6 +1238,38 @@ mod resolve_tests {
         );
     }
 
+    /// A literal that merely looks like a QName (e.g. an interface name
+    /// `'ge:0'`) but has no declared `xmlns` binding must not be treated as
+    /// a required module, or resolution fails just because no `ge` module
+    /// exists.
+    #[test]
+    fn test_resolve_by_xpath_ignores_undeclared_literal_shaped_value() {
+        let yang_lib = make_yang_library(
+            DatastoreName::Operational,
+            &[(
+                "ietf-interfaces",
+                "urn:ietf:params:xml:ns:yang:ietf-interfaces",
+            )],
+        );
+        let filter = xpath_filter(
+            &[("if", "urn:ietf:params:xml:ns:yang:ietf-interfaces")],
+            "/if:interfaces/if:interface[if:name='ge:0']",
+        );
+
+        let result = resolve_by_xpath(
+            &yang_lib,
+            &DatastoreName::Operational,
+            &filter,
+            &empty_info(),
+        )
+        .expect("undeclared literal-shaped value must not fail resolution")
+        .into_iter()
+        .map(|m| m.name().to_string())
+        .collect::<Vec<_>>();
+
+        assert_eq!(result, vec!["ietf-interfaces"]);
+    }
+
     #[test]
     fn test_resolve_by_xpath_multiple_distinct_prefixes_resolve_independently() {
         let yang_lib = make_yang_library(
