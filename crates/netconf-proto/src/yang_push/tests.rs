@@ -978,9 +978,9 @@ fn test_datastore_xpath_filter_normalize_path_unresolvable_predicate_prefix_bail
     assert_eq!(filter.normalize_path(resolve), None);
 }
 
-/// Reproduces the 6wind sub 303 shape: a fully-prefix-qualified path where
-/// the predicate's prefix is the same module as the enclosing step and must
-/// be dropped, same as the outer steps' redundant prefixes are dropped.
+/// A fully-prefix-qualified, multi-step path where the predicate's prefix
+/// is the same module as the enclosing step and must be dropped, same as
+/// the outer steps' redundant prefixes are dropped.
 #[test]
 fn test_datastore_xpath_filter_normalize_path_sub_303_redundant_predicate_prefix() {
     let resolve = |uri: &str| -> Option<Box<str>> {
@@ -1096,16 +1096,16 @@ fn test_datastore_xpath_filter_normalize_path_declared_namespace_with_instantiat
     );
 }
 
-/// A declared binding that only appears inside a predicate *string literal*
-/// value must not affect module tracking on the location path, and the
-/// literal's content is left untouched (it's data, not a reference) even
-/// though it's shaped like a `prefix:name` token. The predicate's own,
-/// non-literal `if:type` prefix is still resolved/dropped like any other.
+/// A binding declared only for a predicate literal's whole-QName value
+/// doesn't affect the location path's module tracking, but the literal is
+/// still resolved/rewritten independently. The predicate's own, non-literal
+/// `if:type` prefix is resolved/dropped as usual.
 #[test]
-fn test_datastore_xpath_filter_normalize_path_unused_namespace_binding_in_predicate() {
+fn test_datastore_xpath_filter_normalize_path_declared_namespace_binding_in_predicate_literal() {
     let resolve = |uri: &str| -> Option<Box<str>> {
         match uri {
             "urn:ietf:params:xml:ns:yang:ietf-interfaces" => Some("ietf-interfaces".into()),
+            "urn:ietf:params:xml:ns:yang:iana-if-type" => Some("iana-if-type".into()),
             _ => None,
         }
     };
@@ -1126,6 +1126,106 @@ fn test_datastore_xpath_filter_normalize_path_unused_namespace_binding_in_predic
     assert_eq!(
         filter.normalize_path(resolve).as_deref(),
         Some("/ietf-interfaces:interfaces/interface[type='iana-if-type:ethernetCsmacd']"),
+    );
+}
+
+/// A whole-QName predicate literal whose prefix differs from the resolved
+/// module name (`hw-hwt` → `huawei-hardware-types`) is rewritten to the full
+/// module name, not left as the original prefix.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_predicate_literal_prefix_differs_from_module() {
+    let resolve = |uri: &str| -> Option<Box<str>> {
+        match uri {
+            "urn:ietf:params:xml:ns:yang:ietf-hardware" => Some("ietf-hardware".into()),
+            "urn:huawei:yang:huawei-hardware" => Some("huawei-hardware".into()),
+            "urn:huawei:yang:huawei-hardware-types" => Some("huawei-hardware-types".into()),
+            "urn:bbf:yang:bbf-hardware-transceivers" => Some("bbf-hardware-transceivers".into()),
+            _ => None,
+        }
+    };
+
+    let filter = DatastoreXPathFilter {
+        namespaces: Box::new([
+            ("hw".into(), "urn:ietf:params:xml:ns:yang:ietf-hardware".into()),
+            ("hw-hw".into(), "urn:huawei:yang:huawei-hardware".into()),
+            ("hw-hwt".into(), "urn:huawei:yang:huawei-hardware-types".into()),
+            (
+                "bbf-hw-xcvr".into(),
+                "urn:bbf:yang:bbf-hardware-transceivers".into(),
+            ),
+        ]),
+        path: "/hw:hardware/hw:component[hw-hw:sub-class='hw-hwt:ethernetCsmacd-xcvr-link']/bbf-hw-xcvr:transceiver-link".into(),
+    };
+    assert_eq!(
+        filter.normalize_path(resolve).as_deref(),
+        Some(
+            "/ietf-hardware:hardware/component[huawei-hardware:sub-class='huawei-hardware-types:ethernetCsmacd-xcvr-link']/bbf-hardware-transceivers:transceiver-link"
+        ),
+    );
+}
+
+/// A whole-QName predicate literal at the very end of the path (no
+/// trailing step after `]`) is still resolved.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_predicate_literal_at_end_of_path() {
+    let resolve = |uri: &str| -> Option<Box<str>> {
+        match uri {
+            "urn:ietf:params:xml:ns:yang:ietf-interfaces" => Some("ietf-interfaces".into()),
+            "urn:ietf:params:xml:ns:yang:iana-if-type" => Some("iana-if-type".into()),
+            _ => None,
+        }
+    };
+
+    let filter = DatastoreXPathFilter {
+        namespaces: Box::new([
+            (
+                "if".into(),
+                "urn:ietf:params:xml:ns:yang:ietf-interfaces".into(),
+            ),
+            (
+                "ianaift".into(),
+                "urn:ietf:params:xml:ns:yang:iana-if-type".into(),
+            ),
+        ]),
+        path: "/if:interfaces/if:interface[if:type='ianaift:gpon']".into(),
+    };
+    assert_eq!(
+        filter.normalize_path(resolve).as_deref(),
+        Some("/ietf-interfaces:interfaces/interface[type='iana-if-type:gpon']"),
+    );
+}
+
+/// Two predicates in the same path. The first has a whole-QName literal
+/// that gets rewritten (`ianahw:sensor` → `iana-hardware:sensor`); the
+/// second is a plain literal with no ':' (`'rpm'`) and stays untouched.
+/// Both predicates' node-name prefixes resolve to their enclosing step's
+/// module and are dropped.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_multiple_predicates_mixed_literal_and_plain() {
+    let resolve = |uri: &str| -> Option<Box<str>> {
+        match uri {
+            "urn:ietf:params:xml:ns:yang:ietf-hardware" => Some("ietf-hardware".into()),
+            "urn:ietf:params:xml:ns:yang:iana-hardware" => Some("iana-hardware".into()),
+            _ => None,
+        }
+    };
+
+    let filter = DatastoreXPathFilter {
+        namespaces: Box::new([
+            ("hw".into(), "urn:ietf:params:xml:ns:yang:ietf-hardware".into()),
+            (
+                "ianahw".into(),
+                "urn:ietf:params:xml:ns:yang:iana-hardware".into(),
+            ),
+        ]),
+        path: "/hw:hardware/hw:component[hw:class='ianahw:sensor']/hw:sensor-data[hw:value-type='rpm']"
+            .into(),
+    };
+    assert_eq!(
+        filter.normalize_path(resolve).as_deref(),
+        Some(
+            "/ietf-hardware:hardware/component[class='iana-hardware:sensor']/sensor-data[value-type='rpm']"
+        ),
     );
 }
 

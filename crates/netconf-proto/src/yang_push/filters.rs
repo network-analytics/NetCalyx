@@ -24,6 +24,7 @@
 //! XML round-tripping.
 
 use crate::xml_utils::{ParsingError, XmlDeserialize, XmlParser, XmlSerialize, XmlWriter};
+use crate::xpath::{find_xpath_prefixes, parse_node_test, split_location_path};
 use crate::yang_push::{SUBSCRIBED_NOTIFICATIONS_NS, YANG_PUSH_NS};
 use indexmap::map::IndexMap;
 use quick_xml::events::{BytesText, Event};
@@ -356,12 +357,9 @@ pub struct DatastoreXPathFilter {
 
 impl DatastoreXPathFilter {
     /// Prefixes used in the xpath `path` (e.g. the `if` in
-    /// `/if:interfaces/if:interface`), sorted for determinism. Axis specifiers
-    /// and string literals are not treated as prefixes.
+    /// `/if:interfaces/if:interface`)
     pub fn path_prefixes(&self) -> Vec<String> {
-        let mut prefixes: Vec<String> = crate::xpath::find_xpath_prefixes(&self.path)
-            .into_iter()
-            .collect();
+        let mut prefixes: Vec<String> = find_xpath_prefixes(&self.path).into_iter().collect();
         prefixes.sort_unstable();
         prefixes
     }
@@ -407,7 +405,7 @@ impl DatastoreXPathFilter {
         if path.is_empty() {
             return None;
         }
-        let segments = crate::xpath::split_location_path(path)?;
+        let segments = split_location_path(path)?;
         let mut out = String::with_capacity(path.len() + 1);
         let mut current_module: Option<Box<str>> = None;
         for (i, seg) in segments.iter().enumerate() {
@@ -420,7 +418,7 @@ impl DatastoreXPathFilter {
             }
             // Split the node test from any trailing predicate(s).
             let head_end = seg.find('[').unwrap_or(seg.len());
-            let (prefix, local) = crate::xpath::parse_node_test(&seg[..head_end])?;
+            let (prefix, local) = parse_node_test(&seg[..head_end])?;
             let predicates = &seg[head_end..];
 
             let module: Option<Box<str>> = match prefix {
@@ -463,24 +461,19 @@ impl DatastoreXPathFilter {
     }
 
     /// Rewrite `prefix:name` tokens found in predicate text (`[...]`),
-    /// mirroring the module resolution applied to location steps in
-    /// [`Self::normalize_path`]: a declared prefix is mapped to its module via
-    /// `resolve_module`; an undeclared prefix is itself the module name. The
-    /// prefix is then dropped if the resolved module matches
-    /// `enclosing_module` (the module of the step the predicate is attached
-    /// to), or rewritten to the resolved module name otherwise.
+    /// mirroring [`Self::normalize_path`]'s step resolution: a declared
+    /// prefix maps to its module via `resolve_module`, an undeclared one is
+    /// the module name, and the prefix is dropped when it matches
+    /// `enclosing_module`.
     ///
-    /// String-literal content (`'...'` / `"..."`) is skipped verbatim — a
-    /// `prefix:name`-shaped substring inside a literal (e.g. an identityref
-    /// value) is data, not a reference, and must not be touched. This is a
-    /// quote-aware tokenizer, not a full XPath expression parser: any bare
-    /// `NCName ':' NCName` (or `NCName ':' '*'`) outside a literal and not
-    /// part of an axis specifier (`::`) is treated as a prefixed name.
+    /// A string literal is opaque data, unless its entire content is itself
+    /// shaped like one QName (e.g. `'hw-hwt:ethernetCsmacd-xcvr-link'`), in
+    /// which case its prefix is resolved and rewritten too, but never
+    /// dropped (its module is unrelated to `enclosing_module`).
     ///
-    /// Returns `None` if a `:` is found outside a literal that isn't part of
-    /// a well-formed prefixed name or axis specifier, or if a prefix with a
-    /// declared `xmlns` binding can't be resolved to a module — same
-    /// bail-and-keep-original contract as the rest of `normalize_path`.
+    /// Returns `None` (bail, keep the original) if a `:` outside a literal
+    /// isn't part of a well-formed prefixed name or axis specifier, or if a
+    /// declared prefix can't be resolved to a module.
     fn rewrite_predicate_prefixes<F>(
         &self,
         predicate: &str,
@@ -492,31 +485,28 @@ impl DatastoreXPathFilter {
     {
         let mut out = String::with_capacity(predicate.len());
         let mut chars = predicate.char_indices().peekable();
-        let mut in_single = false;
-        let mut in_double = false;
         while let Some((i, c)) = chars.next() {
-            if in_single {
-                out.push(c);
-                if c == '\'' {
-                    in_single = false;
-                }
-                continue;
-            }
-            if in_double {
-                out.push(c);
-                if c == '"' {
-                    in_double = false;
-                }
-                continue;
-            }
             match c {
-                '\'' => {
-                    in_single = true;
-                    out.push(c);
-                }
-                '"' => {
-                    in_double = true;
-                    out.push(c);
+                quote @ ('\'' | '"') => {
+                    let content_start = i + quote.len_utf8();
+                    let Some(rel_end) = predicate[content_start..].find(quote) else {
+                        // Unterminated literal (malformed xpath) - copy verbatim.
+                        out.push(quote);
+                        for (_, rc) in chars.by_ref() {
+                            out.push(rc);
+                        }
+                        break;
+                    };
+                    let content_end = content_start + rel_end;
+                    let literal = &predicate[content_start..content_end];
+                    while chars.next_if(|&(idx, _)| idx < content_end).is_some() {}
+                    chars.next(); // consume the closing quote
+                    out.push(quote);
+                    match self.resolve_literal_qname(literal, resolve_module)? {
+                        Some(rewritten) => out.push_str(&rewritten),
+                        None => out.push_str(literal),
+                    }
+                    out.push(quote);
                 }
                 c if c.is_ascii_alphabetic() || c == '_' => {
                     let start = i;
@@ -585,6 +575,26 @@ impl DatastoreXPathFilter {
             }
         }
         Some(out)
+    }
+
+    /// If `literal`'s entire content is one `prefix:name` QName (e.g.
+    /// `hw-hwt:ethernetCsmacd-xcvr-link`) and `prefix` has a declared `xmlns`
+    /// binding, resolve and rewrite it to `module:name` (never dropped, since
+    /// its module is unrelated to the enclosing step). Returns `Some(None)`
+    /// unchanged otherwise, or `None` (bail) if `prefix` is declared but
+    /// `resolve_module` can't map it.
+    fn resolve_literal_qname<F>(&self, literal: &str, resolve_module: &F) -> Option<Option<String>>
+    where
+        F: Fn(&str) -> Option<Box<str>>,
+    {
+        let Some((Some(prefix), local)) = parse_node_test(literal) else {
+            return Some(None);
+        };
+        let Some(uri) = self.namespace_uri(prefix) else {
+            return Some(None);
+        };
+        let module = resolve_module(uri)?;
+        Some(Some(format!("{module}:{local}")))
     }
 }
 

@@ -1569,11 +1569,11 @@ mod tests {
 
     #[test]
     fn test_read_xpath_with_namespaces_multiple_modules_and_literal_prefixes() {
-        // Real-world `must`-style filter mixing live prefixes with prefixed
-        // identityref values inside string literals. The `t:` token appears
-        // only inside quotes, so even though it's declared, it shouldn't end
-        // up in the namespace map (find_xpath_prefixes correctly skips it).
-        // Conversely `if:` is live and must be kept.
+        // `t:` appears only inside a predicate string literal shaped like a
+        // whole QName; its binding must still be kept so the fetcher can
+        // resolve the module and normalize_path can rewrite the literal
+        // (see find_xpath_prefixes). `if:` is a live node-name prefix and
+        // must be kept too.
         let xml = r#"<datastore-xpath-filter
         xmlns="urn:ietf:params:xml:ns:yang:ietf-subscribed-notifications"
         xmlns:if="urn:example:interfaces"
@@ -1596,7 +1596,10 @@ mod tests {
         );
         assert_eq!(
             namespaces,
-            IndexMap::from([("if".to_string(), "urn:example:interfaces".to_string())]),
+            IndexMap::from([
+                ("if".to_string(), "urn:example:interfaces".to_string()),
+                ("t".to_string(), "urn:example:if-types".to_string()),
+            ]),
         );
     }
 }

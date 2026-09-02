@@ -1186,6 +1186,58 @@ mod resolve_tests {
         assert_eq!(result[0].name(), "huawei-devm");
     }
 
+    /// `hw-hwt` appears only inside the predicate literal, never as a
+    /// node-name prefix; its module must still resolve into the fetch list.
+    #[test]
+    fn test_resolve_by_xpath_resolves_module_referenced_only_in_predicate_literal() {
+        let yang_lib = make_yang_library(
+            DatastoreName::Operational,
+            &[
+                ("ietf-hardware", "urn:ietf:params:xml:ns:yang:ietf-hardware"),
+                ("huawei-hardware", "urn:huawei:yang:huawei-hardware"),
+                (
+                    "huawei-hardware-types",
+                    "urn:huawei:yang:huawei-hardware-types",
+                ),
+                (
+                    "bbf-hardware-transceivers",
+                    "urn:bbf:yang:bbf-hardware-transceivers",
+                ),
+            ],
+        );
+        let filter = xpath_filter(
+            &[
+                ("hw", "urn:ietf:params:xml:ns:yang:ietf-hardware"),
+                ("hw-hw", "urn:huawei:yang:huawei-hardware"),
+                ("hw-hwt", "urn:huawei:yang:huawei-hardware-types"),
+                ("bbf-hw-xcvr", "urn:bbf:yang:bbf-hardware-transceivers"),
+            ],
+            "/hw:hardware/hw:component[hw-hw:sub-class='hw-hwt:ethernetCsmacd-xcvr-link']/bbf-hw-xcvr:transceiver-link",
+        );
+
+        let mut result = resolve_by_xpath(
+            &yang_lib,
+            &DatastoreName::Operational,
+            &filter,
+            &empty_info(),
+        )
+        .expect("all modules, including the predicate-literal one, should resolve")
+        .into_iter()
+        .map(|m| m.name().to_string())
+        .collect::<Vec<_>>();
+        result.sort_unstable();
+
+        assert_eq!(
+            result,
+            vec![
+                "bbf-hardware-transceivers",
+                "huawei-hardware",
+                "huawei-hardware-types",
+                "ietf-hardware",
+            ]
+        );
+    }
+
     #[test]
     fn test_resolve_by_xpath_multiple_distinct_prefixes_resolve_independently() {
         let yang_lib = make_yang_library(
