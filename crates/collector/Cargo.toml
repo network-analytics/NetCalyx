@@ -73,6 +73,7 @@ opentelemetry_sdk = { workspace = true, features = [
     "trace",
     "logs",
     "rt-tokio",
+    "experimental_metrics_periodicreader_with_async_runtime",
 ] }
 opentelemetry-otlp = { workspace = true, features = [
     "metrics",

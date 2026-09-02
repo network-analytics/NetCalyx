@@ -32,7 +32,7 @@ use std::io::BufReader;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::time::Instant;
-use tracing::info;
+use tracing::{error, info};
 
 shadow!(build);
 
@@ -175,7 +175,10 @@ impl CollectorMetrics {
 
 fn init_open_telemetry(
     config: &TelemetryConfig,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+) -> Result<
+    opentelemetry_sdk::metrics::SdkMeterProvider,
+    Box<dyn std::error::Error + Send + Sync + 'static>,
+> {
     use opentelemetry::global;
     use opentelemetry_otlp::{Protocol, WithExportConfig};
     use opentelemetry_sdk::Resource;
@@ -187,8 +190,13 @@ fn init_open_telemetry(
         .with_timeout(config.exporter_timeout)
         .build()?;
 
-    let reader = opentelemetry_sdk::metrics::PeriodicReader::builder(exporter)
+    let reader =
+        opentelemetry_sdk::metrics::periodic_reader_with_async_runtime::PeriodicReader::builder(
+            exporter,
+            opentelemetry_sdk::runtime::Tokio,
+        )
         .with_interval(config.reader_interval)
+        .with_timeout(config.reader_timeout)
         .build();
 
     let resource = Resource::builder()
@@ -201,8 +209,8 @@ fn init_open_telemetry(
         .with_resource(resource)
         .build();
 
-    global::set_meter_provider(provider);
-    Ok(())
+    global::set_meter_provider(provider.clone());
+    Ok(provider)
 }
 
 /// Builds the multi-line version/build info string
@@ -273,8 +281,19 @@ fn main() -> anyhow::Result<()> {
     runtime_builder.enable_all();
     let runtime = runtime_builder.build()?;
 
-    runtime.block_on(async move {
-        init_open_telemetry(&config.telemetry).map_err(|err| anyhow!(err))?;
+    // Dedicated runtime for the OTEL metrics PeriodicReader so its export task
+    // doesn't compete with the collection/publishing pipeline for worker threads.
+    let telemetry_runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()?;
+    let meter_provider = {
+        // `.enter()` makes the tokio::spawn done inside build() bind to telemetry_runtime.
+        let _guard = telemetry_runtime.enter();
+        init_open_telemetry(&config.telemetry).map_err(|err| anyhow!(err))?
+    };
+
+    let result = runtime.block_on(async move {
         let meter = global::meter_provider().meter("netcalyx");
         // Keep the metrics alive for the entire process lifetime.
         let _collector_metrics = CollectorMetrics::new(&meter, process_start);
@@ -332,5 +351,12 @@ fn main() -> anyhow::Result<()> {
                 }
             }
         }
-    })
+    });
+
+    // Flush and shut down before the telemetry runtime is dropped
+    if let Err(err) = meter_provider.shutdown() {
+        error!("Failed to shut down OpenTelemetry meter provider: {err}");
+    }
+
+    result
 }
