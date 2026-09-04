@@ -611,6 +611,9 @@ impl DatastoreXPathFilter {
     where
         F: Fn(&str) -> Option<Box<str>>,
     {
+        if literal != literal.trim() {
+            return Some(None);
+        }
         let Some((Some(prefix), local)) = parse_node_test(literal) else {
             return Some(None);
         };
