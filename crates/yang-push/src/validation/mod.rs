@@ -126,10 +126,14 @@ use crate::{
     ContentId, OTL_YANG_PUSH_SUBSCRIPTION_ID_KEY, OTL_YANG_PUSH_SUBSCRIPTION_ROUTER_CONTENT_ID_KEY,
     OTL_YANG_PUSH_SUBSCRIPTION_TARGET_KEY,
 };
+use netcalyx_netconf_proto::xpath::{strip_xpath_predicates, xpath_diff};
+use netcalyx_netconf_proto::yang_push::filters::DatastoreXPathFilter;
 use netcalyx_netconf_proto::yang_push::subscription::YangPushModuleVersion;
 use netcalyx_netconf_proto::yang_push::types::SubscriptionId;
 use netcalyx_udp_notif_pkt::decoded::{UdpNotifPacketDecoded, UdpNotifPayload};
-use netcalyx_udp_notif_pkt::notification::{NotificationVariant, SubscriptionStartedModified};
+use netcalyx_udp_notif_pkt::notification::{
+    NotificationVariant, SubscriptionStartedModified, Target,
+};
 use netcalyx_udp_notif_pkt::raw::UdpNotifPacket;
 use netcalyx_udp_notif_service::{OTL_UDP_NOTIF_PUBLISHER_ID_KEY, SessionInfo, UdpNotifRequest};
 use rustc_hash::FxHashMap;
@@ -140,6 +144,7 @@ use strum::VariantNames;
 use tokio::sync::mpsc;
 use tracing::{debug, info, trace, warn};
 use yang5::data::{DataFormat, DataOperation, DataParserFlags, DataValidationFlags};
+use yang5::schema::SchemaPathFormat;
 
 // Attribute key shared by the `dropped` and `skipped` counters.
 const REASON_KEY: &str = "reason";
@@ -1264,7 +1269,6 @@ impl ValidationActor {
         };
 
         // Update subscription info in the cache
-        subscription_cache.subscription_info = subscription_info.clone();
         if let Some(yang_lib_ref) = yang_lib_ref {
             let search_dir = yang_lib_ref.search_dir();
             let yang_ctx_result = yang5::context::Context::new_from_yang_library_file(
@@ -1292,6 +1296,12 @@ impl ValidationActor {
                     None
                 }
             };
+            // Sanity-check the subscription target resolves against the schema
+            // and warn if it is missing or not in canonical form. Diagnostic
+            // only: the target is never modified here.
+            if let Some(ctx) = yang_ctx.as_ref() {
+                Self::check_xpath_target_resolves(&subscription_info, ctx);
+            }
             subscription_cache.cached_content_id = cached_content_id.clone();
             subscription_cache.yang_ctx = yang_ctx;
         } else {
@@ -1299,6 +1309,9 @@ impl ValidationActor {
             subscription_cache.cached_content_id = None;
             subscription_cache.yang_ctx = None;
         }
+
+        // Store the subscription info in the cache.
+        subscription_cache.subscription_info = subscription_info.clone();
         subscription_cache.schema_fetch_pending = false;
         let buffered_packets = std::mem::take(&mut subscription_cache.buffered_packets);
         let drained = buffered_packets.len();
@@ -1346,6 +1359,148 @@ impl ValidationActor {
         Ok(())
     }
 
+    /// Resolve the inline `datastore-xpath-filter` target against the loaded
+    /// schema and warn if it does not resolve or is not in libyang's canonical
+    /// form (`LYSC_PATH_DATA`). Purely diagnostic: the target is never
+    /// modified. A well-behaved publisher should always send a resolvable,
+    /// canonical path, so a mismatch flags a bad xpath from the router (or
+    /// a gap in the fetcher-side normalization). Skipped for targets without a
+    /// datastore xpath filter.
+    ///
+    /// Predicates (`[...]`) are stripped before the equality check: libyang's
+    /// schema path never carries them, so we compare the structural
+    /// location path and still detect real prefix/structure differences
+    /// without a spurious mismatch from the predicate itself.
+    fn check_xpath_target_resolves(
+        subscription_info: &SubscriptionInfo,
+        yang_ctx: &yang5::context::Context,
+    ) {
+        let subscription_id = subscription_info.id();
+        let peer = subscription_info.peer_ip();
+
+        let Some(original) = subscription_info.target.datastore_xpath_filter.as_deref() else {
+            return;
+        };
+
+        // find_xpath is evaluated against the original query (predicates
+        // included) so a malformed predicate/typo'd leaf name still surfaces
+        // as a real evaluation error.
+        let nodes = match yang_ctx.find_xpath(original) {
+            Ok(set) => set.collect::<Vec<_>>(),
+            Err(err) => {
+                warn!(
+                    %peer,
+                    subscription_id,
+                    path = %original,
+                    error = %err,
+                    "target xpath failed to evaluate against the schema (bad xpath from the publisher?)",
+                );
+                return;
+            }
+        };
+
+        match nodes.as_slice() {
+            [node] => {
+                let canonical = node.path(SchemaPathFormat::DATA);
+                // Schema paths are absolute and never carry predicates; strip
+                // predicates from the provided path and tolerate a
+                // device-omitted leading slash before comparing, so only
+                // genuine structural/prefix differences are reported.
+                let stripped = strip_xpath_predicates(original);
+                let comparison = if stripped.starts_with('/') {
+                    stripped
+                } else {
+                    format!("/{stripped}")
+                };
+                if canonical != comparison {
+                    let (diverges_at, provided_unique, canonical_unique) =
+                        xpath_diff(&comparison, &canonical);
+                    warn!(
+                        %peer,
+                        subscription_id,
+                        provided = %original,
+                        canonical = %canonical,
+                        diverges_at,
+                        provided_unique,
+                        canonical_unique,
+                        "target xpath differs from the schema canonical form",
+                    );
+                } else {
+                    trace!(
+                        %peer,
+                        subscription_id,
+                        path = %original,
+                        "target xpath resolves to a schema node and is canonical",
+                    );
+                }
+            }
+            [] => warn!(
+                %peer,
+                subscription_id,
+                path = %original,
+                "target xpath does not resolve to any schema node (bad xpath from the publisher?)",
+            ),
+            many => trace!(
+                %peer,
+                subscription_id,
+                path = %original,
+                node_count = many.len(),
+                "target xpath resolves to multiple schema nodes",
+            ),
+        }
+    }
+
+    /// Normalize the inline `datastore-xpath-filter` carried by a JSON
+    /// `SubscriptionStarted`/`SubscriptionModified` notification to the same
+    /// module-name-qualified, prefix-on-change canonical form the fetcher
+    /// applies to NETCONF/XML-sourced targets (see
+    /// `DatastoreXPathFilter::normalize_path`).
+    ///
+    /// Unlike the XML case, JSON xpath strings never carry `xmlns` prefix
+    /// declarations — per RFC 7951/8641 a prefix in the path text is already
+    /// the module name itself. So this is a pure string transform: wrapping
+    /// the path in a `DatastoreXPathFilter` with an empty namespace table
+    /// makes every prefix fall into `normalize_path`'s "undeclared prefix is
+    /// the module name" branch, meaning `resolve_module` is never invoked and
+    /// no schema/YANG-library access is needed here.
+    ///
+    /// No-op if the target has no datastore xpath filter. Leaves the path
+    /// untouched (but logs a warning) if it can't be confidently normalized
+    /// (e.g. functions, unions, or other unsupported XPath 1.0 constructs).
+    fn normalize_json_target_xpath(
+        peer: SocketAddr,
+        subscription_id: SubscriptionId,
+        target: &mut Target,
+    ) {
+        let Some(original) = target.datastore_xpath_filter.as_deref() else {
+            return;
+        };
+        let filter = DatastoreXPathFilter {
+            namespaces: Box::new([]),
+            path: original.into(),
+        };
+        match filter.normalize_path(|_uri| None) {
+            Some(normalized) => {
+                if normalized != original {
+                    debug!(
+                        %peer,
+                        subscription_id,
+                        from = %original,
+                        to = %normalized,
+                        "normalized target xpath filter",
+                    );
+                }
+                target.datastore_xpath_filter = Some(normalized);
+            }
+            None => warn!(
+                %peer,
+                subscription_id,
+                path = %original,
+                "could not normalize target xpath filter, keeping original",
+            ),
+        }
+    }
+
     /// Construct a `SubscriptionInfo` from a `SubscriptionStarted/Modified`
     /// notification. Returns `None` if module-version is absent.
     fn build_subscription_info(
@@ -1378,10 +1533,13 @@ impl ValidationActor {
             }
         };
 
+        let mut target = sub_started.target().clone();
+        Self::normalize_json_target_xpath(peer, sub_started.id(), &mut target);
+
         Some(SubscriptionInfo::new(
             peer.ip(),
             sub_started.id(),
-            sub_started.target().clone(),
+            target,
             sub_started.stop_time().cloned(),
             sub_started.transport().cloned(),
             sub_started.encoding().cloned(),
@@ -1538,6 +1696,7 @@ mod tests {
     use super::*;
     use crate::cache::actor::tests::setup_actor_with_empty_cache;
     use bytes::Bytes;
+    use netcalyx_netconf_proto::yang_push::identities::{Encoding, Transport};
     use netcalyx_udp_notif_pkt::raw::MediaType;
     use std::collections::HashMap;
     use std::time::Duration;
@@ -3046,5 +3205,195 @@ mod tests {
         handle.shutdown().await.unwrap();
         caching_handle.shutdown().await.unwrap();
         caching_join_handle.await.unwrap().unwrap();
+    }
+
+    /// A JSON `datastore-xpath-filter` with a redundant module prefix on
+    /// every step must be collapsed to the prefix-on-change canonical form,
+    /// same as the fetcher-side XML normalization.
+    #[test]
+    fn test_normalize_json_target_xpath_collapses_redundant_prefixes() {
+        let mut target = Target::new_datastore(
+            "ietf-datastores:operational".to_string(),
+            either::Right(
+                "/ietf-interfaces:interfaces/ietf-interfaces:interface[ietf-interfaces:name='eth0']/ietf-interfaces:oper-status"
+                    .to_string(),
+            ),
+        );
+        ValidationActor::normalize_json_target_xpath(
+            SocketAddr::from(([127, 0, 0, 1], 0)),
+            1,
+            &mut target,
+        );
+        assert_eq!(
+            target.datastore_xpath_filter.as_deref(),
+            Some("/ietf-interfaces:interfaces/interface[name='eth0']/oper-status")
+        );
+    }
+
+    /// An already-canonical JSON xpath must be left unchanged
+    /// (idempotent transform).
+    #[test]
+    fn test_normalize_json_target_xpath_idempotent_on_canonical_path() {
+        let mut target = Target::new_datastore(
+            "ietf-datastores:operational".to_string(),
+            either::Right("/ietf-interfaces:interfaces/interface".to_string()),
+        );
+        ValidationActor::normalize_json_target_xpath(
+            SocketAddr::from(([127, 0, 0, 1], 0)),
+            1,
+            &mut target,
+        );
+        assert_eq!(
+            target.datastore_xpath_filter.as_deref(),
+            Some("/ietf-interfaces:interfaces/interface")
+        );
+    }
+
+    /// A target without a datastore xpath filter (e.g. a stream target) must
+    /// be left untouched.
+    #[test]
+    fn test_normalize_json_target_xpath_noop_without_xpath_filter() {
+        let mut target = Target::new_stream(
+            "NETCONF".to_string(),
+            None,
+            either::Left(serde_json::Value::Null),
+        );
+        let before = target.clone();
+        ValidationActor::normalize_json_target_xpath(
+            SocketAddr::from(([127, 0, 0, 1], 0)),
+            1,
+            &mut target,
+        );
+        assert_eq!(target, before);
+    }
+
+    /// Loads a `yang5::context::Context` from the bundled `ietf-interfaces`
+    /// test schema (the same assets used by the cache actor tests), for
+    /// tests that need a real schema to resolve xpaths against.
+    fn load_test_yang_ctx() -> yang5::context::Context {
+        yang5::context::Context::new_from_yang_library_file(
+            std::path::Path::new("../../assets/yang/ietf-interfaces/yang-lib.xml"),
+            DataFormat::XML,
+            std::path::Path::new("../../assets/yang/ietf-interfaces/modules"),
+            yang5::context::ContextFlags::empty(),
+        )
+        .expect("Failed to load test YANG context")
+    }
+
+    fn test_subscription_info_with_target(target: Target) -> SubscriptionInfo {
+        SubscriptionInfo::new(
+            IpAddr::from([127, 0, 0, 1]),
+            1,
+            target,
+            None,
+            Some(Transport::UDPNotif),
+            Some(Encoding::Json),
+            None,
+            None,
+            Box::new([]),
+            ContentId::from("test-content-id".to_string()),
+        )
+    }
+
+    /// A target xpath that resolves to exactly one schema node and is
+    /// already in canonical form must not produce any warning.
+    #[test]
+    #[tracing_test::traced_test]
+    fn test_check_xpath_target_resolves_canonical_path_is_silent() {
+        let yang_ctx = load_test_yang_ctx();
+        let subscription_info = test_subscription_info_with_target(Target::new_datastore(
+            "ietf-datastores:operational".to_string(),
+            either::Right("/ietf-interfaces:interfaces/interface/oper-status".to_string()),
+        ));
+        ValidationActor::check_xpath_target_resolves(&subscription_info, &yang_ctx);
+        assert!(!logs_contain(
+            "target xpath differs from the schema canonical form"
+        ));
+        assert!(!logs_contain("target xpath does not resolve"));
+        assert!(!logs_contain("target xpath failed to evaluate"));
+    }
+
+    /// A target xpath that resolves but is not in libyang's canonical
+    /// (prefix-on-change) form must warn with the divergence details.
+    #[test]
+    #[tracing_test::traced_test]
+    fn test_check_xpath_target_resolves_non_canonical_path_warns() {
+        let yang_ctx = load_test_yang_ctx();
+        let subscription_info = test_subscription_info_with_target(Target::new_datastore(
+            "ietf-datastores:operational".to_string(),
+            either::Right(
+                "/ietf-interfaces:interfaces/ietf-interfaces:interface/ietf-interfaces:oper-status"
+                    .to_string(),
+            ),
+        ));
+        ValidationActor::check_xpath_target_resolves(&subscription_info, &yang_ctx);
+        assert!(logs_contain(
+            "target xpath differs from the schema canonical form"
+        ));
+    }
+
+    /// Predicates must be stripped before the canonical-form comparison, so
+    /// an instantiated key predicate alone does not trigger a false warning.
+    #[test]
+    #[tracing_test::traced_test]
+    fn test_check_xpath_target_resolves_ignores_predicates_when_comparing() {
+        let yang_ctx = load_test_yang_ctx();
+        let subscription_info = test_subscription_info_with_target(Target::new_datastore(
+            "ietf-datastores:operational".to_string(),
+            either::Right(
+                "/ietf-interfaces:interfaces/interface[name='eth0']/oper-status".to_string(),
+            ),
+        ));
+        ValidationActor::check_xpath_target_resolves(&subscription_info, &yang_ctx);
+        assert!(!logs_contain(
+            "target xpath differs from the schema canonical form"
+        ));
+    }
+
+    /// An xpath referring to a node that doesn't exist in the schema must
+    /// warn that it does not resolve to any schema node.
+    #[test]
+    #[tracing_test::traced_test]
+    fn test_check_xpath_target_resolves_missing_node_warns() {
+        let yang_ctx = load_test_yang_ctx();
+        let subscription_info = test_subscription_info_with_target(Target::new_datastore(
+            "ietf-datastores:operational".to_string(),
+            either::Right("/ietf-interfaces:interfaces/interface/no-such-leaf".to_string()),
+        ));
+        ValidationActor::check_xpath_target_resolves(&subscription_info, &yang_ctx);
+        assert!(logs_contain(
+            "target xpath does not resolve to any schema node"
+        ));
+    }
+
+    /// A syntactically invalid xpath must warn that it failed to evaluate,
+    /// rather than panicking or silently passing.
+    #[test]
+    #[tracing_test::traced_test]
+    fn test_check_xpath_target_resolves_invalid_xpath_warns() {
+        let yang_ctx = load_test_yang_ctx();
+        let subscription_info = test_subscription_info_with_target(Target::new_datastore(
+            "ietf-datastores:operational".to_string(),
+            either::Right("/ietf-interfaces:interfaces[".to_string()),
+        ));
+        ValidationActor::check_xpath_target_resolves(&subscription_info, &yang_ctx);
+        assert!(logs_contain(
+            "target xpath failed to evaluate against the schema"
+        ));
+    }
+
+    /// A target without a datastore xpath filter (e.g. a stream target)
+    /// must be a no-op: no warnings, no panics.
+    #[test]
+    #[tracing_test::traced_test]
+    fn test_check_xpath_target_resolves_noop_without_xpath_filter() {
+        let yang_ctx = load_test_yang_ctx();
+        let subscription_info = test_subscription_info_with_target(Target::new_stream(
+            "NETCONF".to_string(),
+            None,
+            either::Left(serde_json::Value::Null),
+        ));
+        ValidationActor::check_xpath_target_resolves(&subscription_info, &yang_ctx);
+        assert!(!logs_contain("target xpath"));
     }
 }

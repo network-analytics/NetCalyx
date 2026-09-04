@@ -393,7 +393,7 @@ impl NetconfYangLibraryFetcher {
             }
         };
 
-        let subscription = client
+        let mut subscription = client
             .get_yang_push_subscription_by_id(subscription_id)
             .await
             .map_err(|err| Box::new((empty.clone(), err.into())))?;
@@ -513,6 +513,39 @@ impl NetconfYangLibraryFetcher {
             Ok(Err(err)) => warn!(host=%host, error=%err, "Error closing SSH connection"),
             Err(err) => {
                 warn!(host=%host, error=%err, "Timeout while closing SSH connection")
+            }
+        }
+        // Normalize the target xpath filter to the canonical module-name,
+        // prefix-on-change form so the downstream pipeline sees one encoding
+        // regardless of how the device reported it (xmlns-declared prefixes vs
+        // module-name base context).
+        if let Target::Datastore(datastore_target) = &mut subscription.target
+            && let DatastoreSelectionFilterObjects::WithInSubscription(DatastoreFilterSpec::Xpath(
+                xpath,
+            )) = &mut datastore_target.selection
+        {
+            match xpath.normalize_path(|uri| {
+                router_yang_library
+                    .find_module_by_datastore_and_ns(&datastore_target.datastore, uri)
+                    .map(|m| m.name().into())
+            }) {
+                Some(normalized) => {
+                    if normalized.as_str() != xpath.path.as_ref() {
+                        debug!(
+                            subscription_id,
+                            from = %xpath.path,
+                            to = %normalized,
+                            "normalized target xpath filter",
+                        );
+                    }
+                    xpath.path = normalized.into_boxed_str();
+                    xpath.namespaces = Box::new([]);
+                }
+                None => warn!(
+                    subscription_id,
+                    path = %xpath.path,
+                    "could not normalize target xpath filter, keeping original",
+                ),
             }
         }
         let subscription_target = subscription.target.try_into().map_err(|err| {
@@ -1151,6 +1184,90 @@ mod resolve_tests {
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].name(), "huawei-devm");
+    }
+
+    /// `hw-hwt` appears only inside the predicate literal, never as a
+    /// node-name prefix; its module must still resolve into the fetch list.
+    #[test]
+    fn test_resolve_by_xpath_resolves_module_referenced_only_in_predicate_literal() {
+        let yang_lib = make_yang_library(
+            DatastoreName::Operational,
+            &[
+                ("ietf-hardware", "urn:ietf:params:xml:ns:yang:ietf-hardware"),
+                ("huawei-hardware", "urn:huawei:yang:huawei-hardware"),
+                (
+                    "huawei-hardware-types",
+                    "urn:huawei:yang:huawei-hardware-types",
+                ),
+                (
+                    "bbf-hardware-transceivers",
+                    "urn:bbf:yang:bbf-hardware-transceivers",
+                ),
+            ],
+        );
+        let filter = xpath_filter(
+            &[
+                ("hw", "urn:ietf:params:xml:ns:yang:ietf-hardware"),
+                ("hw-hw", "urn:huawei:yang:huawei-hardware"),
+                ("hw-hwt", "urn:huawei:yang:huawei-hardware-types"),
+                ("bbf-hw-xcvr", "urn:bbf:yang:bbf-hardware-transceivers"),
+            ],
+            "/hw:hardware/hw:component[hw-hw:sub-class='hw-hwt:ethernetCsmacd-xcvr-link']/bbf-hw-xcvr:transceiver-link",
+        );
+
+        let mut result = resolve_by_xpath(
+            &yang_lib,
+            &DatastoreName::Operational,
+            &filter,
+            &empty_info(),
+        )
+        .expect("all modules, including the predicate-literal one, should resolve")
+        .into_iter()
+        .map(|m| m.name().to_string())
+        .collect::<Vec<_>>();
+        result.sort_unstable();
+
+        assert_eq!(
+            result,
+            vec![
+                "bbf-hardware-transceivers",
+                "huawei-hardware",
+                "huawei-hardware-types",
+                "ietf-hardware",
+            ]
+        );
+    }
+
+    /// A literal that merely looks like a QName (e.g. an interface name
+    /// `'ge:0'`) but has no declared `xmlns` binding must not be treated as
+    /// a required module, or resolution fails just because no `ge` module
+    /// exists.
+    #[test]
+    fn test_resolve_by_xpath_ignores_undeclared_literal_shaped_value() {
+        let yang_lib = make_yang_library(
+            DatastoreName::Operational,
+            &[(
+                "ietf-interfaces",
+                "urn:ietf:params:xml:ns:yang:ietf-interfaces",
+            )],
+        );
+        let filter = xpath_filter(
+            &[("if", "urn:ietf:params:xml:ns:yang:ietf-interfaces")],
+            "/if:interfaces/if:interface[if:name='ge:0']",
+        );
+
+        let result = resolve_by_xpath(
+            &yang_lib,
+            &DatastoreName::Operational,
+            &filter,
+            &empty_info(),
+        )
+        .expect("undeclared literal-shaped value must not fail resolution")
+        .into_iter()
+        .map(|m| m.name().to_string())
+        .collect::<Vec<_>>();
+
+        assert_eq!(result, vec!["ietf-interfaces"]);
     }
 
     #[test]
