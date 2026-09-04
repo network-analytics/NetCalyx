@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2023-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -98,7 +99,8 @@ impl Decoder for BgpCodec {
                 if enabled!(Level::TRACE) {
                     trace!(buffer=?buf, length=buf.len(), "decoding buffered message")
                 }
-                // ASN4 capability is used only when both peers agree on enabling ASN4
+                // ASN4 capability is used only when both peers
+                // agree on enabling ASN4
                 let asn4 = self.asn4_received.unwrap_or(false) && self.asn4_sent.unwrap_or(false);
                 self.ctx.set_asn4(asn4);
                 let ret = BgpMessage::from_wire(Span::new(buf), &mut self.ctx);

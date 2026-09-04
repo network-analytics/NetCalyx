@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2022-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -100,8 +101,8 @@ impl BgpUpdateMessage {
             if let PathAttributeValue::MpUnreach(unreach) = attr.value() {
                 mp_unreach_count += 1;
                 if mp_unreach_count > 1 {
-                    // Only one MpUnreach is used to indicate End-of-RIB (EoR), more than one
-                    // MpUnreach attribute doesn't define EoR.
+                    // Only one MpUnreach is used to indicate End-of-RIB (EoR),
+                    // more than one MpUnreach attribute doesn't define EoR.
                     return None;
                 }
                 match unreach {
@@ -166,8 +167,8 @@ impl BgpUpdateMessage {
                         }
                     }
                     MpUnreach::Unknown { .. } => {
-                        // For unknown address families we assume it's not EoR, as they might have
-                        // different semantics defined.
+                        // For unknown address families we assume it's not EoR,
+                        // as they might have different semantics defined.
                         current = None;
                     }
                 }

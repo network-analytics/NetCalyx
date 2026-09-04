@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2025-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -151,7 +152,8 @@ impl EnrichmentCache {
             Some(fields) => fields,
         };
 
-        // Index incoming fields with FieldRef and store as WeightedField entries
+        // Index incoming fields with FieldRef and store as WeightedField
+        // entries
         let indexed_incoming: FxHashMap<FieldRef, WeightedField> =
             FieldRef::map_fields(&incoming_fields, |field_ref, field| {
                 (field_ref, WeightedField::new(weight, field.clone()))
@@ -699,7 +701,8 @@ impl std::fmt::Display for PeerMetadata {
             format_scope_entries(f, 0, scope_fields, fields, &mut first_scope)?;
         }
 
-        // Format domain-specific scopes (sorted by obs_domain_id for consistency)
+        // Format domain-specific scopes (sorted by obs_domain_id for
+        // consistency)
         let mut sorted_domains: Vec<_> = self.domain_scoped.iter().collect();
         sorted_domains.sort_by_key(|(obs_id, _)| *obs_id);
 

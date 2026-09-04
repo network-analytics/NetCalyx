@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2022-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -1252,8 +1253,8 @@ impl Ipv4NlriMplsLabelsAddress {
         labels: Vec<MplsLabel>,
         prefix: Ipv4Net,
     ) -> Result<Self, InvalidIpv4NlriMplsLabelsAddress> {
-        // Total length should not exceed 255, each MPLS Label is 24 bit and account for
-        // 32 bit IP prefix length
+        // Total length should not exceed 255, each MPLS Label is 24 bit
+        // and account for 32 bit IP prefix length
         if labels.len() * 24 + prefix.prefix_len() as usize > u8::MAX as usize {
             Err(InvalidIpv4NlriMplsLabelsAddress::InvalidLabelsLength(
                 labels.len(),
@@ -1349,8 +1350,8 @@ impl Ipv6NlriMplsLabelsAddress {
         labels: Vec<MplsLabel>,
         prefix: Ipv6Net,
     ) -> Result<Self, InvalidIpv6NlriMplsLabelsAddress> {
-        // Total length should not exceed 255, each MPLS Label is 24 bit and account for
-        // 32 bit IP prefix length
+        // Total length should not exceed 255, each MPLS Label is 24 bit
+        // and account for 32 bit IP prefix length
         if labels.len() * 24 + prefix.prefix_len() as usize > u8::MAX as usize {
             Err(InvalidIpv6NlriMplsLabelsAddress::InvalidLabelsLength(
                 labels.len(),

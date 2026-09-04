@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2025-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -372,7 +373,8 @@ where
                     Err((err, rec)) => {
                         match err {
                             KafkaError::MessageProduction(RDKafkaErrorCode::QueueFull) => {
-                                // Exponential backoff when the librdkafka is full
+                                // Exponential backoff when the librdkafka is
+                                // full
                                 if polling_interval > MAX_POLLING_INTERVAL {
                                     error!("Kafka polling interval exceeded, dropping record");
                                     self.stats.error_send.add(

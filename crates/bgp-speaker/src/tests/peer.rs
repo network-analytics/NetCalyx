@@ -985,11 +985,11 @@ async fn test_active_manual_start() {
     let event = peer.run().await.unwrap();
     assert_eq!(event, BgpEvent::ManualStartWithPassiveTcp);
     assert_eq!(peer.fsm_state(), FsmState::Active);
-    // // Start should be ignored
+    // Start should be ignored
     peer.add_admin_event(PeerAdminEvents::ManualStart);
     let event = tokio::time::timeout(Duration::from_millis(1), peer.run()).await;
-    // since manual start is ignored, and no connection is added, no more new events
-    // should be returned by run
+    // since manual start is ignored, and no connection is added,
+    // no more new events should be returned by run
     assert!(event.is_err());
     assert!(peer.waiting_admin_events().is_empty());
     assert_eq!(peer.fsm_state(), FsmState::Active);
@@ -1016,11 +1016,11 @@ async fn test_active_automatic_start() {
     let event = peer.run().await.unwrap();
     assert_eq!(event, BgpEvent::ManualStartWithPassiveTcp);
     assert_eq!(peer.fsm_state(), FsmState::Active);
-    // // Start should be ignored
+    // Start should be ignored
     peer.add_admin_event(PeerAdminEvents::AutomaticStart);
     let event = tokio::time::timeout(Duration::from_millis(1), peer.run()).await;
-    // since start is ignored, and no connection is added, no more new events should
-    // be returned by run
+    // since start is ignored, and no connection is added,
+    // no more new events should be returned by run
     assert!(event.is_err());
     assert!(peer.waiting_admin_events().is_empty());
     assert_eq!(peer.fsm_state(), FsmState::Active);

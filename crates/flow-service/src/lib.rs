@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2023-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -77,8 +78,8 @@ pub fn new_udp_reuse_port(
     udp_sock.set_nonblocking(true)?;
     // Binding a socket to a device or VRF is platform specific operation,
     // hence we guard it for only selected subset of target platforms.
-    // The first cfg block filter for all supported platforms to avoid Clippy errors
-    // on unused `name` for the unsupported platforms.
+    // The first cfg block filters for all supported platforms to avoid
+    // Clippy errors on unused `name` for the unsupported platforms.
     #[cfg(any(
         target_os = "ios",
         target_os = "macos",

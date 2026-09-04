@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2024-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -443,8 +444,8 @@ fuzz_target!(
                         if peer.fsm_state() == FsmState::Idle
                             || peer.fsm_state() == FsmState::Active
                         {
-                            // Peer with terminated or reached an active state in which it waits for
-                            // TCP connection
+                            // Peer with terminated or reached an active state
+                            // in which it waits for TCP connection
                             return;
                         }
                     }

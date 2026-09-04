@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2022-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -1999,8 +2000,8 @@ fn test_mp_reach_multi_labels_vp_ipv4() -> Result<(), PathAttributeWritingError>
         &good,
     );
 
-    // Test with no limit spec, should default to one label and fail since there's
-    // two labels
+    // Test with no limit spec, should default to one label
+    // and fail since there's two labels
     test_parse_error_with_one_input::<
         PathAttribute,
         &mut BgpParsingContext,

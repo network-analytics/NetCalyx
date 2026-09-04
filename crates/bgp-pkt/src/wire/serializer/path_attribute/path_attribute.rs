@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2022-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -177,7 +178,8 @@ pub enum OriginWritingError {
 }
 
 impl WritablePduWithOneInput<bool, OriginWritingError> for Origin {
-    // One octet length (if extended is not enabled) and second for the origin value
+    // One octet length (if extended is not enabled)
+    // and second for the origin value
     const BASE_LENGTH: usize = 2;
 
     fn len(&self, extended_length: bool) -> usize {

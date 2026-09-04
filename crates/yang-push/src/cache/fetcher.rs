@@ -378,8 +378,8 @@ impl NetconfYangLibraryFetcher {
             Arc::clone(&cfg.client_config),
         )
         .with_module_cache(cfg.module_cache.clone());
-        // Empty subscription info returned in case of errors to keep track of peer and
-        // subscription ID
+        // Empty subscription info returned in case of errors to keep track of
+        // peer and subscription ID
         let empty = SubscriptionInfo::new_empty(peer_ip, subscription_id);
         let mut client = match tokio::time::timeout(cfg.timeout, connect(config)).await {
             Ok(Ok(c)) => c,
@@ -415,7 +415,8 @@ impl NetconfYangLibraryFetcher {
                 Target::Stream(stream_target) => match &stream_target.filter {
                     StreamSelectionFilterObjects::ByReference(name) => {
                         // references are resolved in the NETCONF client,
-                        // if we reach this point, there must be a misconfigured router,
+                        // if we reach this point, there must be a misconfigured
+                        // router
                         error!(
                             %name,
                             subscription_id,

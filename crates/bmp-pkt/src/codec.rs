@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2022-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -129,21 +130,23 @@ impl BmpParsingContext {
             // Add Key for the router announcing BMP to the collector
             let peer_key = PeerKey::from_peer_header(peer_up.peer_header());
             let bgp_ctx = ctx.entry(peer_key).or_default();
-            // According to [RFC 9069 Section 6.1.1](https://datatracker.ietf.org/doc/html/rfc9069#name-multiple-loc-rib-peers)
-            // In some implementations, it might be required to have more than one emulated
-            // peer for Loc-RIB to convey different address families for the
-            // same Loc-RIB. In this case, the peer distinguisher and BGP ID
-            // should be the same since they represent the same Loc-RIB
-            // instance. Each emulated peer instance MUST send a Peer Up with
-            // the OPEN message indicating the address family capabilities.
-            // A BMP receiver MUST process these capabilities to know which peer belongs to
-            // which address family.
+            // According to
+            // [RFC 9069 Section 6.1.1](https://datatracker.ietf.org/doc/html/rfc9069#name-multiple-loc-rib-peers)
+            // In some implementations, it might be required to have more
+            // than one emulated peer for Loc-RIB to convey different address
+            // families for the same Loc-RIB. In this case, the peer
+            // distinguisher and BGP ID should be the same since they represent
+            // the same Loc-RIB instance. Each emulated peer instance MUST send
+            // a Peer Up with the OPEN message indicating the address family
+            // capabilities. A BMP receiver MUST process these capabilities
+            // to know which peer belongs to which address family.
             if !matches!(peer_key.peer_type(), BmpPeerType::LocRibInstancePeer { .. }) {
                 bgp_ctx.add_path_mut().clear();
                 bgp_ctx.multiple_labels_mut().clear();
             }
             // Determine if we need to track Adj-RIB-Out based on Peer Type,
-            // which is useful to select ADD-Path behavior for either sending or receive
+            // which is useful to select ADD-Path behavior for either sending
+            // or receiving
             let adj_rib_out = match peer_up.peer_header().peer_type() {
                 BmpPeerType::GlobalInstancePeer { adj_rib_out, .. }
                 | BmpPeerType::RdInstancePeer { adj_rib_out, .. }
@@ -167,8 +170,8 @@ impl BmpParsingContext {
             );
 
             // Add a key for the BGP Peer of the first router
-            // In Loc-Rib the bgp open message is duplicated, no need to go through it
-            // again.
+            // In Loc-Rib the bgp open message is duplicated,
+            // no need to go through it again.
             if !matches!(peer_key.peer_type(), BmpPeerType::LocRibInstancePeer { .. }) {
                 let peer_key = PeerKey::new(
                     peer_up.peer_header().address(),
@@ -179,7 +182,8 @@ impl BmpParsingContext {
                 );
                 let bgp_ctx = ctx.entry(peer_key).or_default();
                 // Determine if we need to track Adj-RIB-Out based on Peer Type,
-                // which is useful to select ADD-Path behavior for either sending or receive
+                // which is useful to select ADD-Path behavior for either
+                // sending or receiving
                 let adj_rib_out = match peer_up.peer_header().peer_type() {
                     BmpPeerType::GlobalInstancePeer { adj_rib_out, .. }
                     | BmpPeerType::RdInstancePeer { adj_rib_out, .. }
@@ -286,10 +290,11 @@ impl Decoder for BmpCodec {
                                 BmpCodecDecoderError::BmpMessageParsingError(error.error().clone())
                             }
                         };
-                        // Make sure we advance the buffer far enough, so we don't get stuck on an
-                        // error value.
-                        // Unfortunately, BMP doesn't have synchronization values like in BGP
-                        // to understand we are in a new message.
+                        // Make sure we advance the buffer far enough,
+                        // so we don't get stuck on an error value.
+                        // Unfortunately, BMP doesn't have synchronization
+                        // values like in BGP to understand we are in a new
+                        // message.
                         buf.advance(if length < 5 { 5 } else { length });
                         return Err(err);
                     }
@@ -526,14 +531,14 @@ mod tests {
         buf.extend_from_slice(&up1_wire);
         buf.extend_from_slice(&up2_wire);
 
-        // check after each decoded BGP open the ADD Path ctx is including the new
-        // address family
+        // check after each decoded BGP open if the ADD Path ctx
+        // is including the new address family
         let _ = codec
             .decode(&mut buf)
             .expect("decode up1_wire failed")
             .expect("no message decoded from up1");
-        // Only IPv4 add path is added to the BGP decoding context for the first peer up
-        // message
+        // Only IPv4 add path is added to the BGP decoding context
+        // for the first peer up message
         let add_path1 = codec
             .ctx
             .get_peer(&peer_key)
@@ -547,8 +552,8 @@ mod tests {
             .decode(&mut buf)
             .expect("decode up1_wire failed")
             .expect("no message decoded from up2");
-        // IPv6 add path is added to the BGP decoding context without deleting the add
-        // path for IPv4
+        // IPv6 add path is added to the BGP decoding context
+        // without deleting the add path for IPv4
         let add_path2 = codec
             .ctx
             .get_peer(&peer_key)

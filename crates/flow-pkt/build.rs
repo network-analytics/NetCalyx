@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2022-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -201,7 +202,7 @@ fn get_vmware_config(
         954,
     )];
 
-    // // Protocol Numbers SubRegistry Path is either loaded from IANA or locally
+    // Protocol Numbers SubRegistry Path is either loaded from IANA or locally
     if poll_iana_registry {
         external_sub_registries.push(ExternalSubRegistrySource::new(
             RegistrySource::Http(PROTOCOL_NUMBERS_URL.to_string()),

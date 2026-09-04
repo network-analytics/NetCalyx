@@ -286,7 +286,8 @@ impl Decoder for SshCodec {
             // Parse chunk size
             let chunk_size_slice = &src[size_start..size_end];
             let chunk_size_str = std::str::from_utf8(chunk_size_slice)?;
-            // RFC 6242 chunk-size: at least one digit, leading zeros are prohibited
+            // RFC 6242 chunk-size: at least one digit,
+            // leading zeros are prohibited
             if chunk_size_str.is_empty() || chunk_size_str.starts_with('0') {
                 return Err(SshCodecError::IO(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,

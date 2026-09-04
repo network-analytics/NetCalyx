@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2024-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -43,8 +44,8 @@ impl WritablePdu<UdpNotifOptionWritingError> for UdpNotifOption {
     fn len(&self) -> usize {
         match self {
             UdpNotifOption::Segment { .. } => {
-                // base length + two octets for segment length of which the last bit is a `last
-                // segment` flag
+                // base length + two octets for segment length of which the last
+                // bit is a `last segment` flag
                 Self::BASE_LENGTH + 2
             }
             UdpNotifOption::PrivateEncoding(value) => Self::BASE_LENGTH + value.len(),

@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2026-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -154,8 +155,8 @@ impl BmpSupervisor {
             let awaited = futures::future::select_all(join_handles);
             join_handles = match awaited.await {
                 (Ok(ret), _, rest) => {
-                    // TODO(AH): Have some policy to allow to restart actors or terminate supervisor
-                    //           if failed
+                    // TODO(AH): Have some policy to allow to restart actors or
+                    // terminate supervisor if failed
                     if let Err(err) = ret {
                         error!(error = %err, "Actor terminated with error");
                     }

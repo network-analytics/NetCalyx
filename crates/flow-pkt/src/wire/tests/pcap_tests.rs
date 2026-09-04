@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2024-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -93,8 +94,8 @@ fn test_flow_pcap(overwrite: bool, pcap_path: PathBuf) {
                     serde_json::to_string(&msg).expect("Couldn't serialize Flow message to json")
                 }
                 Ok(None) => {
-                    // packet is fragmented, need to read the next PDU first before attempting to
-                    // deserialize it
+                    // packet is fragmented, need to read the next PDU first
+                    // before attempting to deserialize it
                     break;
                 }
                 Err(err) => serde_json::to_string(&err)

@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2025-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -51,7 +52,8 @@ fn init_tracing() -> Result<(), Box<dyn std::error::Error>> {
     use tracing_subscriber::{EnvFilter, fmt};
 
     // Set up the log -> tracing bridge first
-    // tracing_log::LogTracer::init().expect("Failed to initialize tracing logger");
+    // tracing_log::LogTracer::init().expect("Failed to initialize tracing
+    // logger");
 
     let env_filter = EnvFilter::try_from_default_env()
         .or_else(|_| EnvFilter::try_new("info"))

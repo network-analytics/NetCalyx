@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2023-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -172,8 +173,8 @@ fn parse_ipfix(
                     FlowInfoCodecDecoderError::IpfixParsingError(error.error().clone())
                 }
             };
-            // Make sure we advance the buffer far enough, so we don't get stuck on
-            // an error value.
+            // Make sure we advance the buffer far enough,
+            // so we don't get stuck on an error value.
             buf.advance(if length < 5 { 5 } else { length });
             return Err(err);
         }
@@ -204,10 +205,10 @@ fn parse_netflow_v9(
                     FlowInfoCodecDecoderError::NetFlowV9ParingError(error.error().clone())
                 }
             };
-            // Netflow v9 doesn't have a length component to tell us how many bytes
-            // should skip for the next packet. Sadly, our best bet is to clear the
-            // buffer and start over at the risk of discarding other good packets in
-            // the buffer.
+            // Netflow v9 doesn't have a length component to tell us how many
+            // bytes should skip for the next packet. Sadly, our best bet is to
+            // clear the buffer and start over at the risk of discarding other
+            // good packets in the buffer.
             buf.clear();
             return Err(err);
         }
@@ -221,16 +222,16 @@ impl Decoder for FlowInfoCodec {
 
     #[instrument(skip_all)]
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        // We're using IPFIX_HEADER_LENGTH as criteria to start parsing since it's
-        // smaller than NetFlow v9 header size.
+        // We're using IPFIX_HEADER_LENGTH as criteria to start parsing since
+        // it's smaller than NetFlow v9 header size.
         let header_length = IPFIX_HEADER_LENGTH as usize;
         if buf.len() < header_length {
             // We don't have enough data yet to start processing
             return Ok(None);
         }
         let version: u16 = NetworkEndian::read_u16(&buf[0..2]);
-        // Read the length (ipfix) or count (NetFlow v9), starting from after the
-        // version
+        // Read the length (ipfix) or count (NetFlow v9), starting from after
+        // the version
         let length = NetworkEndian::read_u16(&buf[2..4]) as usize;
         if buf.len() < length {
             // We still didn't read all the bytes for the message yet
