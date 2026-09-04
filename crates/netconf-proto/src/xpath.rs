@@ -69,7 +69,9 @@ pub(crate) fn find_xpath_prefixes(xpath: &str) -> XpathPrefixes {
                     break; // unterminated literal (malformed xpath)
                 };
                 let content_end = content_start + rel_end;
-                if let Some((Some(prefix), _)) = parse_node_test(&xpath[content_start..content_end])
+                let literal = &xpath[content_start..content_end];
+                if literal == literal.trim()
+                    && let Some((Some(prefix), _)) = parse_node_test(literal)
                 {
                     prefixes.literal_only.insert(prefix.to_string());
                 }
