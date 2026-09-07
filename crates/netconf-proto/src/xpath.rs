@@ -584,4 +584,104 @@ mod tests {
         assert!(provided_unique.is_empty());
         assert!(canonical_unique.is_empty());
     }
+
+    #[test]
+    fn test_xpath_diff_clamps_overlapping_prefix_and_suffix() {
+        // When one string is a repetition of the other's chars, the common
+        // prefix and common suffix would overlap; the clamp must stop them
+        // from double-counting (and from underflowing the unique slices).
+        assert_eq!(xpath_diff("aaa", "aa"), (2, "a".to_string(), String::new()));
+        assert_eq!(xpath_diff("x", "xxx"), (1, String::new(), "xx".to_string()));
+        // A shared char at both ends around a single insertion.
+        assert_eq!(
+            xpath_diff("aba", "aa"),
+            (1, "b".to_string(), String::new()),
+        );
+    }
+
+    #[test]
+    fn test_xpath_diff_handles_empty_and_one_empty_inputs() {
+        assert_eq!(xpath_diff("", ""), (0, String::new(), String::new()));
+        assert_eq!(xpath_diff("", "/a"), (0, String::new(), "/a".to_string()));
+        assert_eq!(xpath_diff("/a", ""), (0, "/a".to_string(), String::new()));
+    }
+
+    #[test]
+    fn test_xpath_diff_is_char_boundary_safe_with_multibyte_input() {
+        // The common prefix/suffix and unique slices must be computed on char
+        // boundaries, never splitting a multibyte code point. `divergence` is
+        // a char index, not a byte offset.
+        let (diverges_at, provided_unique, canonical_unique) =
+            xpath_diff("/αβ:x/y", "/αβ:x/z");
+        assert_eq!(diverges_at, "/αβ:x/".chars().count());
+        assert_eq!(provided_unique, "y");
+        assert_eq!(canonical_unique, "z");
+
+        // Divergence right after a multibyte common prefix, differing tails.
+        let (diverges_at, provided_unique, canonical_unique) = xpath_diff("café", "cafétx");
+        assert_eq!(diverges_at, 4);
+        assert_eq!(provided_unique, "");
+        assert_eq!(canonical_unique, "tx");
+    }
+
+    #[test]
+    fn test_split_location_path_handles_nested_brackets() {
+        // A predicate containing a nested predicate must be kept as one
+        // segment (the inner `/`-free case is trivial; this guards depth > 1).
+        assert_eq!(
+            split_location_path("/a:x[a:y[a:z='w']]/a:q"),
+            Some(vec!["", "a:x[a:y[a:z='w']]", "a:q"]),
+        );
+    }
+
+    #[test]
+    fn test_split_location_path_honors_double_quoted_separators() {
+        // A `/`, `[`, or `]` inside a double-quoted literal must not be
+        // treated as a separator or bracket (the single-quote case is covered
+        // separately).
+        assert_eq!(
+            split_location_path(r#"/a[b="/[]"]/c"#),
+            Some(vec!["", r#"a[b="/[]"]"#, "c"]),
+        );
+    }
+
+    #[test]
+    fn test_strip_xpath_predicates_removes_nested_predicates() {
+        // A predicate nested inside another must be removed wholesale, not
+        // leave a dangling inner `]`.
+        assert_eq!(
+            strip_xpath_predicates("/a:x[a:y[a:z='w']]/a:q"),
+            "/a:x/a:q",
+        );
+    }
+
+    #[test]
+    fn test_strip_xpath_predicates_ignores_brackets_inside_double_quoted_literals() {
+        // A `]` inside a double-quoted predicate value must not close the
+        // predicate early.
+        assert_eq!(strip_xpath_predicates(r#"/a:x[a:y="]"]/a:z"#), "/a:x/a:z");
+    }
+
+    #[test]
+    fn test_find_xpath_prefixes_captures_prefixes_before_unterminated_literal() {
+        // An unterminated string literal is malformed, but any structural
+        // prefixes seen before it must still be reported (the scan breaks at
+        // the bad literal rather than discarding earlier findings).
+        let found = find_xpath_prefixes("/a:b[c:d='x");
+        assert_eq!(found.structural, set(["a", "c"]));
+        assert!(found.literal_only.is_empty());
+    }
+
+    #[test]
+    fn test_parse_node_test_accepts_unprefixed_ncname() {
+        assert_eq!(parse_node_test("interface"), Some((None, "interface")));
+    }
+
+    #[test]
+    fn test_parse_node_test_rejects_empty_and_malformed_qnames() {
+        // Empty input, empty prefix or local half, and non-NCName halves.
+        for head in ["", "  ", "if:", ":name", "1if:name", "if:1name"] {
+            assert_eq!(parse_node_test(head), None, "should reject `{head}`");
+        }
+    }
 }

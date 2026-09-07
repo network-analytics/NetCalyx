@@ -1308,3 +1308,268 @@ fn test_datastore_xpath_filter_normalize_path_multi_module_with_instantiated_pre
         ),
     );
 }
+
+/// Idempotency is a load-bearing property: the fetcher normalizes a target,
+/// replaces `path`, and empties `namespaces`; a re-normalization (or the
+/// diagnostic canonical-form check) must see a stable result. Verify that
+/// normalizing the *output* of a first pass — with the namespace table
+/// emptied and the resolver made useless, exactly mirroring the fetcher's
+/// post-state (see `NetconfYangLibraryFetcher`) — yields the same string, for
+/// every non-trivial shape (multi-module, redundant predicate prefix,
+/// whole-QName literal, wildcard reset).
+#[test]
+fn test_datastore_xpath_filter_normalize_path_idempotent_after_namespaces_emptied() {
+    let resolve = |uri: &str| -> Option<Box<str>> {
+        match uri {
+            "urn:ietf:params:xml:ns:yang:ietf-hardware" => Some("ietf-hardware".into()),
+            "urn:huawei:yang:huawei-hardware" => Some("huawei-hardware".into()),
+            "urn:huawei:yang:huawei-hardware-types" => Some("huawei-hardware-types".into()),
+            "urn:bbf:yang:bbf-hardware-transceivers" => Some("bbf-hardware-transceivers".into()),
+            "urn:example:yang:example-a" => Some("example-a".into()),
+            _ => None,
+        }
+    };
+
+    let cases = [
+        // Multi-module, redundant predicate prefix, and a whole-QName literal
+        // that itself gets rewritten.
+        DatastoreXPathFilter {
+            namespaces: Box::new([
+                ("hw".into(), "urn:ietf:params:xml:ns:yang:ietf-hardware".into()),
+                ("hw-hw".into(), "urn:huawei:yang:huawei-hardware".into()),
+                (
+                    "hw-hwt".into(),
+                    "urn:huawei:yang:huawei-hardware-types".into(),
+                ),
+                (
+                    "bbf-hw-xcvr".into(),
+                    "urn:bbf:yang:bbf-hardware-transceivers".into(),
+                ),
+            ]),
+            path: "/hw:hardware/hw:component[hw-hw:sub-class='hw-hwt:ethernetCsmacd-xcvr-link']/bbf-hw-xcvr:transceiver-link".into(),
+        },
+        // Wildcard reset in the middle of the path.
+        DatastoreXPathFilter {
+            namespaces: Box::new([("a".into(), "urn:example:yang:example-a".into())]),
+            path: "/a:root/*/a:leaf".into(),
+        },
+    ];
+
+    for filter in &cases {
+        let first = filter
+            .normalize_path(resolve)
+            .unwrap_or_else(|| panic!("first pass must normalize `{}`", filter.path));
+
+        // Mirror the fetcher's post-state: path replaced, namespaces emptied,
+        // and the resolver can no longer map anything (module names are now
+        // bare prefixes with no xmlns binding).
+        let second_filter = DatastoreXPathFilter {
+            namespaces: Box::new([]),
+            path: first.clone().into(),
+        };
+        let second = second_filter.normalize_path(|_| None);
+        assert_eq!(
+            second.as_deref(),
+            Some(first.as_str()),
+            "normalize_path not idempotent for `{}`",
+            filter.path,
+        );
+    }
+}
+
+/// A predicate value that merely *looks* like a QName (e.g. an interface name
+/// `'ge:0'`) but whose prefix has no declared `xmlns` binding is opaque data
+/// and must be emitted verbatim — never mistaken for a module reference. The
+/// node-name `if:` prefixes still collapse as usual.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_undeclared_literal_value_is_preserved() {
+    let resolve = |uri: &str| -> Option<Box<str>> {
+        match uri {
+            "urn:ietf:params:xml:ns:yang:ietf-interfaces" => Some("ietf-interfaces".into()),
+            _ => None,
+        }
+    };
+
+    let filter = DatastoreXPathFilter {
+        namespaces: Box::new([(
+            "if".into(),
+            "urn:ietf:params:xml:ns:yang:ietf-interfaces".into(),
+        )]),
+        path: "/if:interfaces/if:interface[if:name='ge:0']".into(),
+    };
+    assert_eq!(
+        filter.normalize_path(resolve).as_deref(),
+        Some("/ietf-interfaces:interfaces/interface[name='ge:0']"),
+    );
+}
+
+/// A whole-QName predicate *literal* whose prefix has a declared `xmlns`
+/// binding that `resolve_module` can't map must bail (`None`), the same way an
+/// unresolvable node-name prefix does — never emit a half-resolved literal.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_unresolvable_literal_prefix_bails() {
+    let resolve = |uri: &str| -> Option<Box<str>> {
+        match uri {
+            "urn:ietf:params:xml:ns:yang:ietf-interfaces" => Some("ietf-interfaces".into()),
+            _ => None,
+        }
+    };
+
+    // `if:` resolves fine; the literal's declared `bad:` prefix does not.
+    let filter = DatastoreXPathFilter {
+        namespaces: Box::new([
+            (
+                "if".into(),
+                "urn:ietf:params:xml:ns:yang:ietf-interfaces".into(),
+            ),
+            ("bad".into(), "urn:unresolvable".into()),
+        ]),
+        path: "/if:interfaces/if:interface[if:type='bad:someType']".into(),
+    };
+    assert_eq!(filter.normalize_path(resolve), None);
+}
+
+/// An explicit axis specifier inside a predicate (`child::`) is not a prefix:
+/// the `::` must be preserved and the following `prefix:name` still resolved
+/// against the enclosing module (here dropped, same module as the step).
+/// Unlike a *step*-level axis (which bails), an axis inside a predicate
+/// sub-expression is passed through.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_axis_specifier_inside_predicate() {
+    let resolve = |uri: &str| -> Option<Box<str>> {
+        match uri {
+            "urn:ietf:params:xml:ns:yang:ietf-interfaces" => Some("ietf-interfaces".into()),
+            _ => None,
+        }
+    };
+
+    let filter = DatastoreXPathFilter {
+        namespaces: Box::new([(
+            "if".into(),
+            "urn:ietf:params:xml:ns:yang:ietf-interfaces".into(),
+        )]),
+        path: "/if:interfaces/if:interface[if:name=current()/child::if:name]".into(),
+    };
+    assert_eq!(
+        filter.normalize_path(resolve).as_deref(),
+        Some("/ietf-interfaces:interfaces/interface[name=current()/child::name]"),
+    );
+}
+
+/// A prefixed wildcard as a step (`if:*`) is module-qualified from its prefix,
+/// and — unlike a bare `*` — does not reset module tracking, so a following
+/// unprefixed step inherits its module.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_prefixed_wildcard_step() {
+    let resolve = |uri: &str| -> Option<Box<str>> {
+        match uri {
+            "urn:example:yang:example-a" => Some("example-a".into()),
+            _ => None,
+        }
+    };
+
+    let filter = DatastoreXPathFilter {
+        namespaces: Box::new([("a".into(), "urn:example:yang:example-a".into())]),
+        path: "/a:root/a:*/a:leaf".into(),
+    };
+    assert_eq!(
+        filter.normalize_path(resolve).as_deref(),
+        Some("/example-a:root/*/leaf"),
+    );
+}
+
+/// A prefixed wildcard local name inside a predicate (`if:*`) is rewritten
+/// like any other `prefix:name`: the prefix drops when it matches the
+/// enclosing module.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_prefixed_wildcard_in_predicate() {
+    let resolve = |uri: &str| -> Option<Box<str>> {
+        match uri {
+            "urn:ietf:params:xml:ns:yang:ietf-interfaces" => Some("ietf-interfaces".into()),
+            _ => None,
+        }
+    };
+
+    let filter = DatastoreXPathFilter {
+        namespaces: Box::new([(
+            "if".into(),
+            "urn:ietf:params:xml:ns:yang:ietf-interfaces".into(),
+        )]),
+        path: "/if:interfaces/if:interface[count(if:*)>1]".into(),
+    };
+    assert_eq!(
+        filter.normalize_path(resolve).as_deref(),
+        Some("/ietf-interfaces:interfaces/interface[count(*)>1]"),
+    );
+}
+
+/// A malformed `prefix:` in a predicate — a colon not followed by a valid
+/// NCName or `*` (here followed by a digit) — is unsupported and bails.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_malformed_predicate_prefix_bails() {
+    let resolve = |_: &str| -> Option<Box<str>> { None };
+
+    let filter = DatastoreXPathFilter {
+        namespaces: Box::new([]),
+        path: "/a:x[a:1='y']".into(),
+    };
+    assert_eq!(filter.normalize_path(resolve), None);
+}
+
+/// A predicate attached to a bare-wildcard step: with no enclosing module,
+/// a prefixed predicate name keeps its module prefix (nothing to be redundant
+/// with).
+#[test]
+fn test_datastore_xpath_filter_normalize_path_predicate_on_wildcard_step_keeps_prefix() {
+    let resolve = |_: &str| -> Option<Box<str>> { None };
+
+    let filter = DatastoreXPathFilter {
+        namespaces: Box::new([]),
+        path: "/example-a:root/*[example-b:tag='x']".into(),
+    };
+    assert_eq!(
+        filter.normalize_path(resolve).as_deref(),
+        Some("/example-a:root/*[example-b:tag='x']"),
+    );
+}
+
+/// An empty (or whitespace-only) path bails rather than emitting a lone `/`.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_empty_path_bails() {
+    let resolve = |_: &str| -> Option<Box<str>> { None };
+
+    for path in ["", "   ", "\t\n"] {
+        let filter = DatastoreXPathFilter {
+            namespaces: Box::new([]),
+            path: path.into(),
+        };
+        assert_eq!(
+            filter.normalize_path(resolve),
+            None,
+            "should bail for empty path `{path:?}`",
+        );
+    }
+}
+
+/// Steps that aren't plain child-axis node tests — an attribute step (`@`),
+/// a self/parent step (`.`/`..`) — are unsupported and bail.
+#[test]
+fn test_datastore_xpath_filter_normalize_path_non_child_axis_steps_bail() {
+    let resolve = |_: &str| -> Option<Box<str>> { None };
+
+    for path in [
+        "/if:interface/@if:name",
+        "/if:interfaces/./if:interface",
+        "/if:interfaces/../if:interface",
+    ] {
+        let filter = DatastoreXPathFilter {
+            namespaces: Box::new([]),
+            path: path.into(),
+        };
+        assert_eq!(
+            filter.normalize_path(resolve),
+            None,
+            "should bail for `{path}`",
+        );
+    }
+}
