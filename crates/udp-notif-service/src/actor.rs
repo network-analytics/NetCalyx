@@ -165,7 +165,16 @@ pub enum UdpNotifActorError {
     PacketProcessingError(ActorId, SocketAddr, std::io::Error),
 }
 
-impl std::error::Error for UdpNotifActorError {}
+impl std::error::Error for UdpNotifActorError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::SocketBindError(_, _, err) => Some(err),
+            Self::GetLocalAddressError(_, _, err) => Some(err),
+            Self::CommandChannelClosed(_, _) => None,
+            Self::PacketProcessingError(_, _, err) => Some(err),
+        }
+    }
+}
 
 /// The main actor struct responsible for receiving and processing udp-notif
 /// packets. This struct encapsulates the state and behavior of the actor.
@@ -970,20 +979,48 @@ impl UdpNotifActor {
 pub enum ActorHandleError {
     #[strum(to_string = "error sending command to actor")]
     SendError,
-    #[strum(to_string = "error receiving response from actor")]
-    ReceiveError,
+    #[strum(to_string = "actor terminated before it could start: {0}")]
+    ActorFailed(UdpNotifActorError),
+    #[strum(to_string = "actor task panicked or was cancelled before it could start: {0}")]
+    ActorPanicked(tokio::task::JoinError),
+    #[strum(to_string = "actor exited before it could start")]
+    ActorExited,
+}
+
+impl ActorHandleError {
+    /// Converts the actor task's `JoinHandle` outcome into the most precise
+    /// error available, instead of collapsing panics/cancellations or an
+    /// early clean exit into a generic `ReceiveError`.
+    fn from_join_result(
+        res: Result<Result<(ActorId, SocketAddr), UdpNotifActorError>, tokio::task::JoinError>,
+    ) -> Self {
+        match res {
+            Ok(Err(err)) => Self::ActorFailed(err),
+            Ok(Ok(_)) => Self::ActorExited,
+            Err(join_err) => Self::ActorPanicked(join_err),
+        }
+    }
 }
 
 impl std::error::Error for ActorHandleError {
     fn description(&self) -> &str {
-        match *self {
+        match self {
             ActorHandleError::SendError => "error sending command to actor",
-            ActorHandleError::ReceiveError => "error receiving response from actor",
+            ActorHandleError::ActorFailed(_) => "actor terminated before it could start",
+            ActorHandleError::ActorPanicked(_) => {
+                "actor task panicked or was cancelled before it could start"
+            }
+            ActorHandleError::ActorExited => "actor exited before it could start",
         }
     }
 
-    fn cause(&self) -> Option<&dyn std::error::Error> {
-        None
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::SendError => None,
+            Self::ActorFailed(err) => Some(err),
+            Self::ActorPanicked(err) => Some(err),
+            Self::ActorExited => None,
+        }
     }
 }
 
@@ -1034,13 +1071,38 @@ impl ActorHandle {
             reassembly_timeout,
             stats,
         );
-        let join_handle = tokio::spawn(actor.run());
+        let mut join_handle = tokio::spawn(actor.run());
         let (tx, mut rx) = mpsc::channel(cmd_buffer_size);
-        cmd_tx
-            .send(ActorCommand::LocalAddr(tx))
-            .await
-            .map_err(|_| ActorHandleError::SendError)?;
-        let local_addr = rx.recv().await.ok_or(ActorHandleError::ReceiveError)?.1;
+        // Race the initial send against the actor task: if the actor fails
+        // early (e.g. socket bind error) it drops cmd_rx, which would
+        // otherwise surface as a generic send error instead of the real cause.
+        let send_result = tokio::select! {
+            biased;
+            res = &mut join_handle => {
+                return Err(ActorHandleError::from_join_result(res));
+            }
+            send_result = cmd_tx.send(ActorCommand::LocalAddr(tx)) => send_result,
+        };
+        if send_result.is_err() {
+            return Err(ActorHandleError::from_join_result(join_handle.await));
+        }
+        let local_addr = tokio::select! {
+            biased;
+            res = &mut join_handle => {
+                return Err(ActorHandleError::from_join_result(res));
+            }
+            local = rx.recv() => {
+                match local {
+                    Some((_, addr)) => addr,
+                    // The reply sender was dropped without a response, most likely
+                    // because the actor task exited early (e.g. socket bind
+                    // failure). Await the join handle to surface the real cause.
+                    None => {
+                        return Err(ActorHandleError::from_join_result(join_handle.await));
+                    }
+                }
+            }
+        };
         Ok((
             join_handle,
             Self {
