@@ -36,7 +36,12 @@ use tracing::{error, info};
 
 shadow!(build);
 
-fn init_tracing(level: &'_ str, use_ansi: bool) {
+fn init_tracing(
+    level: &'_ str,
+    use_ansi: bool,
+    logger_provider: Option<&opentelemetry_sdk::logs::SdkLoggerProvider>,
+) {
+    use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
     use tracing_subscriber::{EnvFilter, fmt};
@@ -54,9 +59,12 @@ fn init_tracing(level: &'_ str, use_ansi: bool) {
         )
     };
 
+    let otlp_layer = logger_provider.map(OpenTelemetryTracingBridge::new);
+
     tracing_subscriber::registry()
         .with(env_filter)
         .with(fmt::layer().with_ansi(use_ansi))
+        .with(otlp_layer)
         .try_init()
         .expect("Failed to register tracing subscriber");
 }
@@ -213,6 +221,36 @@ fn init_open_telemetry(
     Ok(provider)
 }
 
+fn init_otlp_logs(
+    config: &TelemetryConfig,
+) -> Result<
+    opentelemetry_sdk::logs::SdkLoggerProvider,
+    Box<dyn std::error::Error + Send + Sync + 'static>,
+> {
+    use opentelemetry_otlp::{Protocol, WithExportConfig};
+    use opentelemetry_sdk::Resource;
+
+    let exporter = opentelemetry_otlp::LogExporter::builder()
+        .with_tonic()
+        .with_endpoint(config.url())
+        .with_protocol(Protocol::Grpc)
+        .with_timeout(config.exporter_timeout)
+        .build()?;
+
+    // Same service identity as the metrics provider.
+    let resource = Resource::builder()
+        .with_service_name("NetCalyx")
+        .with_attributes([opentelemetry::KeyValue::new("id", config.id.clone())])
+        .build();
+
+    let provider = opentelemetry_sdk::logs::SdkLoggerProvider::builder()
+        .with_batch_exporter(exporter)
+        .with_resource(resource)
+        .build();
+
+    Ok(provider)
+}
+
 /// Builds the multi-line version/build info string
 fn version_info() -> String {
     format!(
@@ -268,10 +306,6 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
-    init_tracing(&config.logging.level, config.logging.ansi);
-    log_info();
-    let process_start = Instant::now();
-
     let mut runtime_builder = tokio::runtime::Builder::new_multi_thread();
     // If num of threads is not configured then the default use all CPU cores is
     // used
@@ -281,19 +315,33 @@ fn main() -> anyhow::Result<()> {
     runtime_builder.enable_all();
     let runtime = runtime_builder.build()?;
 
-    // Dedicated runtime for the OTEL metrics PeriodicReader so its export task
-    // doesn't compete with the collection/publishing pipeline for worker
-    // threads.
+    // Dedicated runtime for the OTEL metrics PeriodicReader and (optionally)
+    // the OTLP log exporter so their export tasks don't compete with the
+    // collection/publishing pipeline for worker threads.
     let telemetry_runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(1)
+        .worker_threads(2)
         .enable_all()
         .build()?;
-    let meter_provider = {
+    let (meter_provider, logger_provider) = {
         // `.enter()` makes the tokio::spawn done inside build() bind to
         // telemetry_runtime.
         let _guard = telemetry_runtime.enter();
-        init_open_telemetry(&config.telemetry).map_err(|err| anyhow!(err))?
+        let meter_provider = init_open_telemetry(&config.telemetry).map_err(|err| anyhow!(err))?;
+        let logger_provider = if config.logging.otlp {
+            Some(init_otlp_logs(&config.telemetry).map_err(|err| anyhow!(err))?)
+        } else {
+            None
+        };
+        (meter_provider, logger_provider)
     };
+
+    init_tracing(
+        &config.logging.level,
+        config.logging.ansi,
+        logger_provider.as_ref(),
+    );
+    log_info();
+    let process_start = Instant::now();
 
     let result = runtime.block_on(async move {
         let meter = global::meter_provider().meter("netcalyx");
@@ -358,6 +406,11 @@ fn main() -> anyhow::Result<()> {
     // Flush and shut down before the telemetry runtime is dropped
     if let Err(err) = meter_provider.shutdown() {
         error!("Failed to shut down OpenTelemetry meter provider: {err}");
+    }
+    if let Some(logger_provider) = logger_provider
+        && let Err(err) = logger_provider.shutdown()
+    {
+        error!("Failed to shut down OpenTelemetry logger provider: {err}");
     }
 
     result

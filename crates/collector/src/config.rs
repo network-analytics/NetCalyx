@@ -91,6 +91,10 @@ pub(crate) const fn default_ansi_log() -> bool {
     false
 }
 
+pub(crate) const fn default_otlp_logs() -> bool {
+    false
+}
+
 pub(crate) const fn default_reassembly_max_segments() -> u16 {
     netcalyx_udp_notif_pkt::codec::DEFAULT_MAX_SEGMENTS
 }
@@ -123,6 +127,11 @@ pub struct LoggingConfig {
     /// Use colorful ANSI characters for logging
     #[serde(default = "default_ansi_log")]
     pub ansi: bool,
+
+    /// Also export logs to the OTLP endpoint (telemetry.url)
+    /// as OTel log records
+    #[serde(default = "default_otlp_logs")]
+    pub otlp: bool,
 }
 
 impl Default for LoggingConfig {
@@ -130,6 +139,7 @@ impl Default for LoggingConfig {
         Self {
             level: "info".to_string(),
             ansi: false,
+            otlp: false,
         }
     }
 }
