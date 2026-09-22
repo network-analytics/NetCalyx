@@ -91,6 +91,10 @@ pub(crate) const fn default_ansi_log() -> bool {
     false
 }
 
+pub(crate) const fn default_otlp_logs() -> bool {
+    false
+}
+
 pub(crate) const fn default_reassembly_max_segments() -> u16 {
     netcalyx_udp_notif_pkt::codec::DEFAULT_MAX_SEGMENTS
 }
@@ -123,6 +127,11 @@ pub struct LoggingConfig {
     /// Use colorful ANSI characters for logging
     #[serde(default = "default_ansi_log")]
     pub ansi: bool,
+
+    /// Also export logs to the OTLP endpoint (telemetry.url)
+    /// as OTel log records
+    #[serde(default = "default_otlp_logs")]
+    pub otlp: bool,
 }
 
 impl Default for LoggingConfig {
@@ -130,6 +139,7 @@ impl Default for LoggingConfig {
         Self {
             level: "info".to_string(),
             ansi: false,
+            otlp: false,
         }
     }
 }
@@ -137,12 +147,13 @@ impl Default for LoggingConfig {
 #[serde_as]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TelemetryConfig {
+    /// OTLP gRPC endpoint, e.g. http://localhost:4317 (no signal path)
     pub url: String,
 
     /// Id to distinguish multiple instances running at the same site
     pub id: String,
 
-    /// Metrics exporter GRPC timeout
+    /// Metrics and logs exporter GRPC timeout
     #[serde(default = "default_telemetry_timeout")]
     #[serde_as(as = "serde_with::DurationMilliSeconds<u64>")]
     pub exporter_timeout: Duration,
