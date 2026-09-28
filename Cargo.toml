@@ -1,26 +1,27 @@
 [workspace]
 members = [
-    "crates/analytics",
-    "crates/pcap-reader",
-    "crates/bgp-pkt",
-    "crates/bgp-speaker",
-    "crates/bmp-service",
-    "crates/bmp-pkt",
-    "crates/iana",
-    "crates/ipfix-code-generator",
-    "crates/flow-pkt",
-    "crates/flow-service",
-    "crates/locate",
-    "crates/parse-utils",
-    "crates/serde-macros",
-    "crates/udp-notif-pkt",
-    "crates/udp-notif-service",
-    "crates/collector",
-    "crates/yang-push",
-    "crates/yang-consumer",
-    "crates/pcap-decoder",
-    "crates/netconf-proto",
-    "fuzz",
+  "crates/analytics",
+  "crates/pcap-reader",
+  "crates/bgp-pkt",
+  "crates/bgp-speaker",
+  "crates/bmp-service",
+  "crates/bmp-pkt",
+  "crates/iana",
+  "crates/ipfix-code-generator",
+  "crates/flow-pkt",
+  "crates/flow-service",
+  "crates/locate",
+  "crates/parse-utils",
+  "crates/serde-macros",
+  "crates/udp-notif-pkt",
+  "crates/udp-notif-service",
+  "crates/collector",
+  "crates/yang-push",
+  "crates/yang-consumer",
+  "crates/pcap-decoder",
+  "crates/netconf-proto",
+  "crates/rib",
+  "fuzz",
 ]
 resolver = "2"
 
@@ -44,6 +45,7 @@ netcalyx-yang-push = { version = "0.3.0", path = "crates/yang-push" }
 netcalyx-yang-consumer = { version = "0.3.0", path = "crates/yang-consumer" }
 netcalyx-pcap-decoder = { version = "0.3.0", path = "crates/pcap-decoder" }
 netcalyx-netconf-proto = { version = "0.3.0", path = "crates/netconf-proto" }
+netcalyx-rib = { version = "0.3.0", path = "crates/rib" }
 thiserror = "2.0"
 async-channel = "2.5"
 libc = { version = "0.2" }
@@ -118,6 +120,7 @@ schema-registry-client = { version = "0.4" }
 bitflags = { version = "2.13" }
 axum = { version = "0.8"}
 schemars = { version = "1.2", features = ["derive"] }
+prefix-trie = { version = "0.10" }
 
 [profile.release]
 codegen-units = 1
