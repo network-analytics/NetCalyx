@@ -1,0 +1,24 @@
+lints.workspace = true
+
+[package]
+name = "netcalyx-rib"
+version = "0.3.0"
+edition = "2024"
+authors = ["NetCalyx Authors"]
+license = "Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/network-analytics/NetCalyx"
+description = """
+In-memory BGP RIB storage: core data model, attribute interning and LPM lookup for BMP-derived routing tables.
+"""
+keywords = ["bgp", "bmp", "rib", "routing"]
+categories = ["network-programming", "data-structures"]
+
+[dependencies]
+netcalyx-bgp-pkt = { workspace = true }
+netcalyx-bmp-pkt = { workspace = true }
+netcalyx-iana = { workspace = true }
+rustc-hash = { workspace = true }
+smallvec = { workspace = true }
+ipnet = { workspace = true }
+prefix-trie = { workspace = true }
