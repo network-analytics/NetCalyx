@@ -5,6 +5,9 @@ runtime:
 
 logging:
   level: info
+  # Also export logs to the OTLP endpoint below (telemetry.url) as OTel log
+  # records, in addition to stdout. Defaults to false (stdout only).
+  otlp: false
 
 telemetry:
   url: http://localhost:4317/v1/metrics

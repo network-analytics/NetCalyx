@@ -80,6 +80,7 @@ opentelemetry-otlp = { workspace = true, features = [
     "logs",
     "grpc-tonic",
 ] }
+opentelemetry-appender-tracing = { workspace = true }
 apache-avro = { workspace = true, features = ["derive"] }
 indexmap = { workspace = true, features = ["serde"] }
 serde_json = { workspace = true }
