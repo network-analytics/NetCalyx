@@ -64,8 +64,10 @@ module doc on [`crates/rib/src/model.rs`](../crates/rib/src/model.rs).
 
 ## RIB views
 
-Five perspectives on one table's routes: `loc-rib` (best-path selected) plus
-four adj-ribs, keyed by policy stage and direction:
+Five perspectives on one table's routes: `loc-rib` (the local decision
+process's output: the best path, and optionally additional backup or ECMP
+paths) plus four adj-ribs (what was received from, or is being advertised
+to, one peer), keyed by policy stage and direction:
 
 | | pre-policy | post-policy |
 |---|---|---|

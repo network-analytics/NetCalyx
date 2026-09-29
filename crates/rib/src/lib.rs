@@ -15,21 +15,23 @@
 
 //! In-memory BGP RIB storage for a BMP collector.
 //!
-//! This crate holds the core data model only: attribute interning, per-router
-//! per-AFI-SAFI RIB containers with Arc-per-trie copy-on-write, and peer
-//! address resolution.
+//! This crate holds the core data model, attribute interning, per-router
+//! per-AFI-SAFI RIB containers with Arc-per-trie copy-on-write, peer address
+//! resolution, and LPM lookup.
 
 pub mod attrs;
+pub mod lookup;
 pub mod model;
 pub mod peers;
 pub mod types;
 
 pub use attrs::{AttrStore, RouteAttributes, SliceInterner};
+pub use lookup::{DEFAULT_VIEW_ORDER, LookupRequest, LookupTarget, Match, RouteExtra, lookup};
 pub use model::{
     AfiSafiRib, AfiSafiTable, LabeledRoutes, MultiRoute, PeerAddrIndex, PeerRibs, RibStore,
     RibViewCounts, Route, RouterRib, Routes, VpnRoutes,
 };
 pub use peers::PeerIndex;
 pub use types::{
-    AfiSafiType, LabeledRouteExtra, RibContext, Srv6RouteExtra, TableId, peer_identity,
+    AfiSafiType, LabeledRouteExtra, RibContext, RibView, Srv6RouteExtra, TableId, peer_identity,
 };

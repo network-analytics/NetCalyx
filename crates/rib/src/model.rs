@@ -23,8 +23,10 @@
 //! of a map of `Arc`s; only the final `PrefixMap` is deep-copied.
 //!
 //! A "RIB view" is one of the five perspectives on a table's routes: `loc-rib`
-//! (best-path selected) plus the four adj-ribs (`in`/`out` x `pre`/`post`
-//! policy) held per peer in [`PeerRibs`].
+//! (the local decision process's output: the best path, and optionally
+//! backup/ECMP paths, tagged via path status) plus the four adj-ribs (`in`/
+//! `out` x `pre`/`post` policy: what was received from, or is being advertised
+//! to, one peer) held per peer in [`PeerRibs`].
 
 use std::net::{IpAddr, Ipv6Addr};
 use std::sync::Arc;
@@ -40,7 +42,7 @@ use netcalyx_bmp_pkt::v4::PathMarking;
 
 use crate::attrs::RouteAttributes;
 use crate::peers::PeerIndex;
-use crate::types::{AfiSafiType, LabeledRouteExtra, RibContext, TableId};
+use crate::types::{AfiSafiType, LabeledRouteExtra, RibContext, RibView, TableId};
 
 /// Resolves a neighbor address to a peer within one RIB context.
 pub type PeerAddrIndex = PeerIndex<(RibContext, IpAddr), PeerKey>;
@@ -146,17 +148,45 @@ impl<T: Clone> PeerRibs<T> {
     pub fn adj_rib_out_post_ref(&self) -> Option<&T> {
         self.adj_rib_out_post.as_deref()
     }
+
+    /// The single accessor every view-keyed reader (lookup, introspection)
+    /// should go through, so "which field does this view select" is defined
+    /// once. `RibView::Loc` isn't one of `PeerRibs`'s fields — callers fall
+    /// back to `AfiSafiRib::loc_rib` for that case, hence `None` here.
+    pub fn view(&self, view: RibView) -> Option<&T> {
+        match view {
+            RibView::AdjInPre => self.adj_rib_in_pre_ref(),
+            RibView::AdjInPost => self.adj_rib_in_post_ref(),
+            RibView::AdjOutPre => self.adj_rib_out_pre_ref(),
+            RibView::AdjOutPost => self.adj_rib_out_post_ref(),
+            RibView::Loc => None,
+        }
+    }
 }
 
 impl<T: Default + Clone> PeerRibs<T> {
-    pub fn adj_rib_view_mut(&mut self, post_policy: bool, adj_rib_out: bool) -> &mut T {
-        let view = match (post_policy, adj_rib_out) {
-            (false, false) => &mut self.adj_rib_in_pre,
-            (true, false) => &mut self.adj_rib_in_post,
-            (false, true) => &mut self.adj_rib_out_pre,
-            (true, true) => &mut self.adj_rib_out_post,
+    /// The single mutable counterpart to [`PeerRibs::view`]. `None` for
+    /// `RibView::Loc`, which isn't a `PeerRibs` field.
+    pub fn view_mut(&mut self, view: RibView) -> Option<&mut T> {
+        let slot = match view {
+            RibView::AdjInPre => &mut self.adj_rib_in_pre,
+            RibView::AdjInPost => &mut self.adj_rib_in_post,
+            RibView::AdjOutPre => &mut self.adj_rib_out_pre,
+            RibView::AdjOutPost => &mut self.adj_rib_out_post,
+            RibView::Loc => return None,
         };
-        Arc::make_mut(view.get_or_insert_with(|| Arc::new(T::default())))
+        Some(Arc::make_mut(
+            slot.get_or_insert_with(|| Arc::new(T::default())),
+        ))
+    }
+
+    /// Convenience entry point for ingest, which has `(post_policy,
+    /// adj_rib_out)` straight from the BMP per-peer header rather than a
+    /// [`RibView`] already in hand. The flag conversion always yields an
+    /// adj-rib variant, never Loc Rib, so this is infallible.
+    pub fn adj_rib_view_mut(&mut self, post_policy: bool, adj_rib_out: bool) -> &mut T {
+        self.view_mut(RibView::from_peer_flags(post_policy, adj_rib_out))
+            .expect("from_peer_flags never returns RibView::Loc")
     }
 }
 
@@ -811,6 +841,13 @@ mod tests {
             }
         );
         assert_eq!(table.route_count(), 4);
+    }
+
+    #[test]
+    fn peer_ribs_view_accessors_return_none_for_loc() {
+        let mut peer_ribs = PeerRibs::<Routes<Ipv4Net>>::default();
+        assert!(peer_ribs.view(RibView::Loc).is_none());
+        assert!(peer_ribs.view_mut(RibView::Loc).is_none());
     }
 
     #[test]

@@ -124,6 +124,34 @@ impl From<AddressType> for AfiSafiType {
     }
 }
 
+/// One of the five RIB views a router may expose per table: `loc-rib` (the
+/// local decision process's output: the best path, and optionally
+/// backup/ECMP paths, tagged via path status) plus the four adj-ribs
+/// (`in`/`out` x `pre`/`post` policy: what was received from, or is being
+/// advertised to, one peer). Shared vocabulary between ingest (which view a
+/// BMP message writes to) and lookup (which views a read may consult, and in
+/// what order).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RibView {
+    Loc,
+    AdjOutPre,
+    AdjOutPost,
+    AdjInPost,
+    AdjInPre,
+}
+
+impl RibView {
+    /// `(post_policy, adj_rib_out)` as carried in the BMP per-peer header.
+    pub fn from_peer_flags(post_policy: bool, adj_rib_out: bool) -> RibView {
+        match (post_policy, adj_rib_out) {
+            (false, false) => RibView::AdjInPre,
+            (true, false) => RibView::AdjInPost,
+            (false, true) => RibView::AdjOutPre,
+            (true, true) => RibView::AdjOutPost,
+        }
+    }
+}
+
 /// Forwarding information carried per route for labeled families.
 /// Flow enrichment needs this, not just the path attributes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -202,6 +230,14 @@ mod tests {
             number: 1,
         };
         assert_eq!(RibContext::from(Some(rd)), RibContext::Vrf(rd));
+    }
+
+    #[test]
+    fn rib_view_from_peer_flags_maps_all_four_combinations() {
+        assert_eq!(RibView::from_peer_flags(false, false), RibView::AdjInPre);
+        assert_eq!(RibView::from_peer_flags(true, false), RibView::AdjInPost);
+        assert_eq!(RibView::from_peer_flags(false, true), RibView::AdjOutPre);
+        assert_eq!(RibView::from_peer_flags(true, true), RibView::AdjOutPost);
     }
 
     #[test]
