@@ -8,7 +8,6 @@ authors = ["NetCalyx Authors"]
 license = "Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/network-analytics/NetCalyx"
-homepage = "https://github.com/network-analytics/NetCalyx"
 description = """
 Cloned from the crate `nom_locate` but with the omission of computing
 the line & column number since we don't care about them in binary protocols,

@@ -8,7 +8,6 @@ authors = ["NetCalyx Authors"]
 license = "Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/network-analytics/NetCalyx"
-homepage = "https://github.com/network-analytics/NetCalyx"
 description = """
 CLI utility to consume YANG-encoded telemetry messages from Kafka and validate them against YANG schemas from a Schema Registry.
 """

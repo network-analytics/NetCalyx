@@ -8,7 +8,9 @@ license = "Apache-2.0"
 readme = "README.md"
 description = """Fuzzers for NetCalyx"""
 repository = "https://github.com/network-analytics/NetCalyx"
-homepage = "https://github.com/network-analytics/NetCalyx"
+
+[lints]
+workspace = true
 
 [package.metadata]
 cargo-fuzz = true
