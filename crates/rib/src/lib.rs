@@ -17,14 +17,16 @@
 //!
 //! This crate holds the core data model, attribute interning, per-router
 //! per-AFI-SAFI RIB containers with Arc-per-trie copy-on-write, peer address
-//! resolution.
+//! resolution, and LPM lookup.
 
 pub mod attrs;
+pub mod lookup;
 pub mod model;
 pub mod peers;
 pub mod types;
 
 pub use attrs::{AttrStore, RouteAttributes};
+pub use lookup::{DEFAULT_VIEW_ORDER, LookupRequest, LookupTarget, Match, lookup};
 pub use model::{AfiSafiTable, RibStore, RouterRib};
 pub use types::{
     AfiSafiType, LabeledRouteExtra, RibContext, RibView, Srv6RouteExtra, TableId, peer_identity,
