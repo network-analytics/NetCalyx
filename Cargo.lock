@@ -223,6 +223,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "array-const-fn-init"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8bcb85e548c05d407fa6faff46b750ba287714ef32afc0f5e15b4641ffd6affb"
+
+[[package]]
 name = "async-channel"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3042,6 +3048,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "netcalyx-rib"
+version = "0.3.0"
+dependencies = [
+ "ipnet",
+ "netcalyx-bgp-pkt",
+ "netcalyx-bmp-pkt",
+ "netcalyx-iana",
+ "prefix-trie",
+ "rustc-hash",
+ "smallvec",
+]
+
+[[package]]
 name = "netcalyx-serde-macros"
 version = "0.3.0"
 dependencies = [
@@ -3860,6 +3879,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85eae3c4ed2f50dcfe72643da4befc30deadb458a9b590d720cde2f2b1e97da9"
 dependencies = [
  "zerocopy",
+]
+
+[[package]]
+name = "prefix-trie"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6369af434551b9bf8be05ab871ac1263687d6f0c9485e6d781f904f3e06d7d03"
+dependencies = [
+ "array-const-fn-init",
+ "either",
+ "ipnet",
+ "num-traits",
+ "smallvec",
 ]
 
 [[package]]
