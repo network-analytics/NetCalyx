@@ -126,7 +126,10 @@ fn subscription_info_tags(
     subscription_info: Option<&SubscriptionInfo>,
 ) -> Vec<opentelemetry::KeyValue> {
     let Some(subscription_info) = subscription_info else {
-        return Vec::new();
+        return vec![opentelemetry::KeyValue::new(
+            "network.peer.address",
+            "unknown".to_string(),
+        )];
     };
     vec![
         opentelemetry::KeyValue::new(

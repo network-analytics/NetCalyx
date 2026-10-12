@@ -650,10 +650,10 @@ impl<F: YangLibraryFetcher> CacheActor<F> {
             Err(err) => {
                 self.stats.device_fetch_failed.add(
                     1,
-                    &[opentelemetry::KeyValue::new(
-                        "error.message",
-                        format!("{err}"),
-                    )],
+                    &[
+                        opentelemetry::KeyValue::new("network.peer.address", "unknown".to_string()),
+                        opentelemetry::KeyValue::new("error.message", format!("{err}")),
+                    ],
                 );
                 warn!(error=%err, "cache actor worker failed to execute a task");
             }
@@ -933,7 +933,7 @@ impl<F: YangLibraryFetcher> CacheActor<F> {
                         }
                         self.stats
                             .pending_cache_requests
-                            .record(self.pending_requests.len() as u64, &otl_tags);
+                            .record(self.pending_requests.len() as u64, &[]);
                     }
                 }
             }
@@ -1083,7 +1083,7 @@ impl<F: YangLibraryFetcher> CacheActor<F> {
                     }
                     self.stats
                         .pending_cache_requests
-                        .record(self.pending_requests.len() as u64, &otel_tags);
+                        .record(self.pending_requests.len() as u64, &[]);
                 }
             }
             CacheLookupCommand::LookupBySubscriptionIdOneShot {
@@ -1147,10 +1147,13 @@ impl<F: YangLibraryFetcher> CacheActor<F> {
                 content_id,
                 tx: sender,
             } => {
-                let otl_tags = [opentelemetry::KeyValue::new(
-                    OTL_YANG_PUSH_CACHED_CONTENT_ID_KEY,
-                    content_id.to_string(),
-                )];
+                let otl_tags = [
+                    opentelemetry::KeyValue::new("network.peer.address", "unknown".to_string()),
+                    opentelemetry::KeyValue::new(
+                        OTL_YANG_PUSH_CACHED_CONTENT_ID_KEY,
+                        content_id.to_string(),
+                    ),
+                ];
                 self.stats.requests_received.add(1, &otl_tags);
                 debug!(content_id, "processing cache lookup request by content id");
                 let yang_lib_ref = self.schema_cache.get_by_content_id(&content_id);
@@ -1165,10 +1168,13 @@ impl<F: YangLibraryFetcher> CacheActor<F> {
                 content_id,
                 tx: sender,
             } => {
-                let otl_tags = [opentelemetry::KeyValue::new(
-                    OTL_YANG_PUSH_CACHED_CONTENT_ID_KEY,
-                    content_id.to_string(),
-                )];
+                let otl_tags = [
+                    opentelemetry::KeyValue::new("network.peer.address", "unknown".to_string()),
+                    opentelemetry::KeyValue::new(
+                        OTL_YANG_PUSH_CACHED_CONTENT_ID_KEY,
+                        content_id.to_string(),
+                    ),
+                ];
                 self.stats.requests_received.add(1, &otl_tags);
                 debug!(
                     content_id,
@@ -1229,7 +1235,6 @@ impl<F: YangLibraryFetcher> CacheActor<F> {
                     if let Ok(request) = request {
                         self.process_request(request).await;
                     } else {
-                        self.stats.requests_received.add(1, &[]);
                         warn!(
                             pending_requests = self.pending_requests.len(),
                             active_workers = self.workers_queue.len(),
