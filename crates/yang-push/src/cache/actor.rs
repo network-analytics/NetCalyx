@@ -910,10 +910,15 @@ impl<F: YangLibraryFetcher> CacheActor<F> {
                                         error=%err,
                                         "failed to fetch yang library from device"
                                     );
-                                    // remove the sender we just added
-                                    // since the fetch failed to start
-                                    entry.remove(entry.len() - 1);
+                                    // Fetch failed to start: drop the sender we
+                                    // queued. The entry was empty beforehand, so
+                                    // remove the key and refresh the gauge rather
+                                    // than leaving a stale empty entry behind.
+                                    self.pending_requests.remove(&subscription_info);
                                     self.stats.device_fetch_failed.add(1, &otl_tags);
+                                    self.stats
+                                        .pending_cache_requests
+                                        .record(self.pending_requests.len() as u64, &[]);
                                     return;
                                 }
                             };
@@ -1060,10 +1065,15 @@ impl<F: YangLibraryFetcher> CacheActor<F> {
                                     error=%err,
                                     "failed to fetch yang library from device"
                                 );
-                                // remove the sender we just added
-                                // since the fetch failed to start
-                                entry.remove(entry.len() - 1);
+                                // Fetch failed to start: drop the sender we
+                                // queued. The entry was empty beforehand, so
+                                // remove the key and refresh the gauge rather
+                                // than leaving a stale empty entry behind.
+                                self.pending_requests.remove(&subscription_info);
                                 self.stats.device_fetch_failed.add(1, &otel_tags);
+                                self.stats
+                                    .pending_cache_requests
+                                    .record(self.pending_requests.len() as u64, &[]);
                                 return;
                             }
                         };
