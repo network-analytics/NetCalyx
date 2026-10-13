@@ -304,6 +304,7 @@ jobs:
             cmake \
             git \
             libcurl-devel \
+            rpm-build
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -313,9 +314,10 @@ jobs:
         run: cargo build --locked --release -p netcalyx-collector
       - name: Strip netcalyx-collector binary
         run: strip target/release/netcalyx-collector
+      # Use rpm-build's find-requires: the builtin ldd-based auto-req emits "[WEAK]" glibc requires that EL8 dnf can't resolve.
       - name: Build RPM package
         run: |
-          cargo generate-rpm -p crates/collector -s "version = \"${{ needs.version.outputs.version }}\"" -s "release = \"${{ needs.version.outputs.release }}.${{ matrix.el_tag }}\""
+          cargo generate-rpm -p crates/collector --auto-req find-requires -s "version = \"${{ needs.version.outputs.version }}\"" -s "release = \"${{ needs.version.outputs.release }}.${{ matrix.el_tag }}\""
       - name: Get RPM filename
         id: rpm_filename
         run: |
@@ -405,6 +407,8 @@ jobs:
         run: |
           dnf install -y findutils
           RPM_FILE=$(find rpm-artifact -type f -name "*.rpm")
+          echo "Requires of ${RPM_FILE}:"
+          rpm -qpR "${RPM_FILE}"
           echo "Installing RPM file: ${RPM_FILE}"
           dnf install -y "${RPM_FILE}"
       - name: Run netcalyx-collector (it should start and then exit without errors)
