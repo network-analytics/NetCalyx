@@ -911,9 +911,8 @@ impl<F: YangLibraryFetcher> CacheActor<F> {
                                         "failed to fetch yang library from device"
                                     );
                                     // Fetch failed to start: drop the sender we
-                                    // queued. The entry was empty beforehand, so
-                                    // remove the key and refresh the gauge rather
-                                    // than leaving a stale empty entry behind.
+                                    // queued. The entry was empty beforehand
+                                    // so remove the key and refresh the gauge
                                     self.pending_requests.remove(&subscription_info);
                                     self.stats.device_fetch_failed.add(1, &otl_tags);
                                     self.stats
@@ -1066,9 +1065,8 @@ impl<F: YangLibraryFetcher> CacheActor<F> {
                                     "failed to fetch yang library from device"
                                 );
                                 // Fetch failed to start: drop the sender we
-                                // queued. The entry was empty beforehand, so
-                                // remove the key and refresh the gauge rather
-                                // than leaving a stale empty entry behind.
+                                // queued. The entry was empty beforehand so
+                                // remove the key and refresh the gauge
                                 self.pending_requests.remove(&subscription_info);
                                 self.stats.device_fetch_failed.add(1, &otel_tags);
                                 self.stats
