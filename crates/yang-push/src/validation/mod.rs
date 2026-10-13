@@ -307,7 +307,10 @@ impl ValidationStats {
             .build();
         let buffered = meter
             .u64_gauge("netcalyx.yang_push.validation.buffered")
-            .with_description("Number of YANG-Push messages currently buffered waiting for schemas")
+            .with_description(
+                "Number of YANG-Push messages currently buffered waiting for schemas, \
+                per peer, tagged with network.peer.address. Sum gives the global total.",
+            )
             .build();
         let buffer_drained = meter
             .u64_counter("netcalyx.yang_push.validation.buffer.drained")
@@ -458,32 +461,42 @@ impl ValidationActor {
     /// gate in `extract_subscription_info`), so `buffered_packets` is always
     /// empty whenever an entry is removed below.
     fn check_subscription_new(&mut self, peer: SocketAddr, subscription_info: &SubscriptionInfo) {
-        if let Some(cached_peer_subscriptions) = self.peer_cache.get_mut(&peer.ip()) {
-            let is_different = cached_peer_subscriptions
-                .subscriptions
-                .get(&subscription_info.id())
-                .map(|x| x.subscription_info != *subscription_info)
-                .unwrap_or(true);
-            if is_different {
-                trace!(
-                    peer=%peer,
-                    subscription_id=subscription_info.id(),
-                    router_content_id=subscription_info.content_id(),
-                    target=%subscription_info.target(),
-                    "Subscription changed, removing from cache to allow a new fetch schemas request"
-                );
-                if let Some(removed) = cached_peer_subscriptions
-                    .subscriptions
-                    .remove(&subscription_info.id())
-                {
-                    cached_peer_subscriptions.total_buffered -= removed.buffered_packets.len();
-                }
-            }
-            // clear peer if there are no subscriptions left
-            if cached_peer_subscriptions.subscriptions.is_empty() {
-                self.peer_cache.remove(&peer.ip());
-            }
+        let Some(cached_peer_subscriptions) = self.peer_cache.get_mut(&peer.ip()) else {
+            return;
+        };
+        let is_different = cached_peer_subscriptions
+            .subscriptions
+            .get(&subscription_info.id())
+            .map(|x| x.subscription_info != *subscription_info)
+            .unwrap_or(true);
+        if !is_different {
+            return;
         }
+        trace!(
+            peer=%peer,
+            subscription_id=subscription_info.id(),
+            router_content_id=subscription_info.content_id(),
+            target=%subscription_info.target(),
+            "Subscription changed, removing from cache to allow a new fetch schemas request"
+        );
+        if let Some(removed) = cached_peer_subscriptions
+            .subscriptions
+            .remove(&subscription_info.id())
+        {
+            cached_peer_subscriptions.total_buffered -= removed.buffered_packets.len();
+        }
+        // clear peer if there are no subscriptions left
+        if cached_peer_subscriptions.subscriptions.is_empty() {
+            self.peer_cache.remove(&peer.ip());
+        }
+        // Resync the per-peer gauges after the removal (0/0 when the peer is
+        // gone, resetting its series).
+        let (total_buffered, sub_count) = self
+            .peer_cache
+            .get(&peer.ip())
+            .map(|p| (p.total_buffered, p.subscriptions.len()))
+            .unwrap_or((0, 0));
+        self.record_otel_gauges(peer.ip(), total_buffered, sub_count);
     }
 
     /// Get the subscription info from the cache or from the SubscriptionStarted
@@ -575,6 +588,7 @@ impl ValidationActor {
         let message_id = packet.message_id();
         let publisher_id = packet.publisher_id();
         let mut peer_tags = Self::peer_tags_from_packet(peer, packet);
+        Self::extend_peer_tags_with_subscription_info(&subscription_info, &mut peer_tags);
         let subscription_id = subscription_info.id();
         let peer_cache = self.peer_cache.entry(peer.ip()).or_default();
 
@@ -632,9 +646,9 @@ impl ValidationActor {
         );
         subscription_cache.buffered_packets.push(message);
         peer_cache.total_buffered += 1;
-        self.stats
-            .buffered
-            .record(peer_cache.total_buffered as u64, &peer_tags);
+        let total_buffered = peer_cache.total_buffered;
+        let sub_count = peer_cache.subscriptions.len();
+        self.record_otel_gauges(peer.ip(), total_buffered, sub_count);
         true
     }
 
@@ -676,6 +690,23 @@ impl ValidationActor {
             OTL_YANG_PUSH_SUBSCRIPTION_ROUTER_CONTENT_ID_KEY,
             subscription_info.content_id().to_string(),
         ));
+    }
+
+    /// Record the peer-scoped cache gauges together so they never drift. Call
+    /// after any change to `peer_cache` for `peer_ip`; pass `0`/`0` once the
+    /// peer is gone so its per-peer series reset to zero.
+    fn record_otel_gauges(&self, peer_ip: IpAddr, total_buffered: usize, sub_count: usize) {
+        let peer_tag = [opentelemetry::KeyValue::new(
+            "network.peer.address",
+            format!("{peer_ip}"),
+        )];
+        self.stats.buffered.record(total_buffered as u64, &peer_tag);
+        self.stats
+            .cached_subscriptions
+            .record(sub_count as u64, &peer_tag);
+        self.stats
+            .cached_peers
+            .record(self.peer_cache.len() as u64, &[]);
     }
 
     /// Decode a raw `UdpNotifPacket` into a `UdpNotifPacketDecoded`.
@@ -1342,26 +1373,16 @@ impl ValidationActor {
             );
             self.pending_packets.push_back(message);
         }
-        self.stats.buffered.record(remaining as u64, &otl_tags);
         self.stats
             .pending
             .record(self.pending_packets.len() as u64, &[]);
-        self.stats
-            .cached_peers
-            .record(self.peer_cache.len() as u64, &[]);
         let peer_ip = subscription_info.peer_ip();
         let peer_sub_count = self
             .peer_cache
             .get(&peer_ip)
             .map(|p| p.subscriptions.len())
             .unwrap_or(0);
-        self.stats.cached_subscriptions.record(
-            peer_sub_count as u64,
-            &[opentelemetry::KeyValue::new(
-                "network.peer.address",
-                format!("{peer_ip}"),
-            )],
-        );
+        self.record_otel_gauges(peer_ip, remaining, peer_sub_count);
         Ok(())
     }
 
