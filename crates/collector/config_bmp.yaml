@@ -8,8 +8,8 @@ logging:
   ansi: true
 
 telemetry:
-  url: http://localhost:4317/v1/metrics
-  id: netcalyx-sample-instance
+  url: http://localhost:4317
+  service_name: netcalyx-sample-instance
   exporter_timeout: 3000
   reader_interval: 60000
   reader_timeout: 3000
