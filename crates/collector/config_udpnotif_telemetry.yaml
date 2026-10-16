@@ -9,7 +9,7 @@ logging:
 telemetry:
   # OTLP gRPC endpoint (host:port only, no signal path), used for metrics and logs
   url: http://localhost:4317
-  id: netcalyx-udpnotif-telemetry
+  service_name: netcalyx-udpnotif-telemetry
   exporter_timeout: 3000
   reader_interval: 60000
   reader_timeout: 3000

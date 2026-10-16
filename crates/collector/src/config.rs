@@ -43,6 +43,10 @@ pub(crate) const fn default_subscriber_timeout_duration() -> Duration {
     SUBSCRIBER_TIMEOUT_DURATION_DEFAULT
 }
 
+pub(crate) fn default_telemetry_service_name() -> String {
+    "netcalyx_collector".to_string()
+}
+
 pub(crate) const fn default_telemetry_timeout() -> Duration {
     Duration::from_secs(5)
 }
@@ -150,8 +154,9 @@ pub struct TelemetryConfig {
     /// OTLP gRPC endpoint, e.g. http://localhost:4317 (no signal path)
     pub url: String,
 
-    /// Id to distinguish multiple instances running at the same site
-    pub id: String,
+    /// OTel `service.name` resource attribute reported with metrics and logs
+    #[serde(default = "default_telemetry_service_name")]
+    pub service_name: String,
 
     /// Metrics and logs exporter GRPC timeout
     #[serde(default = "default_telemetry_timeout")]
@@ -175,8 +180,8 @@ impl TelemetryConfig {
     pub fn url(&self) -> &str {
         self.url.as_str()
     }
-    pub fn id(&self) -> &str {
-        self.id.as_str()
+    pub fn service_name(&self) -> &str {
+        self.service_name.as_str()
     }
 }
 

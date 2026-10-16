@@ -181,6 +181,14 @@ impl CollectorMetrics {
     }
 }
 
+/// Resource shared by the metrics and logs providers so both report the same
+/// service identity.
+fn telemetry_resource(config: &TelemetryConfig) -> opentelemetry_sdk::Resource {
+    opentelemetry_sdk::Resource::builder()
+        .with_service_name(config.service_name().to_string())
+        .build()
+}
+
 fn init_open_telemetry(
     config: &TelemetryConfig,
 ) -> Result<
@@ -189,7 +197,6 @@ fn init_open_telemetry(
 > {
     use opentelemetry::global;
     use opentelemetry_otlp::{Protocol, WithExportConfig};
-    use opentelemetry_sdk::Resource;
 
     let exporter = opentelemetry_otlp::MetricExporter::builder()
         .with_tonic()
@@ -207,10 +214,7 @@ fn init_open_telemetry(
         .with_timeout(config.reader_timeout)
         .build();
 
-    let resource = Resource::builder()
-        .with_service_name("NetCalyx")
-        .with_attributes([opentelemetry::KeyValue::new("id", config.id.clone())])
-        .build();
+    let resource = telemetry_resource(config);
 
     let provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
         .with_reader(reader)
@@ -228,7 +232,6 @@ fn init_otlp_logs(
     Box<dyn std::error::Error + Send + Sync + 'static>,
 > {
     use opentelemetry_otlp::{Protocol, WithExportConfig};
-    use opentelemetry_sdk::Resource;
 
     let exporter = opentelemetry_otlp::LogExporter::builder()
         .with_tonic()
@@ -237,11 +240,7 @@ fn init_otlp_logs(
         .with_timeout(config.exporter_timeout)
         .build()?;
 
-    // Same service identity as the metrics provider.
-    let resource = Resource::builder()
-        .with_service_name("NetCalyx")
-        .with_attributes([opentelemetry::KeyValue::new("id", config.id.clone())])
-        .build();
+    let resource = telemetry_resource(config);
 
     let provider = opentelemetry_sdk::logs::SdkLoggerProvider::builder()
         .with_batch_exporter(exporter)
