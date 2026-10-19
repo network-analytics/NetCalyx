@@ -189,7 +189,7 @@ fn telemetry_resource(config: &TelemetryConfig) -> opentelemetry_sdk::Resource {
         .build()
 }
 
-fn init_open_telemetry(
+fn init_otlp_metrics(
     config: &TelemetryConfig,
 ) -> Result<
     opentelemetry_sdk::metrics::SdkMeterProvider,
@@ -325,7 +325,7 @@ fn main() -> anyhow::Result<()> {
         // `.enter()` makes the tokio::spawn done inside build() bind to
         // telemetry_runtime.
         let _guard = telemetry_runtime.enter();
-        let meter_provider = init_open_telemetry(&config.telemetry).map_err(|err| anyhow!(err))?;
+        let meter_provider = init_otlp_metrics(&config.telemetry).map_err(|err| anyhow!(err))?;
         let logger_provider = if config.logging.otlp {
             Some(init_otlp_logs(&config.telemetry).map_err(|err| anyhow!(err))?)
         } else {
