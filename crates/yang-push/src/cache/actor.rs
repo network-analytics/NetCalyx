@@ -946,7 +946,7 @@ impl<F: YangLibraryFetcher> CacheActor<F> {
                 session,
                 tx: sender,
             } => {
-                let mut otl_tags = Self::otl_tags_from_subscription_inf(&subscription_info);
+                let otl_tags = Self::otl_tags_from_subscription_inf(&subscription_info);
                 self.stats.requests_received.add(1, otl_tags.as_ref());
                 debug!(
                     peer_ip=%subscription_info.peer_ip(),
@@ -980,18 +980,8 @@ impl<F: YangLibraryFetcher> CacheActor<F> {
                     .await;
 
                     let worker_result = match worker_result {
-                        Ok(worker_result) => {
-                            self.stats.device_fetch_succeeded.add(1, &otl_tags);
-                            worker_result
-                        }
-                        Err(err) => {
-                            otl_tags.push(opentelemetry::KeyValue::new(
-                                "error.message",
-                                format!("{err}"),
-                            ));
-                            self.stats.device_fetch_failed.add(1, &otl_tags);
-                            Err(Box::new((subscription_info.clone(), err.into())))
-                        }
+                        Ok(worker_result) => worker_result,
+                        Err(err) => Err(Box::new((subscription_info.clone(), err.into()))),
                     };
                     self.process_worker_result(Ok(worker_result)).await;
                 }
@@ -1100,7 +1090,7 @@ impl<F: YangLibraryFetcher> CacheActor<F> {
                 tx,
             } => {
                 let peer_ip = session.peer().ip();
-                let mut otel_tags = vec![
+                let otel_tags = [
                     opentelemetry::KeyValue::new("network.peer.address", format!("{peer_ip}")),
                     opentelemetry::KeyValue::new(
                         OTL_YANG_PUSH_SUBSCRIPTION_ID_KEY,
@@ -1134,18 +1124,10 @@ impl<F: YangLibraryFetcher> CacheActor<F> {
                     )
                     .await;
                     let worker_result = match worker_result {
-                        Ok(worker_result) => {
-                            self.stats.device_fetch_succeeded.add(1, &otel_tags);
-                            worker_result
-                        }
+                        Ok(worker_result) => worker_result,
                         Err(err) => {
-                            otel_tags.push(opentelemetry::KeyValue::new(
-                                "error.message",
-                                format!("{err}"),
-                            ));
-                            self.stats.device_fetch_failed.add(1, &otel_tags);
                             let empty = SubscriptionInfo::new_empty(peer_ip, subscription_id);
-                            Err(Box::new((empty.clone(), err.into())))
+                            Err(Box::new((empty, err.into())))
                         }
                     };
                     self.process_worker_result(Ok(worker_result)).await;
