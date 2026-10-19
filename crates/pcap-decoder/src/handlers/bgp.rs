@@ -19,7 +19,9 @@ use crate::protocol_handler::{DecodeOutcome, ProtocolHandler};
 use bytes::BytesMut;
 use netcalyx_bgp_pkt::BgpMessage;
 use netcalyx_bgp_pkt::codec::{BgpCodec, BgpCodecDecoderError};
-use netcalyx_bgp_pkt::wire::deserializer::{BgpParsingContext, BgpParsingIgnoredErrors};
+use netcalyx_bgp_pkt::wire::deserializer::{
+    AddPathMap, BgpParsingContext, BgpParsingIgnoredErrors,
+};
 use netcalyx_pcap_reader::TransportProtocol;
 use std::collections::HashMap;
 use std::io;
@@ -55,7 +57,7 @@ impl ProtocolHandler<(BgpMessage, BgpParsingIgnoredErrors), BgpCodec, BgpCodecDe
                     BgpParsingContext::new(
                         true,
                         HashMap::new(),
-                        HashMap::new(),
+                        AddPathMap::default(),
                         true,
                         true,
                         true,

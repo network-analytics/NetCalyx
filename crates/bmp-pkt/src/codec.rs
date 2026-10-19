@@ -650,8 +650,11 @@ mod tests {
             .expect("peer lookup failed")
             .add_path();
         assert_eq!(
-            add_path1,
-            &HashMap::from([(AddressType::Ipv4Unicast, true)])
+            &**add_path1,
+            &HashMap::from([(
+                AddressType::Ipv4Unicast,
+                AddPathAddressFamily::new(AddressType::Ipv4Unicast, false, true)
+            )])
         );
         let _ = codec
             .decode(&mut buf)
@@ -665,10 +668,16 @@ mod tests {
             .expect("peer lookup failed")
             .add_path();
         assert_eq!(
-            add_path2,
+            &**add_path2,
             &HashMap::from([
-                (AddressType::Ipv4Unicast, true),
-                (AddressType::Ipv6Unicast, true)
+                (
+                    AddressType::Ipv4Unicast,
+                    AddPathAddressFamily::new(AddressType::Ipv4Unicast, false, true)
+                ),
+                (
+                    AddressType::Ipv6Unicast,
+                    AddPathAddressFamily::new(AddressType::Ipv6Unicast, false, true)
+                )
             ])
         );
     }

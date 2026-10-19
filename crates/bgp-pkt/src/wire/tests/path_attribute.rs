@@ -20,11 +20,11 @@ use crate::wire::deserializer::path_attribute::*;
 use crate::wire::serializer::path_attribute::*;
 
 use crate::nlri::*;
-use crate::wire::deserializer::Ipv4PrefixParsingError;
 use crate::wire::deserializer::nlri::{
     Ipv4MulticastParsingError, Ipv4UnicastParsingError, Ipv6MulticastParsingError,
     Ipv6UnicastParsingError,
 };
+use crate::wire::deserializer::{AddPathMap, Ipv4PrefixParsingError};
 use ipnet::{Ipv4Net, Ipv6Net};
 use netcalyx_iana::address_family::{
     AddressFamily, AddressType, SubsequentAddressFamily, UndefinedAddressFamily,
@@ -1294,52 +1294,40 @@ fn test_mp_reach_nlri_ipv6() -> Result<(), MpReachWritingError> {
         SubsequentAddressFamily::Unicast
     );
 
-    test_parsed_completely_with_three_inputs(
-        &good_wire,
-        false,
-        &HashMap::new(),
-        &HashMap::new(),
-        &good,
-    );
-    test_parsed_completely_with_three_inputs(
+    test_parsed_completely_with_two_inputs(&good_wire, false, &BgpParsingContext::default(), &good);
+    test_parsed_completely_with_two_inputs(
         &good_extended_wire,
         true,
-        &HashMap::new(),
-        &HashMap::new(),
+        &BgpParsingContext::default(),
         &good,
     );
-    test_parsed_completely_with_three_inputs(
+    test_parsed_completely_with_two_inputs(
         &unknown_address_type_wire,
         false,
-        &HashMap::new(),
-        &HashMap::new(),
+        &BgpParsingContext::default(),
         &unknown_address_type,
     );
 
-    test_parse_error_with_three_inputs::<
+    test_parse_error_with_two_inputs::<
         MpReach,
         bool,
-        &HashMap<AddressType, u8>,
-        &HashMap<AddressType, bool>,
+        &BgpParsingContext,
         LocatedMpReachParsingError<'_>,
     >(
         &invalid_afi_wire,
         false,
-        &HashMap::new(),
-        &HashMap::new(),
+        &BgpParsingContext::default(),
         nom::Err::Error(invalid_afi),
     );
-    test_parse_error_with_three_inputs::<
+    test_parse_error_with_two_inputs::<
         MpReach,
         bool,
-        &HashMap<AddressType, u8>,
-        &HashMap<AddressType, bool>,
+        &BgpParsingContext,
         LocatedMpReachParsingError<'_>,
     >(
         &invalid_safi_wire,
         false,
-        &HashMap::new(),
-        &HashMap::new(),
+        &BgpParsingContext::default(),
         nom::Err::Error(invalid_safi),
     );
 
@@ -1379,19 +1367,17 @@ fn test_mp_reach_nlri_ipv4_ipv6_next_hop() -> Result<(), MpReachWritingError> {
         )],
     };
 
-    test_parsed_completely_with_three_inputs(
+    test_parsed_completely_with_two_inputs(
         &good_no_link_local_wire,
         true,
-        &HashMap::new(),
-        &HashMap::new(),
+        &BgpParsingContext::default(),
         &good_no_link_local,
     );
 
-    test_parsed_completely_with_three_inputs(
+    test_parsed_completely_with_two_inputs(
         &good_link_local_wire,
         true,
-        &HashMap::new(),
-        &HashMap::new(),
+        &BgpParsingContext::default(),
         &good_link_local,
     );
 
@@ -1441,19 +1427,17 @@ fn test_mp_reach_nlri_ipv4_mpls_labels_ipv6_next_hop() -> Result<(), MpReachWrit
         ],
     };
 
-    test_parsed_completely_with_three_inputs(
+    test_parsed_completely_with_two_inputs(
         &good_no_link_local_wire,
         true,
-        &HashMap::new(),
-        &HashMap::new(),
+        &BgpParsingContext::default(),
         &good_no_link_local,
     );
 
-    test_parsed_completely_with_three_inputs(
+    test_parsed_completely_with_two_inputs(
         &good_link_local_wire,
         true,
-        &HashMap::new(),
-        &HashMap::new(),
+        &BgpParsingContext::default(),
         &good_link_local,
     );
 
@@ -1976,7 +1960,7 @@ fn test_mp_reach_multi_labels_vp_ipv4() -> Result<(), PathAttributeWritingError>
         &mut BgpParsingContext::new(
             false,
             HashMap::from([(AddressType::Ipv4MplsLabeledVpn, 2)]),
-            HashMap::new(),
+            AddPathMap::default(),
             true,
             true,
             true,
@@ -1991,7 +1975,7 @@ fn test_mp_reach_multi_labels_vp_ipv4() -> Result<(), PathAttributeWritingError>
         &mut BgpParsingContext::new(
             false,
             HashMap::from([(AddressType::Ipv4MplsLabeledVpn, u8::MAX)]),
-            HashMap::new(),
+            AddPathMap::default(),
             true,
             true,
             true,
@@ -2022,7 +2006,7 @@ fn test_mp_reach_multi_labels_vp_ipv4() -> Result<(), PathAttributeWritingError>
         &mut BgpParsingContext::new(
             false,
             HashMap::from([(AddressType::Ipv4MplsLabeledVpn, 1)]),
-            HashMap::new(),
+            AddPathMap::default(),
             true,
             true,
             true,
