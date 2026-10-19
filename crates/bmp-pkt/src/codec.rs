@@ -306,10 +306,12 @@ mod tests {
     use crate::*;
     use chrono::TimeZone;
     use netcalyx_bgp_pkt::capabilities::{
-        ExtendedNextHopEncoding, ExtendedNextHopEncodingCapability, FourOctetAsCapability,
-        MultiProtocolExtensionsCapability,
+        AddPathAddressFamily, ExtendedNextHopEncoding, ExtendedNextHopEncodingCapability,
+        FourOctetAsCapability, MultiProtocolExtensionsCapability,
     };
+    use netcalyx_bgp_pkt::nlri::{Ipv4Unicast, Ipv4UnicastAddress};
     use netcalyx_bgp_pkt::open::{BgpOpenMessage, BgpOpenMessageParameter};
+    use netcalyx_bgp_pkt::update::BgpUpdateMessage;
     use netcalyx_iana::address_family::{AddressFamily, AddressType};
     use std::collections::HashMap;
     use std::net::Ipv6Addr;
@@ -471,6 +473,118 @@ mod tests {
         codec.update_parsing_ctx(&terminate);
         assert!(!codec.ctx.contains_key(&peer_key));
         Ok(())
+    }
+
+    fn assert_bidirectional_add_path_decoding(version: BmpVersion) {
+        let local_id = Ipv4Addr::new(192, 0, 2, 1);
+        let remote_id = Ipv4Addr::new(192, 0, 2, 2);
+        let header = |adj_rib_out, bgp_id| {
+            PeerHeader::new(
+                BmpPeerType::GlobalInstancePeer {
+                    ipv6: false,
+                    post_policy: false,
+                    asn2: false,
+                    adj_rib_out,
+                },
+                None,
+                Some(IpAddr::V4(remote_id)),
+                64512,
+                bgp_id,
+                None,
+            )
+        };
+        let open = |bgp_id, send, receive| {
+            BgpMessage::Open(BgpOpenMessage::new(
+                64512,
+                180,
+                bgp_id,
+                vec![BgpOpenMessageParameter::Capabilities(vec![
+                    BgpCapability::AddPath(AddPathCapability::new(vec![
+                        AddPathAddressFamily::new(AddressType::Ipv4Unicast, send, receive),
+                    ])),
+                ])],
+            ))
+        };
+
+        for peer_up_out in [false, true] {
+            for local_send in [false, true] {
+                let peer_up = v3::PeerUpNotificationMessage::build(
+                    header(peer_up_out, local_id),
+                    Some(IpAddr::V4(local_id)),
+                    Some(179),
+                    Some(12345),
+                    open(local_id, local_send, !local_send),
+                    open(remote_id, true, true),
+                    vec![],
+                )
+                .unwrap();
+                let peer_up = match version {
+                    BmpVersion::Version3 => {
+                        BmpMessage::V3(v3::BmpMessageValue::PeerUpNotification(peer_up))
+                    }
+                    BmpVersion::Version4 => {
+                        BmpMessage::V4(v4::BmpMessageValue::PeerUpNotification(peer_up))
+                    }
+                };
+                let mut codec = BmpCodec::default();
+                let mut buf = BytesMut::new();
+                codec.encode(peer_up.clone(), &mut buf).unwrap();
+                assert_eq!(codec.decode(&mut buf).unwrap(), Some(peer_up));
+                assert!(buf.is_empty());
+
+                // A single Peer Up supplies the session's capabilities for
+                // both directions and both BGP-ID lookup aliases.
+                for bgp_id in [local_id, remote_id] {
+                    for adj_rib_out in [false, true, false] {
+                        let path_id = if adj_rib_out == local_send {
+                            Some(42)
+                        } else {
+                            None
+                        };
+                        let route = Ipv4UnicastAddress::new(
+                            path_id,
+                            Ipv4Unicast::from_net("198.51.100.0/24".parse().unwrap()).unwrap(),
+                        );
+                        let update = BgpMessage::Update(BgpUpdateMessage::new(
+                            vec![route],
+                            vec![],
+                            vec![route],
+                        ));
+                        let peer_header = header(adj_rib_out, bgp_id);
+                        let message = match version {
+                            BmpVersion::Version3 => {
+                                BmpMessage::V3(v3::BmpMessageValue::RouteMonitoring(
+                                    v3::RouteMonitoringMessage::build(peer_header, update).unwrap(),
+                                ))
+                            }
+                            BmpVersion::Version4 => {
+                                BmpMessage::V4(v4::BmpMessageValue::RouteMonitoring(
+                                    v4::RouteMonitoringMessage::build(peer_header, update, vec![])
+                                        .unwrap(),
+                                ))
+                            }
+                        };
+                        codec.encode(message.clone(), &mut buf).unwrap();
+                        assert_eq!(
+                            codec.decode(&mut buf),
+                            Ok(Some(message)),
+                            "version={version:?}, peer_up_out={peer_up_out}, local_send={local_send}, out={adj_rib_out}, bgp_id={bgp_id}"
+                        );
+                        assert!(buf.is_empty());
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_bidirectional_add_path_decoding_v3() {
+        assert_bidirectional_add_path_decoding(BmpVersion::Version3);
+    }
+
+    #[test]
+    fn test_bidirectional_add_path_decoding_v4() {
+        assert_bidirectional_add_path_decoding(BmpVersion::Version4);
     }
 
     #[test]
