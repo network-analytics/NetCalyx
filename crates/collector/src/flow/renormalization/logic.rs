@@ -402,12 +402,6 @@ pub(crate) fn renormalize(
                 observation_domain_id: source_id,
             };
 
-            let mut flow_stats_tags = stats_tags.to_vec();
-            flow_stats_tags.push(KeyValue::new(
-                "observation_domain_id",
-                opentelemetry::Value::I64(source_id as i64),
-            ));
-
             let renormalized_sets = pkt
                 .into_sets()
                 .into_iter()
@@ -470,12 +464,6 @@ pub(crate) fn renormalize(
                 peer,
                 observation_domain_id: obs_id,
             };
-
-            let mut flow_stats_tags = stats_tags.to_vec();
-            flow_stats_tags.push(KeyValue::new(
-                "observation_domain_id",
-                opentelemetry::Value::I64(obs_id as i64),
-            ));
 
             let renormalized_sets = pkt
                 .into_sets()
