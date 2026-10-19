@@ -20,7 +20,7 @@ use std::collections::HashMap;
 
 use libfuzzer_sys::fuzz_target;
 
-use netcalyx_bgp_pkt::wire::deserializer::BgpParsingContext;
+use netcalyx_bgp_pkt::wire::deserializer::{AddPathMap, BgpParsingContext};
 use netcalyx_bmp_pkt::wire::deserializer::BmpParsingContext;
 use netcalyx_bmp_pkt::{BmpMessage, PeerKey};
 use netcalyx_iana::address_family::AddressType;
@@ -35,7 +35,7 @@ fuzz_target!(|data: (
         (
             bool,
             HashMap<AddressType, u8>,
-            HashMap<AddressType, bool>,
+            AddPathMap,
             bool,
             bool,
             bool,

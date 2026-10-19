@@ -17,7 +17,7 @@
 use crate::BgpMessage;
 use crate::capabilities::BgpCapability;
 use crate::wire::deserializer::{
-    BgpMessageParsingError, BgpParsingContext, BgpParsingIgnoredErrors,
+    AddPathMap, BgpMessageParsingError, BgpParsingContext, BgpParsingIgnoredErrors,
 };
 use crate::wire::serializer::BgpMessageWritingError;
 use byteorder::{ByteOrder, NetworkEndian};
@@ -48,7 +48,7 @@ impl BgpCodec {
             ctx: BgpParsingContext::new(
                 true,
                 HashMap::new(),
-                HashMap::new(),
+                AddPathMap::default(),
                 false,
                 false,
                 false,

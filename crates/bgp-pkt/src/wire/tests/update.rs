@@ -24,7 +24,7 @@ use crate::wire::deserializer::nlri::{
 };
 use crate::wire::deserializer::update::BgpUpdateMessageParsingError;
 use crate::wire::deserializer::{
-    BgpMessageParsingError, BgpParsingContext, Ipv4PrefixParsingError,
+    AddPathMap, BgpMessageParsingError, BgpParsingContext, Ipv4PrefixParsingError,
     LocatedBgpMessageParsingError,
 };
 use crate::wire::serializer::BgpMessageWritingError;
@@ -271,7 +271,7 @@ fn test_update_non_unicast_nlri() -> Result<(), BgpMessageWritingError> {
         &mut BgpParsingContext::new(
             true,
             HashMap::new(),
-            HashMap::new(),
+            AddPathMap::default(),
             true,
             false,
             false,
@@ -285,7 +285,7 @@ fn test_update_non_unicast_nlri() -> Result<(), BgpMessageWritingError> {
         &mut BgpParsingContext::new(
             true,
             HashMap::new(),
-            HashMap::new(),
+            AddPathMap::default(),
             false,
             false,
             false,
