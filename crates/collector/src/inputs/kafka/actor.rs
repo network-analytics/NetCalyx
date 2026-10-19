@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2025-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -277,9 +278,9 @@ where
                     }
                 }
                 msg = self.consumer.recv() => {
-                    self.stats.received.add(1, &self.otel_tags);
                     match msg {
                         Ok(msg) => {
+                            self.stats.received.add(1, &self.otel_tags);
                             let partition = msg.partition();
                             let offset = msg.offset();
 
