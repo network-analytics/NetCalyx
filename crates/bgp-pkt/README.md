@@ -44,7 +44,8 @@ use netcalyx_bgp_pkt::capabilities::*;
 use netcalyx_bgp_pkt::open::*;
 use netcalyx_bgp_pkt::*;
 use netcalyx_iana::address_family::*;
-use netcalyx_parse_utils::{ReadablePDUWithOneInput, Span, WritablePDU};
+use netcalyx_bgp_pkt::wire::deserializer::BgpParsingContext;
+use netcalyx_parse_utils::{ReadablePduWithOneInput, Span, WritablePdu};
 
 pub fn main() {
     // Construct a new BGP message
@@ -94,7 +95,9 @@ pub fn main() {
     );
 
     // Deserialize the message from binary format
-    let (_, msg_back) = BgpMessage::from_wire(Span::new(&buf), true).unwrap();
+    let mut ctx = BgpParsingContext::default();
+    let (_, msg_back) =
+        BgpMessage::from_wire(Span::new(&buf), &mut ctx).unwrap();
     assert_eq!(msg, msg_back);
 }
 ```

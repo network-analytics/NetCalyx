@@ -21,6 +21,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::ops::Deref;
 
 use netcalyx_bgp_pkt::nlri::RouteDistinguisher;
+use netcalyx_bgp_pkt::wire::deserializer::MessageDirection;
 
 use crate::iana::{BmpMessageType, BmpPeerTypeCode, BmpVersion};
 
@@ -135,6 +136,14 @@ impl PeerHeader {
         self.peer_type
     }
 
+    pub const fn bgp_message_direction(&self) -> MessageDirection {
+        if self.peer_type.is_adj_rib_out() {
+            MessageDirection::Outbound
+        } else {
+            MessageDirection::Inbound
+        }
+    }
+
     pub const fn rd(&self) -> Option<RouteDistinguisher> {
         self.rd
     }
@@ -232,6 +241,16 @@ pub enum BmpPeerType {
 }
 
 impl BmpPeerType {
+    /// Whether this header describes the local send direction.
+    pub const fn is_adj_rib_out(&self) -> bool {
+        match self {
+            Self::GlobalInstancePeer { adj_rib_out, .. }
+            | Self::RdInstancePeer { adj_rib_out, .. }
+            | Self::LocalInstancePeer { adj_rib_out, .. } => *adj_rib_out,
+            _ => false,
+        }
+    }
+
     /// Get the IANA Code for the peer type
     pub const fn get_type(&self) -> BmpPeerTypeCode {
         match self {

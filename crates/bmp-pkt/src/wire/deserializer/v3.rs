@@ -19,14 +19,17 @@ use netcalyx_bgp_pkt::BgpMessage;
 use netcalyx_bgp_pkt::iana::BgpMessageType;
 use netcalyx_bgp_pkt::nlri::RouteDistinguisher;
 use netcalyx_bgp_pkt::wire::deserializer::nlri::RouteDistinguisherParsingError;
-use netcalyx_bgp_pkt::wire::deserializer::{BgpMessageParsingError, BgpParsingContext};
+use netcalyx_bgp_pkt::wire::deserializer::{
+    BgpMessageParsingError, BgpParsingContext, MessageDirection,
+};
 use netcalyx_iana::address_family::{
     AddressFamily, AddressType, InvalidAddressType, SubsequentAddressFamily,
     UndefinedAddressFamily, UndefinedSubsequentAddressFamily,
 };
 use netcalyx_parse_utils::{
-    ErrorKindSerdeDeref, ReadablePdu, ReadablePduWithOneInput, Span, parse_into_located,
-    parse_into_located_one_input, parse_till_empty_into_located,
+    ErrorKindSerdeDeref, ReadablePdu, ReadablePduWithOneInput, ReadablePduWithTwoInputs, Span,
+    parse_into_located, parse_into_located_one_input, parse_into_located_two_inputs,
+    parse_till_empty_into_located,
 };
 use netcalyx_serde_macros::LocatedError;
 use nom::IResult;
@@ -243,9 +246,10 @@ impl<'a>
         let peer_key = PeerKey::from_peer_header(&peer_header);
         let bgp_ctx = ctx.entry(peer_key).or_default();
         bgp_ctx.set_asn4(peer_header.is_asn4());
+        let direction = peer_header.bgp_message_direction();
         let input = buf;
         let (buf, update_message): (Span<'_>, BgpMessage) =
-            parse_into_located_one_input(buf, bgp_ctx)?;
+            parse_into_located_two_inputs(buf, bgp_ctx, direction)?;
         if update_message.get_type() != BgpMessageType::Update {
             return Err(nom::Err::Error(
                 LocatedRouteMonitoringMessageParsingError::new(
@@ -450,10 +454,12 @@ impl<'a>
         };
         let bgp_ctx = ctx.entry(peer_key).or_default();
         bgp_ctx.set_asn4(peer_header.is_asn4());
-        let (buf, sent_message) = parse_into_located_one_input(buf, bgp_ctx)?;
+        let (buf, sent_message) =
+            parse_into_located_two_inputs(buf, bgp_ctx, MessageDirection::Outbound)?;
         let bgp_ctx = ctx.entry(peer_key).or_default();
         bgp_ctx.set_asn4(peer_header.is_asn4());
-        let (buf, received_message) = parse_into_located_one_input(buf, bgp_ctx)?;
+        let (buf, received_message) =
+            parse_into_located_two_inputs(buf, bgp_ctx, MessageDirection::Inbound)?;
         let (buf, information) = parse_till_empty_into_located(buf)?;
         let peer_up_msg = v3::PeerUpNotificationMessage::build(
             peer_header,
@@ -541,7 +547,8 @@ impl<'a>
             nom::combinator::map_res(be_u8, PeerDownReasonCode::try_from)(buf)?;
         match reason_code {
             PeerDownReasonCode::LocalSystemClosedNotificationPduFollows => {
-                let (buf, msg) = parse_into_located_one_input(buf, bgp_ctx)?;
+                let (buf, msg) =
+                    parse_into_located_two_inputs(buf, bgp_ctx, MessageDirection::Outbound)?;
                 Ok((
                     buf,
                     v3::PeerDownNotificationReason::LocalSystemClosedNotificationPduFollows(msg),
@@ -555,7 +562,8 @@ impl<'a>
                 ))
             }
             PeerDownReasonCode::RemoteSystemClosedNotificationPduFollows => {
-                let (buf, msg) = parse_into_located_one_input(buf, bgp_ctx)?;
+                let (buf, msg) =
+                    parse_into_located_two_inputs(buf, bgp_ctx, MessageDirection::Inbound)?;
                 Ok((
                     buf,
                     v3::PeerDownNotificationReason::RemoteSystemClosedNotificationPduFollows(msg),
@@ -628,9 +636,10 @@ impl<'a>
         let peer_key = PeerKey::from_peer_header(&peer_header);
         let bgp_ctx = ctx.entry(peer_key).or_default();
         bgp_ctx.set_asn4(peer_header.is_asn4());
+        let direction = peer_header.bgp_message_direction();
         let mut mirrored = Vec::new();
         while !buf.is_empty() {
-            let (tmp, element) = parse_into_located_one_input(buf, &mut *bgp_ctx)?;
+            let (tmp, element) = parse_into_located_two_inputs(buf, &mut *bgp_ctx, direction)?;
             mirrored.push(element);
             buf = tmp;
         }
@@ -650,19 +659,24 @@ pub enum RouteMirroringValueParsingError {
 }
 
 impl<'a>
-    ReadablePduWithOneInput<'a, &mut BgpParsingContext, LocatedRouteMirroringValueParsingError<'a>>
-    for v3::RouteMirroringValue
+    ReadablePduWithTwoInputs<
+        'a,
+        &mut BgpParsingContext,
+        MessageDirection,
+        LocatedRouteMirroringValueParsingError<'a>,
+    > for v3::RouteMirroringValue
 {
     fn from_wire(
         buf: Span<'a>,
         bgp_ctx: &mut BgpParsingContext,
+        direction: MessageDirection,
     ) -> IResult<Span<'a>, Self, LocatedRouteMirroringValueParsingError<'a>> {
         let (buf, code) = nom::combinator::map_res(be_u16, RouteMirroringTlvType::try_from)(buf)?;
         let (_, length): (_, u16) = nom::combinator::peek(be_u16)(buf)?;
         let (remainder, buf) = nom::multi::length_data(be_u16)(buf)?;
         let (buf, value) = match code {
             RouteMirroringTlvType::BgpMessage => {
-                let (buf, msg) = parse_into_located_one_input(buf, bgp_ctx)?;
+                let (buf, msg) = parse_into_located_two_inputs(buf, bgp_ctx, direction)?;
                 (
                     buf,
                     v3::RouteMirroringValue::BgpMessage(v3::MirroredBgpMessage::Parsed(msg)),
