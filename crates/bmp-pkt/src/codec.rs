@@ -177,17 +177,7 @@ impl BmpParsingContext {
                 bgp_ctx.add_path_mut().clear();
                 bgp_ctx.multiple_labels_mut().clear();
             }
-            // Determine if we need to track Adj-RIB-Out based on Peer Type,
-            // which is useful to select ADD-Path behavior for either sending
-            // or receiving
-            let adj_rib_out = match peer_up.peer_header().peer_type() {
-                BmpPeerType::GlobalInstancePeer { adj_rib_out, .. }
-                | BmpPeerType::RdInstancePeer { adj_rib_out, .. }
-                | BmpPeerType::LocalInstancePeer { adj_rib_out, .. } => adj_rib_out,
-                _ => false,
-            };
-
-            bgp_ctx.update_negotiated_add_path(&negotiated_add_path);
+            bgp_ctx.update_add_path(&negotiated_add_path);
             for multiple_label in &common_multiple_labels_caps {
                 bgp_ctx.update_multiple_label_capability(multiple_label);
             }
@@ -206,16 +196,7 @@ impl BmpParsingContext {
                 let bgp_ctx = ctx.entry(peer_key).or_default();
                 bgp_ctx.add_path_mut().clear();
                 bgp_ctx.multiple_labels_mut().clear();
-                // Determine if we need to track Adj-RIB-Out based on Peer Type,
-                // which is useful to select ADD-Path behavior for either
-                // sending or receiving
-                let adj_rib_out = match peer_up.peer_header().peer_type() {
-                    BmpPeerType::GlobalInstancePeer { adj_rib_out, .. }
-                    | BmpPeerType::RdInstancePeer { adj_rib_out, .. }
-                    | BmpPeerType::LocalInstancePeer { adj_rib_out, .. } => adj_rib_out,
-                    _ => false,
-                };
-                bgp_ctx.update_negotiated_add_path(&negotiated_add_path);
+                bgp_ctx.update_add_path(&negotiated_add_path);
                 for multiple_label in &common_multiple_labels_caps {
                     bgp_ctx.update_multiple_label_capability(multiple_label);
                 }

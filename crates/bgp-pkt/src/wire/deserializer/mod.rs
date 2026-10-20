@@ -26,7 +26,7 @@ pub mod route_refresh;
 pub mod update;
 
 use ipnet::{Ipv4Net, Ipv6Net};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use netcalyx_iana::address_family::AddressType;
@@ -89,49 +89,85 @@ impl BgpParsingIgnoredErrors {
     }
 }
 
-/// ADD-PATH support indexed by address family, from the local OPEN's
-/// perspective.
-///
-/// TODO This maybe should be replaced by a Vec<> wrapper like AddPathCapability
+/// ADD-PATH support from the local OPEN's perspective, stored per direction.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "fuzz", derive(arbitrary::Arbitrary))]
-pub struct AddPathMap(HashMap<AddressType, AddPathAddressFamily>);
-
-impl AddPathMap {
-    pub fn add_path_enabled(&self, address_type: AddressType, adj_rib_out: bool) -> bool {
-        self.0.get(&address_type).is_some_and(|family| {
-            if adj_rib_out {
-                family.send()
-            } else {
-                family.receive()
-            }
-        })
-    }
+pub struct AddPathMap {
+    send: HashSet<AddressType>,
+    receive: HashSet<AddressType>,
 }
 
-impl FromIterator<(AddressType, AddPathAddressFamily)> for AddPathMap {
-    fn from_iter<T: IntoIterator<Item = (AddressType, AddPathAddressFamily)>>(iter: T) -> Self {
-        Self(iter.into_iter().collect())
+impl AddPathMap {
+    /// Replace both direction settings for a family.
+    pub fn insert(&mut self, family: AddPathAddressFamily) -> Option<AddPathAddressFamily> {
+        let address_type = family.address_type();
+        let previous = self.get(&address_type);
+        for (set, enabled) in [
+            (&mut self.send, family.send()),
+            (&mut self.receive, family.receive()),
+        ] {
+            if enabled {
+                set.insert(address_type);
+            } else {
+                set.remove(&address_type);
+            }
+        }
+        previous
+    }
+
+    pub fn get(&self, address_type: &AddressType) -> Option<AddPathAddressFamily> {
+        let send = self.send.contains(address_type);
+        let receive = self.receive.contains(address_type);
+        (send || receive).then(|| AddPathAddressFamily::new(*address_type, send, receive))
+    }
+
+    pub fn clear(&mut self) {
+        self.send.clear();
+        self.receive.clear();
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.send.is_empty() && self.receive.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.send.union(&self.receive).count()
+    }
+
+    /// Combine support from duplicate entries or additional capabilities.
+    pub fn extend(&mut self, other: &Self) {
+        self.send.extend(&other.send);
+        self.receive.extend(&other.receive);
+    }
+
+    /// Match local sending to remote receiving, and vice versa.
+    pub fn negotiate(&self, remote: &Self) -> Self {
+        Self {
+            send: self.send.intersection(&remote.receive).copied().collect(),
+            receive: self.receive.intersection(&remote.send).copied().collect(),
+        }
+    }
+
+    pub fn add_path_enabled(&self, address_type: AddressType, direction: MessageDirection) -> bool {
+        match direction {
+            MessageDirection::Outbound => self.send.contains(&address_type),
+            MessageDirection::Inbound => self.receive.contains(&address_type),
+        }
     }
 }
 
 impl FromIterator<AddPathAddressFamily> for AddPathMap {
     fn from_iter<T: IntoIterator<Item = AddPathAddressFamily>>(iter: T) -> Self {
-        Self(iter.into_iter().map(|x| (x.address_type(), x)).collect())
-    }
-}
-
-impl std::ops::Deref for AddPathMap {
-    type Target = HashMap<AddressType, AddPathAddressFamily>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl std::ops::DerefMut for AddPathMap {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        let mut families = Self::default();
+        for family in iter {
+            if family.send() {
+                families.send.insert(family.address_type());
+            }
+            if family.receive() {
+                families.receive.insert(family.address_type());
+            }
+        }
+        families
     }
 }
 
@@ -201,6 +237,11 @@ impl BgpParsingContext {
     }
 
     /// Select inbound (default) or outbound BGP message parsing.
+    ///
+    /// This setting persists in the context. Call this before parsing each
+    /// UPDATE body or path attribute when reusing a context for both
+    /// directions. Complete BGP message parsing sets this from its explicit
+    /// direction input, or to inbound when using the context-only wrapper.
     pub fn set_message_direction(&mut self, direction: MessageDirection) {
         self.message_direction = direction;
     }
@@ -222,39 +263,15 @@ impl BgpParsingContext {
         &mut self.add_path
     }
 
-    /// Store negotiated ADD-PATH support from the local OPEN's perspective.
-    pub fn update_negotiated_add_path(
-        &mut self,
-        add_path: &crate::capabilities::AddPathCapability,
-    ) {
+    pub fn update_add_path(&mut self, add_path: &AddPathCapability) {
+        let support = AddPathMap::from_iter(add_path.address_families().iter().copied());
         for address_family in add_path.address_families() {
-            self.add_path
-                .insert(address_family.address_type(), address_family.clone());
-        }
-    }
-
-    /// Whether ADD-PATH applies to `address_type` for the current message
-    /// direction.
-    #[inline]
-    pub fn add_path_enabled(&self, address_type: AddressType) -> bool {
-        self.add_path.add_path_enabled(
-            address_type,
-            self.message_direction == MessageDirection::Outbound,
-        )
-    }
-
-    #[inline]
-    pub fn update_add_path_capability(&mut self, add_path: &AddPathCapability, adj_rib_out: bool) {
-        for address_family in add_path.address_families() {
-            let add_path_support = if adj_rib_out {
-                address_family.send()
-            } else {
-                address_family.receive()
-            };
-            self.add_path_mut().insert(
-                address_family.address_type(),
-                AddPathAddressFamily::new(address_family.address_type(), false, add_path_support),
-            );
+            let address_type = address_family.address_type();
+            self.add_path.insert(AddPathAddressFamily::new(
+                address_type,
+                support.add_path_enabled(address_type, MessageDirection::Outbound),
+                support.add_path_enabled(address_type, MessageDirection::Inbound),
+            ));
         }
     }
 
@@ -264,12 +281,20 @@ impl BgpParsingContext {
             .insert(multiple_label.address_type(), multiple_label.count());
     }
 
+    /// Whether ADD-PATH applies to `address_type` for the current message
+    /// direction.
     #[inline]
-    pub fn update_capabilities(&mut self, capability: &BgpCapability, adj_rib_out: bool) {
+    pub fn add_path_enabled(&self, address_type: AddressType) -> bool {
+        self.add_path
+            .add_path_enabled(address_type, self.message_direction)
+    }
+
+    /// Store capability settings, including both ADD-PATH directions from
+    /// the local OPEN's perspective.
+    #[inline]
+    pub fn update_capabilities(&mut self, capability: &BgpCapability) {
         match capability {
-            BgpCapability::AddPath(add_path) => {
-                self.update_add_path_capability(add_path, adj_rib_out);
-            }
+            BgpCapability::AddPath(add_path) => self.update_add_path(add_path),
             BgpCapability::MultipleLabels(multiple_labels) => {
                 for multiple_label in multiple_labels.labels() {
                     self.update_multiple_label_capability(multiple_label);
@@ -600,6 +625,7 @@ fn parse_bgp_message_length_and_type(
     Ok((buf, (length, message_type, remainder_buf)))
 }
 
+/// Parse a received BGP message, resetting the context direction to inbound.
 impl<'a> ReadablePduWithOneInput<'a, &mut BgpParsingContext, LocatedBgpMessageParsingError<'a>>
     for BgpMessage
 {
@@ -607,6 +633,24 @@ impl<'a> ReadablePduWithOneInput<'a, &mut BgpParsingContext, LocatedBgpMessagePa
         buf: Span<'a>,
         ctx: &mut BgpParsingContext,
     ) -> IResult<Span<'a>, Self, LocatedBgpMessageParsingError<'a>> {
+        <Self as ReadablePduWithTwoInputs<_, _, _>>::from_wire(buf, ctx, MessageDirection::Inbound)
+    }
+}
+
+impl<'a>
+    ReadablePduWithTwoInputs<
+        'a,
+        &mut BgpParsingContext,
+        MessageDirection,
+        LocatedBgpMessageParsingError<'a>,
+    > for BgpMessage
+{
+    fn from_wire(
+        buf: Span<'a>,
+        ctx: &mut BgpParsingContext,
+        direction: MessageDirection,
+    ) -> IResult<Span<'a>, Self, LocatedBgpMessageParsingError<'a>> {
+        ctx.set_message_direction(direction);
         let (buf, _) = nom::combinator::map_res(be_u128, |x| {
             if x == u128::MAX {
                 Ok(x)

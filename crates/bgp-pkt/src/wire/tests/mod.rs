@@ -53,6 +53,7 @@ use crate::wire::deserializer::path_attribute::{
 use crate::wire::deserializer::route_refresh::BgpRouteRefreshMessageParsingError;
 use crate::wire::deserializer::{
     AddPathMap, BgpMessageParsingError, BgpParsingContext, LocatedBgpMessageParsingError,
+    MessageDirection,
 };
 use crate::wire::serializer::BgpMessageWritingError;
 use crate::{BgpMessage, BgpNotificationMessage, BgpOpenMessage, BgpRouteRefreshMessage};
@@ -79,20 +80,40 @@ pub(crate) const BGP_ID: &[u8] = &[0xFF, 0x00, 0x00, 0x01];
 fn test_add_path_map_direction_lookup() {
     let ipv4 = AddressType::Ipv4Unicast;
     let ipv6 = AddressType::Ipv6Unicast;
-    let mut map = crate::wire::deserializer::AddPathMap::default();
-    assert!(!map.add_path_enabled(ipv4, false));
-    assert!(!map.add_path_enabled(ipv4, true));
-    map.insert(ipv4, AddPathAddressFamily::new(ipv4, false, true));
-    map.insert(ipv6, AddPathAddressFamily::new(ipv6, true, false));
-    assert!(map.add_path_enabled(ipv4, false));
-    assert!(!map.add_path_enabled(ipv4, true));
-    assert!(!map.add_path_enabled(ipv6, false));
-    assert!(map.add_path_enabled(ipv6, true));
-    let collected: crate::wire::deserializer::AddPathMap = map
-        .iter()
-        .map(|(key, value)| (*key, value.clone()))
-        .collect();
+    let mut map = AddPathMap::default();
+    assert!(!map.add_path_enabled(ipv4, MessageDirection::Inbound));
+    assert!(!map.add_path_enabled(ipv4, MessageDirection::Outbound));
+    map.insert(AddPathAddressFamily::new(ipv4, false, true));
+    map.insert(AddPathAddressFamily::new(ipv6, true, false));
+    assert!(map.add_path_enabled(ipv4, MessageDirection::Inbound));
+    assert!(!map.add_path_enabled(ipv4, MessageDirection::Outbound));
+    assert!(!map.add_path_enabled(ipv6, MessageDirection::Inbound));
+    assert!(map.add_path_enabled(ipv6, MessageDirection::Outbound));
+    let collected = AddPathMap::from_iter([map.get(&ipv4).unwrap(), map.get(&ipv6).unwrap()]);
     assert_eq!(collected, map);
+    assert_eq!(
+        AddPathMap::from_iter([map.get(&ipv6).unwrap(), map.get(&ipv4).unwrap()]),
+        map
+    );
+    assert_eq!(
+        map.insert(AddPathAddressFamily::new(ipv4, true, false)),
+        Some(AddPathAddressFamily::new(ipv4, false, true))
+    );
+    assert_eq!(map.len(), 2);
+    assert!(!map.add_path_enabled(ipv4, MessageDirection::Inbound));
+    assert!(map.add_path_enabled(ipv4, MessageDirection::Outbound));
+    assert!(map.get(&AddressType::Ipv4Multicast).is_none());
+    assert_eq!(
+        AddPathMap::from_iter([
+            AddPathAddressFamily::new(ipv4, false, true),
+            AddPathAddressFamily::new(ipv6, true, false),
+            AddPathAddressFamily::new(ipv4, true, false),
+        ]),
+        AddPathMap::from_iter([
+            AddPathAddressFamily::new(ipv4, true, true),
+            AddPathAddressFamily::new(ipv6, true, false),
+        ])
+    );
     map.clear();
     assert!(map.is_empty());
     assert_eq!(collected.len(), 2);
@@ -111,22 +132,42 @@ fn test_directional_add_path_storage() {
         true,
         true,
     );
-    assert!(ctx.add_path().add_path_enabled(ipv4, false));
-    assert!(!ctx.add_path().add_path_enabled(ipv4, true));
+    assert!(
+        ctx.add_path()
+            .add_path_enabled(ipv4, MessageDirection::Inbound)
+    );
+    assert!(
+        !ctx.add_path()
+            .add_path_enabled(ipv4, MessageDirection::Outbound)
+    );
     ctx.add_path_mut()
-        .insert(ipv6, AddPathAddressFamily::new(ipv6, true, false));
-    assert!(!ctx.add_path().add_path_enabled(ipv6, false));
-    assert!(ctx.add_path().add_path_enabled(ipv6, true));
+        .insert(AddPathAddressFamily::new(ipv6, true, false));
+    assert!(
+        !ctx.add_path()
+            .add_path_enabled(ipv6, MessageDirection::Inbound)
+    );
+    assert!(
+        ctx.add_path()
+            .add_path_enabled(ipv6, MessageDirection::Outbound)
+    );
     let cloned = ctx.clone();
     assert_eq!(ctx.add_path(), cloned.add_path());
     ctx.add_path_mut().clear();
     assert!(ctx.add_path().is_empty());
-    for out in [false, true] {
-        assert!(!ctx.add_path().add_path_enabled(ipv4, out));
-        assert!(!ctx.add_path().add_path_enabled(ipv6, out));
+    for direction in [MessageDirection::Inbound, MessageDirection::Outbound] {
+        assert!(!ctx.add_path().add_path_enabled(ipv4, direction));
+        assert!(!ctx.add_path().add_path_enabled(ipv6, direction));
     }
-    assert!(cloned.add_path().add_path_enabled(ipv4, false));
-    assert!(cloned.add_path().add_path_enabled(ipv6, true));
+    assert!(
+        cloned
+            .add_path()
+            .add_path_enabled(ipv4, MessageDirection::Inbound)
+    );
+    assert!(
+        cloned
+            .add_path()
+            .add_path_enabled(ipv6, MessageDirection::Outbound)
+    );
     assert!(BgpParsingContext::default().add_path().is_empty());
     assert!(BgpParsingContext::asn2_default().add_path().is_empty());
 }
@@ -140,11 +181,98 @@ fn test_add_path_capability_preserves_both_directions() {
         AddPathAddressFamily::new(ipv6, true, false),
     ]);
     let mut ctx = BgpParsingContext::default();
-    ctx.update_negotiated_add_path(&capability);
+    ctx.update_capabilities(&BgpCapability::AddPath(capability.clone()));
     assert_eq!(ctx.add_path().len(), 2);
     for family in capability.address_families() {
-        assert_eq!(ctx.add_path().get(&family.address_type()), Some(family));
+        assert_eq!(ctx.add_path().get(&family.address_type()), Some(*family));
     }
+}
+
+#[test]
+fn test_add_path_direction_selection_and_capability_updates() {
+    let ipv4 = AddressType::Ipv4Unicast;
+    let mut ctx = BgpParsingContext::default();
+    ctx.update_capabilities(&BgpCapability::AddPath(AddPathCapability::new(vec![
+        AddPathAddressFamily::new(ipv4, false, true),
+    ])));
+    for direction in [
+        MessageDirection::Inbound,
+        MessageDirection::Outbound,
+        MessageDirection::Inbound,
+    ] {
+        ctx.set_message_direction(direction);
+        assert_eq!(
+            ctx.add_path_enabled(ipv4),
+            direction == MessageDirection::Inbound
+        );
+    }
+    ctx.set_message_direction(MessageDirection::Outbound);
+    ctx.add_path_mut()
+        .insert(AddPathAddressFamily::new(ipv4, true, true));
+    assert!(
+        ctx.add_path()
+            .add_path_enabled(ipv4, MessageDirection::Outbound)
+    );
+    let capability =
+        BgpCapability::AddPath(AddPathCapability::new(vec![AddPathAddressFamily::new(
+            ipv4, false, false,
+        )]));
+    ctx.update_capabilities(&capability);
+    assert!(
+        !ctx.add_path()
+            .add_path_enabled(ipv4, MessageDirection::Inbound)
+    );
+    assert!(
+        !ctx.add_path()
+            .add_path_enabled(ipv4, MessageDirection::Outbound)
+    );
+    assert!(ctx.add_path().is_empty());
+}
+
+#[test]
+fn test_add_path_capability_merges_duplicates_but_replaces_previous_settings() {
+    let ipv4 = AddressType::Ipv4Unicast;
+    let ipv6 = AddressType::Ipv6Unicast;
+    let mut ctx = BgpParsingContext::default();
+    ctx.update_add_path(&AddPathCapability::new(vec![
+        AddPathAddressFamily::new(ipv4, true, true),
+        AddPathAddressFamily::new(ipv6, true, true),
+    ]));
+    for entries in [
+        vec![
+            AddPathAddressFamily::new(ipv4, true, false),
+            AddPathAddressFamily::new(ipv4, false, true),
+        ],
+        vec![
+            AddPathAddressFamily::new(ipv4, false, true),
+            AddPathAddressFamily::new(ipv4, true, false),
+        ],
+    ] {
+        ctx.update_add_path(&AddPathCapability::new(entries));
+        assert_eq!(
+            ctx.add_path().get(&ipv4),
+            Some(AddPathAddressFamily::new(ipv4, true, true))
+        );
+    }
+    ctx.update_add_path(&AddPathCapability::new(vec![AddPathAddressFamily::new(
+        ipv4, false, true,
+    )]));
+    assert!(
+        !ctx.add_path()
+            .add_path_enabled(ipv4, MessageDirection::Outbound)
+    );
+    assert!(
+        ctx.add_path()
+            .add_path_enabled(ipv4, MessageDirection::Inbound)
+    );
+    ctx.update_add_path(&AddPathCapability::new(vec![AddPathAddressFamily::new(
+        ipv4, false, false,
+    )]));
+    assert!(ctx.add_path().get(&ipv4).is_none());
+    assert_eq!(
+        ctx.add_path().get(&ipv6),
+        Some(AddPathAddressFamily::new(ipv6, true, true))
+    );
 }
 
 #[test]

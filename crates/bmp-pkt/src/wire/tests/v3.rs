@@ -42,12 +42,14 @@ use netcalyx_bgp_pkt::path_attribute::{
 };
 use netcalyx_bgp_pkt::update::BgpUpdateMessage;
 use netcalyx_bgp_pkt::wire::deserializer::nlri::RouteDistinguisherParsingError;
-use netcalyx_bgp_pkt::wire::deserializer::{BgpMessageParsingError, BgpParsingContext};
+use netcalyx_bgp_pkt::wire::deserializer::{
+    BgpMessageParsingError, BgpParsingContext, MessageDirection,
+};
 use netcalyx_iana::address_family::{AddressFamily, AddressType};
 use netcalyx_parse_utils::Span;
 use netcalyx_parse_utils::test_helpers::{
     test_parse_error, test_parse_error_with_one_input, test_parsed_completely,
-    test_parsed_completely_with_one_input, test_write,
+    test_parsed_completely_with_one_input, test_parsed_completely_with_two_inputs, test_write,
 };
 use nom::error::ErrorKind;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -1191,34 +1193,40 @@ fn test_router_mirroring_value() -> Result<(), RouteMirroringValueWritingError> 
     let good_experimental_65533 = RouteMirroringValue::Experimental65533(vec![1, 2]);
     let good_experimental_65534 = RouteMirroringValue::Experimental65534(vec![1, 2]);
 
-    test_parsed_completely_with_one_input(
+    test_parsed_completely_with_two_inputs(
         &good_bgp_wire,
         &mut BgpParsingContext::default(),
+        MessageDirection::Inbound,
         &good_bgp,
     );
-    test_parsed_completely_with_one_input(
+    test_parsed_completely_with_two_inputs(
         &good_information_wire,
         &mut BgpParsingContext::default(),
+        MessageDirection::Inbound,
         &good_information,
     );
-    test_parsed_completely_with_one_input(
+    test_parsed_completely_with_two_inputs(
         &good_experimental_65531_wire,
         &mut BgpParsingContext::default(),
+        MessageDirection::Inbound,
         &good_experimental_65531,
     );
-    test_parsed_completely_with_one_input(
+    test_parsed_completely_with_two_inputs(
         &good_experimental_65532_wire,
         &mut BgpParsingContext::default(),
+        MessageDirection::Inbound,
         &good_experimental_65532,
     );
-    test_parsed_completely_with_one_input(
+    test_parsed_completely_with_two_inputs(
         &good_experimental_65533_wire,
         &mut BgpParsingContext::default(),
+        MessageDirection::Inbound,
         &good_experimental_65533,
     );
-    test_parsed_completely_with_one_input(
+    test_parsed_completely_with_two_inputs(
         &good_experimental_65534_wire,
         &mut BgpParsingContext::default(),
+        MessageDirection::Inbound,
         &good_experimental_65534,
     );
 

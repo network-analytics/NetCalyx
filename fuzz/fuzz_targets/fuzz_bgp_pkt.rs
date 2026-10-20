@@ -20,9 +20,9 @@ use libfuzzer_sys::fuzz_target;
 use std::collections::HashMap;
 
 use netcalyx_bgp_pkt::BgpMessage;
-use netcalyx_bgp_pkt::wire::deserializer::{AddPathMap, BgpParsingContext};
+use netcalyx_bgp_pkt::wire::deserializer::{AddPathMap, BgpParsingContext, MessageDirection};
 use netcalyx_iana::address_family::AddressType;
-use netcalyx_parse_utils::{ReadablePduWithOneInput, Span};
+use netcalyx_parse_utils::{ReadablePduWithTwoInputs, Span};
 
 // We don't pass BgpParsingContext as fuzzed input since we don't want to
 // generate BgpParsingContext::parsing_errors.
@@ -31,6 +31,7 @@ fuzz_target!(|data: (
     bool,
     HashMap<AddressType, u8>,
     AddPathMap,
+    MessageDirection,
     bool,
     bool,
     bool,
@@ -41,6 +42,7 @@ fuzz_target!(|data: (
         asn4,
         multiple_labels,
         add_path,
+        direction,
         fail_on_non_unicast_withdraw_nlri,
         fail_on_non_unicast_update_nlri,
         fail_on_capability_error,
@@ -55,7 +57,7 @@ fuzz_target!(|data: (
         fail_on_capability_error,
         fail_on_malformed_path_attr,
     );
-    while let Ok((retbuf, _msg)) = BgpMessage::from_wire(Span::new(buf), &mut ctx) {
+    while let Ok((retbuf, _msg)) = BgpMessage::from_wire(Span::new(buf), &mut ctx, direction) {
         buf = retbuf.fragment();
         ctx.reset_parsing_errors();
     }

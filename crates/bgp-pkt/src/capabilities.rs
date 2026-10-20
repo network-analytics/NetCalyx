@@ -371,7 +371,7 @@ impl AddPathCapability {
 /// | Send/Receive (1 octet)                         |
 /// +------------------------------------------------+
 /// ```
-#[derive(Debug, Hash, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Hash, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "fuzz", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct AddPathAddressFamily {
