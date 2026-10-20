@@ -312,8 +312,11 @@ mod tests {
         ExtendedNextHopEncoding, ExtendedNextHopEncodingCapability, FourOctetAsCapability,
         MultiProtocolExtensionsCapability,
     };
-    use netcalyx_bgp_pkt::nlri::{Ipv4Unicast, Ipv4UnicastAddress};
+    use netcalyx_bgp_pkt::nlri::{
+        Ipv4Unicast, Ipv4UnicastAddress, Ipv6Unicast, Ipv6UnicastAddress,
+    };
     use netcalyx_bgp_pkt::open::{BgpOpenMessage, BgpOpenMessageParameter};
+    use netcalyx_bgp_pkt::path_attribute::{MpReach, MpUnreach, PathAttribute, PathAttributeValue};
     use netcalyx_bgp_pkt::update::BgpUpdateMessage;
     use netcalyx_iana::address_family::{AddressFamily, AddressType};
     use std::collections::HashMap;
@@ -607,6 +610,7 @@ mod tests {
                 vec![BgpOpenMessageParameter::Capabilities(vec![
                     BgpCapability::AddPath(AddPathCapability::new(vec![
                         AddPathAddressFamily::new(AddressType::Ipv4Unicast, send, receive),
+                        AddPathAddressFamily::new(AddressType::Ipv6Unicast, send, receive),
                     ])),
                 ])],
             ))
@@ -641,19 +645,53 @@ mod tests {
                 // A single Peer Up supplies the session's capabilities for
                 // both directions and both BGP-ID lookup aliases.
                 for bgp_id in [local_id, remote_id] {
-                    for adj_rib_out in [false, true, false] {
-                        let path_id = if adj_rib_out == local_send {
-                            Some(42)
-                        } else {
-                            None
-                        };
+                    for (adj_rib_out, override_support) in [
+                        (false, None),
+                        (true, None),
+                        (false, Some(false)),
+                        (true, Some(true)),
+                        (false, None),
+                        (true, None),
+                    ] {
+                        if version == BmpVersion::Version3 && override_support.is_some() {
+                            continue;
+                        }
+                        let support = override_support.unwrap_or(adj_rib_out == local_send);
+                        let path_id = if support { Some(42) } else { None };
                         let route = Ipv4UnicastAddress::new(
                             path_id,
                             Ipv4Unicast::from_net("198.51.100.0/24".parse().unwrap()).unwrap(),
                         );
+                        let route_v6 = Ipv6UnicastAddress::new(
+                            path_id,
+                            Ipv6Unicast::from_net("2001:db8::/48".parse().unwrap()).unwrap(),
+                        );
                         let update = BgpMessage::Update(BgpUpdateMessage::new(
                             vec![route],
-                            vec![],
+                            vec![
+                                PathAttribute::from(
+                                    true,
+                                    false,
+                                    false,
+                                    false,
+                                    PathAttributeValue::MpReach(MpReach::Ipv6Unicast {
+                                        next_hop_global: "2001:db8::1".parse().unwrap(),
+                                        next_hop_local: None,
+                                        nlri: vec![route_v6],
+                                    }),
+                                )
+                                .unwrap(),
+                                PathAttribute::from(
+                                    true,
+                                    false,
+                                    false,
+                                    false,
+                                    PathAttributeValue::MpUnreach(MpUnreach::Ipv6Unicast {
+                                        nlri: vec![route_v6],
+                                    }),
+                                )
+                                .unwrap(),
+                            ],
                             vec![route],
                         ));
                         let peer_header = header(adj_rib_out, bgp_id);
@@ -664,8 +702,38 @@ mod tests {
                                 ))
                             }
                             BmpVersion::Version4 => {
+                                let tlvs = override_support
+                                    .map(|support| {
+                                        let (send, receive) = if adj_rib_out {
+                                            (support, !support)
+                                        } else {
+                                            (!support, support)
+                                        };
+                                        v4::RouteMonitoringTlv::build(
+                                            0,
+                                            v4::RouteMonitoringTlvValue::StatelessParsing(
+                                                BgpCapability::AddPath(AddPathCapability::new(
+                                                    vec![
+                                                        AddPathAddressFamily::new(
+                                                            AddressType::Ipv4Unicast,
+                                                            send,
+                                                            receive,
+                                                        ),
+                                                        AddPathAddressFamily::new(
+                                                            AddressType::Ipv6Unicast,
+                                                            send,
+                                                            receive,
+                                                        ),
+                                                    ],
+                                                )),
+                                            ),
+                                        )
+                                        .unwrap()
+                                    })
+                                    .into_iter()
+                                    .collect();
                                 BmpMessage::V4(v4::BmpMessageValue::RouteMonitoring(
-                                    v4::RouteMonitoringMessage::build(peer_header, update, vec![])
+                                    v4::RouteMonitoringMessage::build(peer_header, update, tlvs)
                                         .unwrap(),
                                 ))
                             }
@@ -678,6 +746,33 @@ mod tests {
                         );
                         assert!(buf.is_empty());
                     }
+                }
+                let empty_open =
+                    |bgp_id| BgpMessage::Open(BgpOpenMessage::new(64512, 180, bgp_id, vec![]));
+                let reset = v3::PeerUpNotificationMessage::build(
+                    header(peer_up_out, local_id),
+                    Some(IpAddr::V4(local_id)),
+                    Some(179),
+                    Some(12345),
+                    empty_open(local_id),
+                    empty_open(remote_id),
+                    vec![],
+                )
+                .unwrap();
+                let reset = match version {
+                    BmpVersion::Version3 => {
+                        BmpMessage::V3(v3::BmpMessageValue::PeerUpNotification(reset))
+                    }
+                    BmpVersion::Version4 => {
+                        BmpMessage::V4(v4::BmpMessageValue::PeerUpNotification(reset))
+                    }
+                };
+                codec.encode(reset.clone(), &mut buf).unwrap();
+                assert_eq!(codec.decode(&mut buf).unwrap(), Some(reset));
+                for bgp_id in [local_id, remote_id] {
+                    let key = PeerKey::from_peer_header(&header(false, bgp_id));
+                    let ctx = codec.ctx.get_peer(&key).unwrap();
+                    assert!(ctx.add_path().is_empty());
                 }
             }
         }
