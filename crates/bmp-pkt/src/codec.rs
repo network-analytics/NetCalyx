@@ -27,7 +27,9 @@ use netcalyx_bgp_pkt::capabilities::BgpCapability;
 use std::collections::HashSet;
 
 use crate::wire::deserializer::BmpParsingContext;
-use netcalyx_bgp_pkt::capabilities::{AddPathCapability, MultipleLabel, MultipleLabelsCapability};
+use netcalyx_bgp_pkt::capabilities::{
+    AddPathAddressFamily, AddPathCapability, MultipleLabel, MultipleLabelsCapability,
+};
 use netcalyx_parse_utils::{LocatedParsingError, ReadablePduWithOneInput, Span, WritablePdu};
 use nom::Needed;
 use serde::{Deserialize, Serialize};
@@ -84,6 +86,36 @@ fn get_caps(
     (add_path_caps, multiple_labels_caps)
 }
 
+/// Negotiate ADD-PATH per address family from the local (sent OPEN)
+/// perspective. Sending requires remote receive support; receiving requires
+/// remote send support.
+fn negotiate_add_path(
+    sent_caps: &[&AddPathCapability],
+    received_caps: &[&AddPathCapability],
+) -> AddPathCapability {
+    AddPathCapability::new(
+        sent_caps
+            .iter()
+            .flat_map(|cap| cap.address_families())
+            .filter_map(|local| {
+                let mut matching = received_caps
+                    .iter()
+                    .flat_map(|cap| cap.address_families())
+                    .filter(|remote| remote.address_type() == local.address_type())
+                    .peekable();
+
+                matching.peek()?;
+
+                Some(AddPathAddressFamily::new(
+                    local.address_type(),
+                    local.send() && matching.clone().any(|remote| remote.receive()),
+                    local.receive() && matching.any(|remote| remote.send()),
+                ))
+            })
+            .collect(),
+    )
+}
+
 impl BmpCodec {
     pub fn update_parsing_ctx(&mut self, msg: &BmpMessage) {
         self.ctx.update(msg)
@@ -109,11 +141,8 @@ impl BmpParsingContext {
             let (sent_add_path_caps, sent_multiple_labels_caps) = get_caps(send_caps);
             let (received_add_path_caps, received_multiple_labels_caps) = get_caps(received_caps);
 
-            // Only enable the intersection of enabled AddPath and Multi-Label
-            let sent_add_path_caps: HashSet<&AddPathCapability> =
-                HashSet::from_iter(sent_add_path_caps);
-            let received_add_path_caps: HashSet<&AddPathCapability> =
-                HashSet::from_iter(received_add_path_caps);
+            let negotiated_add_path =
+                negotiate_add_path(&sent_add_path_caps, &received_add_path_caps);
             let sent_multiple_labels_caps: HashSet<&MultipleLabel> = HashSet::from_iter(
                 sent_multiple_labels_caps
                     .into_iter()
@@ -125,11 +154,6 @@ impl BmpParsingContext {
                     .flat_map(|x| x.labels()),
             );
 
-            let common_add_path_caps: Vec<&AddPathCapability> = Vec::from_iter(
-                sent_add_path_caps
-                    .intersection(&received_add_path_caps)
-                    .copied(),
-            );
             let common_multiple_labels_caps: Vec<&MultipleLabel> = Vec::from_iter(
                 sent_multiple_labels_caps
                     .intersection(&received_multiple_labels_caps)
@@ -163,9 +187,7 @@ impl BmpParsingContext {
                 _ => false,
             };
 
-            for add_path in &common_add_path_caps {
-                bgp_ctx.update_add_path_capability(add_path, adj_rib_out);
-            }
+            bgp_ctx.update_negotiated_add_path(&negotiated_add_path);
             for multiple_label in &common_multiple_labels_caps {
                 bgp_ctx.update_multiple_label_capability(multiple_label);
             }
@@ -182,6 +204,8 @@ impl BmpParsingContext {
                     received_open.bgp_id(),
                 );
                 let bgp_ctx = ctx.entry(peer_key).or_default();
+                bgp_ctx.add_path_mut().clear();
+                bgp_ctx.multiple_labels_mut().clear();
                 // Determine if we need to track Adj-RIB-Out based on Peer Type,
                 // which is useful to select ADD-Path behavior for either
                 // sending or receiving
@@ -191,9 +215,7 @@ impl BmpParsingContext {
                     | BmpPeerType::LocalInstancePeer { adj_rib_out, .. } => adj_rib_out,
                     _ => false,
                 };
-                for add_path in &common_add_path_caps {
-                    bgp_ctx.update_add_path_capability(add_path, adj_rib_out);
-                }
+                bgp_ctx.update_negotiated_add_path(&negotiated_add_path);
                 for multiple_label in &common_multiple_labels_caps {
                     bgp_ctx.update_multiple_label_capability(multiple_label);
                 }
@@ -306,8 +328,8 @@ mod tests {
     use crate::*;
     use chrono::TimeZone;
     use netcalyx_bgp_pkt::capabilities::{
-        AddPathAddressFamily, ExtendedNextHopEncoding, ExtendedNextHopEncodingCapability,
-        FourOctetAsCapability, MultiProtocolExtensionsCapability,
+        ExtendedNextHopEncoding, ExtendedNextHopEncodingCapability, FourOctetAsCapability,
+        MultiProtocolExtensionsCapability,
     };
     use netcalyx_bgp_pkt::nlri::{Ipv4Unicast, Ipv4UnicastAddress};
     use netcalyx_bgp_pkt::open::{BgpOpenMessage, BgpOpenMessageParameter};
@@ -473,6 +495,109 @@ mod tests {
         codec.update_parsing_ctx(&terminate);
         assert!(!codec.ctx.contains_key(&peer_key));
         Ok(())
+    }
+
+    #[test]
+    fn test_add_path_direction_negotiation() {
+        for local_send in [false, true] {
+            for local_receive in [false, true] {
+                for remote_send in [false, true] {
+                    for remote_receive in [false, true] {
+                        for adj_rib_out in [false, true] {
+                            let header = PeerHeader::new(
+                                BmpPeerType::GlobalInstancePeer {
+                                    ipv6: false,
+                                    post_policy: false,
+                                    asn2: false,
+                                    adj_rib_out,
+                                },
+                                None,
+                                Some(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))),
+                                64512,
+                                Ipv4Addr::new(192, 0, 2, 1),
+                                None,
+                            );
+                            let open = |id, families| {
+                                BgpMessage::Open(BgpOpenMessage::new(
+                                    64512,
+                                    180,
+                                    id,
+                                    vec![BgpOpenMessageParameter::Capabilities(vec![
+                                        BgpCapability::AddPath(AddPathCapability::new(families)),
+                                    ])],
+                                ))
+                            };
+                            let peer_up = BmpMessage::V3(v3::BmpMessageValue::PeerUpNotification(
+                                v3::PeerUpNotificationMessage::build(
+                                    header.clone(),
+                                    Some(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 2))),
+                                    Some(179),
+                                    Some(12345),
+                                    open(
+                                        Ipv4Addr::new(192, 0, 2, 2),
+                                        vec![
+                                            AddPathAddressFamily::new(
+                                                AddressType::Ipv4Unicast,
+                                                local_send,
+                                                local_receive,
+                                            ),
+                                            AddPathAddressFamily::new(
+                                                AddressType::Ipv6Unicast,
+                                                true,
+                                                true,
+                                            ),
+                                        ],
+                                    ),
+                                    open(
+                                        Ipv4Addr::new(192, 0, 2, 3),
+                                        vec![AddPathAddressFamily::new(
+                                            AddressType::Ipv4Unicast,
+                                            remote_send,
+                                            remote_receive,
+                                        )],
+                                    ),
+                                    vec![],
+                                )
+                                .unwrap(),
+                            ));
+                            let mut codec = BmpCodec::default();
+                            codec.update_parsing_ctx(&peer_up);
+                            // Check both the header key and the alternate
+                            // BGP-ID key.
+                            for id in [header.bgp_id(), Ipv4Addr::new(192, 0, 2, 3)] {
+                                let key = PeerKey::new(
+                                    header.address(),
+                                    header.peer_type(),
+                                    header.rd(),
+                                    header.peer_as(),
+                                    id,
+                                );
+                                let peer_ctx = codec.ctx.get_peer(&key).unwrap();
+                                for out in [false, true] {
+                                    let expected = if out {
+                                        local_send && remote_receive
+                                    } else {
+                                        local_receive && remote_send
+                                    };
+                                    assert_eq!(
+                                        peer_ctx
+                                            .add_path()
+                                            .add_path_enabled(AddressType::Ipv4Unicast, out),
+                                        expected,
+                                        "local=({local_send},{local_receive}), remote=({remote_send},{remote_receive}), peer_up_out={adj_rib_out}, out={out}"
+                                    );
+                                    assert!(
+                                        !peer_ctx
+                                            .add_path()
+                                            .contains_key(&AddressType::Ipv6Unicast)
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fn assert_bidirectional_add_path_decoding(version: BmpVersion) {
@@ -653,7 +778,7 @@ mod tests {
             &**add_path1,
             &HashMap::from([(
                 AddressType::Ipv4Unicast,
-                AddPathAddressFamily::new(AddressType::Ipv4Unicast, false, true)
+                AddPathAddressFamily::new(AddressType::Ipv4Unicast, true, true)
             )])
         );
         let _ = codec
@@ -672,11 +797,11 @@ mod tests {
             &HashMap::from([
                 (
                     AddressType::Ipv4Unicast,
-                    AddPathAddressFamily::new(AddressType::Ipv4Unicast, false, true)
+                    AddPathAddressFamily::new(AddressType::Ipv4Unicast, true, true)
                 ),
                 (
                     AddressType::Ipv6Unicast,
-                    AddPathAddressFamily::new(AddressType::Ipv6Unicast, false, true)
+                    AddPathAddressFamily::new(AddressType::Ipv6Unicast, true, true)
                 )
             ])
         );
