@@ -20,6 +20,7 @@ pub mod v4;
 
 use crate::iana::{BmpVersion, UndefinedBmpVersion};
 use crate::{BmpMessage, PeerKey};
+use netcalyx_bgp_pkt::capabilities::AddPathAddressFamily;
 use netcalyx_bgp_pkt::wire::deserializer::BgpParsingContext;
 use netcalyx_parse_utils::{
     ErrorKindSerdeDeref, ReadablePduWithOneInput, Span, parse_into_located_one_input,
@@ -31,6 +32,12 @@ use nom::number::complete::{be_u8, be_u32};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
+
+/// RFC 9069 section 5.2 makes capability presence, not direction bits,
+/// determine ADD-PATH usage for a Loc-RIB address family.
+pub(crate) fn loc_rib_add_path(family: &AddPathAddressFamily) -> AddPathAddressFamily {
+    AddPathAddressFamily::new(family.address_type(), true, true)
+}
 
 #[derive(LocatedError, PartialEq, Clone, Debug, Serialize, Deserialize)]
 pub enum BmpMessageParsingError {
