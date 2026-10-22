@@ -50,6 +50,7 @@ fuzz = ["arbitrary", "arbitrary_ext", "bitflags/arbitrary"]
 json-schema = ["schemars", "netcalyx-bgp-pkt/json-schema", "netcalyx-iana/json-schema", "ipnet/schemars1"]
 
 [dev-dependencies]
+itertools = { workspace = true }
 netcalyx-pcap-reader = { workspace = true }
 netcalyx-parse-utils = { workspace = true, features = ["test-helpers"] }
 chrono = { workspace = true, default-features = false, features = [
