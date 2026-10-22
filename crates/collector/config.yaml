@@ -5,10 +5,14 @@ runtime:
 
 logging:
   level: info
+  # Also export logs to the OTLP endpoint below (telemetry.url) as OTel log
+  # records, in addition to stdout. Defaults to false (stdout only).
+  otlp: false
 
 telemetry:
-  url: http://localhost:4317/v1/metrics
-  id: netcalyx-sample-instance
+  # OTLP gRPC endpoint (host:port only, no signal path), used for metrics and logs
+  url: http://localhost:4317
+  service_name: netcalyx-sample-instance
   exporter_timeout: 3000
   reader_interval: 60000
   reader_timeout: 3000

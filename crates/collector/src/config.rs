@@ -43,6 +43,10 @@ pub(crate) const fn default_subscriber_timeout_duration() -> Duration {
     SUBSCRIBER_TIMEOUT_DURATION_DEFAULT
 }
 
+pub(crate) fn default_telemetry_service_name() -> String {
+    "netcalyx_collector".to_string()
+}
+
 pub(crate) const fn default_telemetry_timeout() -> Duration {
     Duration::from_secs(5)
 }
@@ -91,6 +95,10 @@ pub(crate) const fn default_ansi_log() -> bool {
     false
 }
 
+pub(crate) const fn default_otlp_logs() -> bool {
+    false
+}
+
 pub(crate) const fn default_reassembly_max_segments() -> u16 {
     netcalyx_udp_notif_pkt::codec::DEFAULT_MAX_SEGMENTS
 }
@@ -123,6 +131,11 @@ pub struct LoggingConfig {
     /// Use colorful ANSI characters for logging
     #[serde(default = "default_ansi_log")]
     pub ansi: bool,
+
+    /// Also export logs to the OTLP endpoint (telemetry.url)
+    /// as OTel log records
+    #[serde(default = "default_otlp_logs")]
+    pub otlp: bool,
 }
 
 impl Default for LoggingConfig {
@@ -130,6 +143,7 @@ impl Default for LoggingConfig {
         Self {
             level: "info".to_string(),
             ansi: false,
+            otlp: false,
         }
     }
 }
@@ -137,12 +151,14 @@ impl Default for LoggingConfig {
 #[serde_as]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TelemetryConfig {
+    /// OTLP gRPC endpoint, e.g. http://localhost:4317 (no signal path)
     pub url: String,
 
-    /// Id to distinguish multiple instances running at the same site
-    pub id: String,
+    /// OTel `service.name` resource attribute reported with metrics and logs
+    #[serde(default = "default_telemetry_service_name")]
+    pub service_name: String,
 
-    /// Metrics exporter GRPC timeout
+    /// Metrics and logs exporter GRPC timeout
     #[serde(default = "default_telemetry_timeout")]
     #[serde_as(as = "serde_with::DurationMilliSeconds<u64>")]
     pub exporter_timeout: Duration,
@@ -164,8 +180,8 @@ impl TelemetryConfig {
     pub fn url(&self) -> &str {
         self.url.as_str()
     }
-    pub fn id(&self) -> &str {
-        self.id.as_str()
+    pub fn service_name(&self) -> &str {
+        self.service_name.as_str()
     }
 }
 

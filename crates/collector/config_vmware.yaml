@@ -7,8 +7,8 @@ logging:
   level: info
 
 telemetry:
-  url: http://localhost:4317/v1/metrics
-  id: netcalyx-vmware
+  url: http://localhost:4317
+  service_name: netcalyx-vmware
   exporter_timeout: 3000
   reader_interval: 60000
   reader_timeout: 3000
