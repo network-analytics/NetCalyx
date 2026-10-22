@@ -15,12 +15,13 @@
 // limitations under the License.
 
 use crate::iana::{BmpMessageType, UndefinedBmpMessageType};
-use crate::wire::deserializer::BmpParsingContext;
+use crate::wire::deserializer::{BmpParsingContext, loc_rib_add_path};
 use crate::{PeerHeader, PeerKey, v3, v4};
 use netcalyx_bgp_pkt::BgpMessage;
+use netcalyx_bgp_pkt::capabilities::{AddPathCapability, BgpCapability};
 use netcalyx_bgp_pkt::wire::deserializer::capabilities::BgpCapabilityParsingError;
 use netcalyx_bgp_pkt::wire::deserializer::{
-    BgpMessageParsingError, BgpParsingContext, read_tlv_header_t16_l16,
+    BgpMessageParsingError, BgpParsingContext, MessageDirection, read_tlv_header_t16_l16,
 };
 
 use crate::wire::deserializer::v3::{
@@ -29,8 +30,9 @@ use crate::wire::deserializer::v3::{
     StatisticsReportMessageParsingError, TerminationMessageParsingError,
 };
 use netcalyx_parse_utils::{
-    ErrorKindSerdeDeref, ReadablePdu, ReadablePduWithOneInput, Span, parse_into_located,
-    parse_into_located_one_input, parse_till_empty_into_located,
+    ErrorKindSerdeDeref, ReadablePdu, ReadablePduWithOneInput, ReadablePduWithThreeInputs, Span,
+    parse_into_located, parse_into_located_one_input, parse_into_located_three_inputs,
+    parse_into_located_two_inputs, parse_till_empty_into_located,
 };
 use netcalyx_serde_macros::LocatedError;
 use nom::IResult;
@@ -180,8 +182,7 @@ impl<'a>
         let bgp_ctx = ctx.entry(peer_key).or_default();
         bgp_ctx.set_asn4(peer_header.is_asn4());
 
-        let adj_rib_out = peer_header.peer_type().is_adj_rib_out();
-        bgp_ctx.set_inbound_message(!adj_rib_out);
+        let direction = peer_header.bgp_message_direction();
 
         // Context represents what we learnt from the BGP Open
         // We do not want to alter it permanently based on TLVs
@@ -218,7 +219,12 @@ impl<'a>
                     _ => {}
                 }
 
-                let (tmp, element) = parse_into_located_one_input(buf, &mut ctx_clone)?;
+                let (tmp, element) = parse_into_located_three_inputs(
+                    buf,
+                    &mut ctx_clone,
+                    direction,
+                    peer_header.peer_type().is_loc_rib(),
+                )?;
                 tlvs.push(element);
                 buf = tmp;
             }
@@ -227,7 +233,7 @@ impl<'a>
             match bgp_pdu {
                 Some(bgp_pdu) => {
                     let (_, bgp_pdu): (_, BgpMessage) =
-                        parse_into_located_one_input(bgp_pdu, &mut ctx_clone)?;
+                        parse_into_located_two_inputs(bgp_pdu, &mut ctx_clone, direction)?;
                     (buf, bgp_pdu, tlvs)
                 }
                 None => {
@@ -283,12 +289,19 @@ impl<'a> FromExternalError<Span<'a>, FromUtf8Error> for LocatedRouteMonitoringTl
 }
 
 impl<'a>
-    ReadablePduWithOneInput<'a, &mut BgpParsingContext, LocatedRouteMonitoringTlvParsingError<'a>>
-    for v4::RouteMonitoringTlv
+    ReadablePduWithThreeInputs<
+        'a,
+        &mut BgpParsingContext,
+        MessageDirection,
+        bool,
+        LocatedRouteMonitoringTlvParsingError<'a>,
+    > for v4::RouteMonitoringTlv
 {
     fn from_wire(
         buf: Span<'a>,
         ctx: &mut BgpParsingContext,
+        direction: MessageDirection,
+        is_loc_rib: bool,
     ) -> IResult<Span<'a>, Self, LocatedRouteMonitoringTlvParsingError<'a>> {
         // Can't use read_tlv_header_t16_l16 because Index is in the middle
         // of the header and not counted in Length
@@ -317,7 +330,7 @@ impl<'a>
                     v4::RouteMonitoringTlvValue::VrfTableName(str)
                 }
                 v4::RouteMonitoringTlvType::BgpUpdatePdu => {
-                    let (_, pdu) = parse_into_located_one_input(data, ctx)?;
+                    let (_, pdu) = parse_into_located_two_inputs(data, ctx, direction)?;
                     v4::RouteMonitoringTlvValue::BgpUpdate(pdu)
                 }
                 v4::RouteMonitoringTlvType::GroupTlv => {
@@ -326,7 +339,18 @@ impl<'a>
                 }
                 v4::RouteMonitoringTlvType::StatelessParsing => {
                     let (_, bgp_capability) = parse_into_located(data)?;
-                    ctx.update_capabilities(&bgp_capability);
+                    match &bgp_capability {
+                        BgpCapability::AddPath(add_path) if is_loc_rib => {
+                            ctx.update_add_path(&AddPathCapability::new(
+                                add_path
+                                    .address_families()
+                                    .iter()
+                                    .map(loc_rib_add_path)
+                                    .collect(),
+                            ));
+                        }
+                        _ => ctx.update_capabilities(&bgp_capability),
+                    }
                     v4::RouteMonitoringTlvValue::StatelessParsing(bgp_capability)
                 }
                 v4::RouteMonitoringTlvType::PathMarking => {

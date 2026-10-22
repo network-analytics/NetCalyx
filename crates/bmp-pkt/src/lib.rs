@@ -251,6 +251,11 @@ impl BmpPeerType {
         }
     }
 
+    #[inline]
+    pub const fn is_loc_rib(&self) -> bool {
+        matches!(self, Self::LocRibInstancePeer { .. })
+    }
+
     /// Get the IANA Code for the peer type
     pub const fn get_type(&self) -> BmpPeerTypeCode {
         match self {
