@@ -19,7 +19,7 @@
 use crate::iana::BmpVersion;
 use crate::wire::deserializer::BmpMessageParsingError;
 use crate::wire::serializer::BmpMessageWritingError;
-use crate::{BmpMessage, BmpPeerType, PeerKey, v3, v4};
+use crate::{BmpMessage, PeerKey, v3, v4};
 use byteorder::{ByteOrder, NetworkEndian};
 use bytes::{Buf, BufMut, BytesMut};
 use netcalyx_bgp_pkt::BgpMessage;
@@ -27,7 +27,7 @@ use netcalyx_bgp_pkt::capabilities::BgpCapability;
 use std::collections::HashSet;
 
 use crate::wire::deserializer::BmpParsingContext;
-use netcalyx_bgp_pkt::capabilities::{AddPathCapability, MultipleLabel};
+use netcalyx_bgp_pkt::capabilities::{AddPathAddressFamily, AddPathCapability, MultipleLabel};
 use netcalyx_parse_utils::{LocatedParsingError, ReadablePduWithOneInput, Span, WritablePdu};
 use nom::Needed;
 use serde::{Deserialize, Serialize};
@@ -86,6 +86,51 @@ fn get_caps(
     (add_path_caps, multiple_labels_caps)
 }
 
+/// Negotiate ADD-PATH per address family from the local (sent OPEN)
+/// perspective. Sending requires remote receive support; receiving requires
+/// remote send support.
+fn negotiate_add_path(
+    sent_caps: &[AddPathCapability],
+    received_caps: &[AddPathCapability],
+    is_loc_rib: bool,
+) -> AddPathCapability {
+    // For local-rib, the RX and TX opens must be identical. The mere presence
+    // of an add-path capability indicates usage of add-path in the loc-rib
+    // messages of this AFI/SAFI, regardless of the capability value announced.
+    // c.f RFC9069 Section 5.2
+    if is_loc_rib {
+        return AddPathCapability::new(
+            sent_caps
+                .iter()
+                .flat_map(|x| x.address_families())
+                .map(|x| AddPathAddressFamily::new(x.address_type(), true, true))
+                .collect(),
+        );
+    }
+
+    AddPathCapability::new(
+        sent_caps
+            .iter()
+            .flat_map(|cap| cap.address_families())
+            .filter_map(|local| {
+                let mut matching = received_caps
+                    .iter()
+                    .flat_map(|cap| cap.address_families())
+                    .filter(|remote| remote.address_type() == local.address_type())
+                    .peekable();
+
+                matching.peek()?;
+
+                Some(AddPathAddressFamily::new(
+                    local.address_type(),
+                    local.send() && matching.clone().any(|remote| remote.receive()),
+                    local.receive() && matching.any(|remote| remote.send()),
+                ))
+            })
+            .collect(),
+    )
+}
+
 impl BmpCodec {
     pub fn update_parsing_ctx(&mut self, msg: &BmpMessage) {
         self.ctx.update(msg)
@@ -111,22 +156,17 @@ impl BmpParsingContext {
             let (sent_add_path_caps, sent_multiple_labels_caps) = get_caps(send_caps);
             let (received_add_path_caps, received_multiple_labels_caps) = get_caps(received_caps);
 
-            // Only enable the intersection of enabled AddPath and Multi-Label
-            let sent_add_path_caps: HashSet<AddPathCapability> =
-                HashSet::from_iter(sent_add_path_caps);
-            let received_add_path_caps: HashSet<AddPathCapability> =
-                HashSet::from_iter(received_add_path_caps);
+            let is_loc_rib = peer_up.peer_header().peer_type().is_loc_rib();
+            let negotiated_add_path =
+                negotiate_add_path(&sent_add_path_caps, &received_add_path_caps, is_loc_rib);
             let sent_multiple_labels_caps: HashSet<MultipleLabel> =
                 HashSet::from_iter(sent_multiple_labels_caps.into_iter().flatten());
             let received_multiple_labels_caps: HashSet<MultipleLabel> =
                 HashSet::from_iter(received_multiple_labels_caps.into_iter().flatten());
-
-            let common_add_path_caps: Vec<&AddPathCapability> =
-                Vec::from_iter(sent_add_path_caps.intersection(&received_add_path_caps));
-            let common_multiple_labels_caps: Vec<&MultipleLabel> = Vec::from_iter(
-                sent_multiple_labels_caps.intersection(&received_multiple_labels_caps),
-            );
-
+            let common_multiple_labels_caps: Vec<MultipleLabel> = sent_multiple_labels_caps
+                .intersection(&received_multiple_labels_caps)
+                .cloned()
+                .collect();
             // Add Key for the router announcing BMP to the collector
             let peer_key = PeerKey::from_peer_header(peer_up.peer_header());
             let bgp_ctx = ctx.entry(peer_key).or_default();
@@ -140,39 +180,19 @@ impl BmpParsingContext {
             // a Peer Up with the OPEN message indicating the address family
             // capabilities. A BMP receiver MUST process these capabilities
             // to know which peer belongs to which address family.
-            if !matches!(peer_key.peer_type(), BmpPeerType::LocRibInstancePeer { .. }) {
+            if !is_loc_rib {
                 bgp_ctx.add_path_mut().clear();
                 bgp_ctx.multiple_labels_mut().clear();
             }
-            // Determine if we need to track Adj-RIB-Out based on Peer Type,
-            // which is useful to select ADD-Path behavior for either sending
-            // or receiving
-            let adj_rib_out = match peer_up.peer_header().peer_type() {
-                BmpPeerType::GlobalInstancePeer { adj_rib_out, .. }
-                | BmpPeerType::RdInstancePeer { adj_rib_out, .. }
-                | BmpPeerType::LocalInstancePeer { adj_rib_out, .. } => adj_rib_out,
-                _ => false,
-            };
-
-            for add_path in &common_add_path_caps {
-                bgp_ctx
-                    .update_capabilities(&BgpCapability::AddPath((*add_path).clone()), adj_rib_out)
-            }
-            bgp_ctx.update_capabilities(
-                &BgpCapability::MultipleLabels(
-                    common_multiple_labels_caps
-                        .iter()
-                        .copied()
-                        .cloned()
-                        .collect(),
-                ),
-                adj_rib_out,
-            );
+            bgp_ctx.update_add_path(&negotiated_add_path);
+            bgp_ctx.update_capabilities(&BgpCapability::MultipleLabels(
+                common_multiple_labels_caps.clone(),
+            ));
 
             // Add a key for the BGP Peer of the first router
             // In Loc-Rib the bgp open message is duplicated,
             // no need to go through it again.
-            if !matches!(peer_key.peer_type(), BmpPeerType::LocRibInstancePeer { .. }) {
+            if !is_loc_rib {
                 let peer_key = PeerKey::new(
                     peer_up.peer_header().address(),
                     peer_up.peer_header().peer_type(),
@@ -181,31 +201,12 @@ impl BmpParsingContext {
                     received_open.bgp_id(),
                 );
                 let bgp_ctx = ctx.entry(peer_key).or_default();
-                // Determine if we need to track Adj-RIB-Out based on Peer Type,
-                // which is useful to select ADD-Path behavior for either
-                // sending or receiving
-                let adj_rib_out = match peer_up.peer_header().peer_type() {
-                    BmpPeerType::GlobalInstancePeer { adj_rib_out, .. }
-                    | BmpPeerType::RdInstancePeer { adj_rib_out, .. }
-                    | BmpPeerType::LocalInstancePeer { adj_rib_out, .. } => adj_rib_out,
-                    _ => false,
-                };
-                for add_path in &common_add_path_caps {
-                    bgp_ctx.update_capabilities(
-                        &BgpCapability::AddPath((*add_path).clone()),
-                        adj_rib_out,
-                    )
-                }
-                bgp_ctx.update_capabilities(
-                    &BgpCapability::MultipleLabels(
-                        common_multiple_labels_caps
-                            .iter()
-                            .copied()
-                            .cloned()
-                            .collect(),
-                    ),
-                    adj_rib_out,
-                );
+                bgp_ctx.add_path_mut().clear();
+                bgp_ctx.multiple_labels_mut().clear();
+                bgp_ctx.update_add_path(&negotiated_add_path);
+                bgp_ctx.update_capabilities(&BgpCapability::MultipleLabels(
+                    common_multiple_labels_caps,
+                ));
             }
         }
 
@@ -318,7 +319,12 @@ mod tests {
         ExtendedNextHopEncoding, ExtendedNextHopEncodingCapability, FourOctetAsCapability,
         MultiProtocolExtensionsCapability,
     };
+    use netcalyx_bgp_pkt::nlri::{
+        Ipv4Unicast, Ipv4UnicastAddress, Ipv6Unicast, Ipv6UnicastAddress,
+    };
     use netcalyx_bgp_pkt::open::{BgpOpenMessage, BgpOpenMessageParameter};
+    use netcalyx_bgp_pkt::path_attribute::{MpReach, MpUnreach, PathAttribute, PathAttributeValue};
+    use netcalyx_bgp_pkt::update::BgpUpdateMessage;
     use netcalyx_iana::address_family::{AddressFamily, AddressType};
     use std::collections::HashMap;
     use std::net::Ipv6Addr;
@@ -483,6 +489,347 @@ mod tests {
     }
 
     #[test]
+    fn test_add_path_direction_negotiation() {
+        let combinations = itertools::iproduct!(
+            [false, true],
+            [false, true],
+            [false, true],
+            [false, true],
+            [false, true]
+        );
+
+        for (local_send, local_receive, remote_send, remote_receive, adj_rib_out) in combinations {
+            let header = PeerHeader::new(
+                BmpPeerType::GlobalInstancePeer {
+                    ipv6: false,
+                    post_policy: false,
+                    asn2: false,
+                    adj_rib_out,
+                },
+                None,
+                Some(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))),
+                64512,
+                Ipv4Addr::new(192, 0, 2, 1),
+                None,
+            );
+            let open = |id, families| {
+                BgpMessage::Open(BgpOpenMessage::new(
+                    64512,
+                    180,
+                    id,
+                    vec![BgpOpenMessageParameter::Capabilities(vec![
+                        BgpCapability::AddPath(AddPathCapability::new(families)),
+                    ])],
+                ))
+            };
+            let peer_up = BmpMessage::V3(v3::BmpMessageValue::PeerUpNotification(
+                v3::PeerUpNotificationMessage::build(
+                    header.clone(),
+                    Some(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 2))),
+                    Some(179),
+                    Some(12345),
+                    open(
+                        Ipv4Addr::new(192, 0, 2, 2),
+                        vec![
+                            AddPathAddressFamily::new(
+                                AddressType::Ipv4Unicast,
+                                local_send,
+                                local_receive,
+                            ),
+                            AddPathAddressFamily::new(AddressType::Ipv6Unicast, true, true),
+                        ],
+                    ),
+                    open(
+                        Ipv4Addr::new(192, 0, 2, 3),
+                        vec![AddPathAddressFamily::new(
+                            AddressType::Ipv4Unicast,
+                            remote_send,
+                            remote_receive,
+                        )],
+                    ),
+                    vec![],
+                )
+                .unwrap(),
+            ));
+            let mut codec = BmpCodec::default();
+            codec.update_parsing_ctx(&peer_up);
+            // Check both the header key and the alternate
+            // BGP-ID key.
+            for id in [header.bgp_id(), Ipv4Addr::new(192, 0, 2, 3)] {
+                let key = PeerKey::new(
+                    header.address(),
+                    header.peer_type(),
+                    header.rd(),
+                    header.peer_as(),
+                    id,
+                );
+                let peer_ctx = codec.ctx.get_peer(&key).unwrap();
+                for out in [false, true] {
+                    let expected = if out {
+                        local_send && remote_receive
+                    } else {
+                        local_receive && remote_send
+                    };
+                    assert_eq!(
+                        peer_ctx
+                            .add_path()
+                            .add_path_enabled(AddressType::Ipv4Unicast, out),
+                        expected,
+                        "local=({local_send},{local_receive}), remote=({remote_send},{remote_receive}), peer_up_out={adj_rib_out}, out={out}"
+                    );
+                    assert!(!peer_ctx.add_path().contains_key(&AddressType::Ipv6Unicast));
+                }
+            }
+        }
+    }
+
+    // Build matching IPv4 and IPv6 ADD-PATH entries with the requested
+    // direction bits.
+    fn add_path_capability(send: bool, receive: bool) -> BgpCapability {
+        BgpCapability::AddPath(AddPathCapability::new(
+            [AddressType::Ipv4Unicast, AddressType::Ipv6Unicast]
+                .map(|family| AddPathAddressFamily::new(family, send, receive))
+                .to_vec(),
+        ))
+    }
+
+    // Wrap the supplied OPENs and peer header in the requested BMP version.
+    fn peer_up_message(
+        version: BmpVersion,
+        header: PeerHeader,
+        sent: BgpMessage,
+        received: BgpMessage,
+    ) -> BmpMessage {
+        let peer_up =
+            v3::PeerUpNotificationMessage::build(header, None, None, None, sent, received, vec![])
+                .unwrap();
+        match version {
+            BmpVersion::Version3 => {
+                BmpMessage::V3(v3::BmpMessageValue::PeerUpNotification(peer_up))
+            }
+            BmpVersion::Version4 => {
+                BmpMessage::V4(v4::BmpMessageValue::PeerUpNotification(peer_up))
+            }
+        }
+    }
+
+    // Build IPv4 and IPv6 announcements and withdrawals with an optional path
+    // ID.
+    fn add_path_update(path_id: Option<u32>) -> BgpMessage {
+        let route = Ipv4UnicastAddress::new(
+            path_id,
+            Ipv4Unicast::from_net("198.51.100.0/24".parse().unwrap()).unwrap(),
+        );
+        let route_v6 = Ipv6UnicastAddress::new(
+            path_id,
+            Ipv6Unicast::from_net("2001:db8::/48".parse().unwrap()).unwrap(),
+        );
+        let attributes = [
+            PathAttributeValue::MpReach(MpReach::Ipv6Unicast {
+                next_hop_global: "2001:db8::1".parse().unwrap(),
+                next_hop_local: None,
+                nlri: vec![route_v6],
+            }),
+            PathAttributeValue::MpUnreach(MpUnreach::Ipv6Unicast {
+                nlri: vec![route_v6],
+            }),
+        ]
+        .map(|value| PathAttribute::from(true, false, false, false, value).unwrap())
+        .to_vec();
+        BgpMessage::Update(BgpUpdateMessage::new(vec![route], attributes, vec![route]))
+    }
+
+    // Wrap an UPDATE with an optional v4 message-local ADD-PATH override.
+    fn route_monitoring_message(
+        version: BmpVersion,
+        header: PeerHeader,
+        update: BgpMessage,
+        override_support: Option<bool>,
+    ) -> BmpMessage {
+        match version {
+            BmpVersion::Version3 => {
+                assert!(override_support.is_none());
+                BmpMessage::V3(v3::BmpMessageValue::RouteMonitoring(
+                    v3::RouteMonitoringMessage::build(header, update).unwrap(),
+                ))
+            }
+            BmpVersion::Version4 => {
+                let tlvs = override_support
+                    .map(|support| {
+                        let (send, receive) = if header.peer_type().is_adj_rib_out() {
+                            (support, !support)
+                        } else {
+                            (!support, support)
+                        };
+                        v4::RouteMonitoringTlv::build(
+                            0,
+                            v4::RouteMonitoringTlvValue::StatelessParsing(add_path_capability(
+                                send, receive,
+                            )),
+                        )
+                        .unwrap()
+                    })
+                    .into_iter()
+                    .collect();
+                BmpMessage::V4(v4::BmpMessageValue::RouteMonitoring(
+                    v4::RouteMonitoringMessage::build(header, update, tlvs).unwrap(),
+                ))
+            }
+        }
+    }
+
+    // Round-trip one message through the existing codec and require full
+    // consumption.
+    fn assert_codec_roundtrip(codec: &mut BmpCodec, message: BmpMessage) {
+        let mut buf = BytesMut::new();
+        codec.encode(message.clone(), &mut buf).unwrap();
+        assert_eq!(codec.decode(&mut buf), Ok(Some(message)));
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn test_loc_rib_add_path_ignores_capability_direction() {
+        let bgp_id = Ipv4Addr::new(192, 0, 2, 1);
+        for version in [BmpVersion::Version3, BmpVersion::Version4] {
+            for (send, receive) in [(true, false), (false, true), (true, true)] {
+                let header = PeerHeader::new(
+                    BmpPeerType::LocRibInstancePeer { filtered: false },
+                    None,
+                    None,
+                    64512,
+                    bgp_id,
+                    None,
+                );
+                let open = BgpMessage::Open(BgpOpenMessage::new(
+                    64512,
+                    180,
+                    bgp_id,
+                    vec![BgpOpenMessageParameter::Capabilities(vec![
+                        BgpCapability::FourOctetAs(FourOctetAsCapability::new(64512)),
+                        add_path_capability(send, receive),
+                    ])],
+                ));
+                let mut codec = BmpCodec::default();
+                assert_codec_roundtrip(
+                    &mut codec,
+                    peer_up_message(version, header.clone(), open.clone(), open),
+                );
+                let ctx = codec
+                    .ctx
+                    .get_peer(&PeerKey::from_peer_header(&header))
+                    .unwrap();
+                for family in [AddressType::Ipv4Unicast, AddressType::Ipv6Unicast] {
+                    for outbound in [false, true] {
+                        assert!(
+                            ctx.add_path().add_path_enabled(family, outbound),
+                            "version={version:?}, send={send}, receive={receive}"
+                        );
+                    }
+                }
+                assert_codec_roundtrip(
+                    &mut codec,
+                    route_monitoring_message(version, header, add_path_update(Some(42)), None),
+                );
+            }
+        }
+    }
+
+    // Exercise both directions and aliases, temporary overrides, and session
+    // reset.
+    fn assert_bidirectional_add_path_decoding(version: BmpVersion) {
+        let local_id = Ipv4Addr::new(192, 0, 2, 1);
+        let remote_id = Ipv4Addr::new(192, 0, 2, 2);
+        let header = |adj_rib_out, bgp_id| {
+            PeerHeader::new(
+                BmpPeerType::GlobalInstancePeer {
+                    ipv6: false,
+                    post_policy: false,
+                    asn2: false,
+                    adj_rib_out,
+                },
+                None,
+                Some(IpAddr::V4(remote_id)),
+                64512,
+                bgp_id,
+                None,
+            )
+        };
+        let open = |bgp_id, send, receive| {
+            BgpMessage::Open(BgpOpenMessage::new(
+                64512,
+                180,
+                bgp_id,
+                vec![BgpOpenMessageParameter::Capabilities(vec![
+                    add_path_capability(send, receive),
+                ])],
+            ))
+        };
+
+        for peer_up_out in [false, true] {
+            for local_send in [false, true] {
+                let peer_up = peer_up_message(
+                    version,
+                    header(peer_up_out, local_id),
+                    open(local_id, local_send, !local_send),
+                    open(remote_id, true, true),
+                );
+                let mut codec = BmpCodec::default();
+                assert_codec_roundtrip(&mut codec, peer_up);
+
+                // A single Peer Up supplies the session's capabilities for
+                // both directions and both BGP-ID lookup aliases.
+                for bgp_id in [local_id, remote_id] {
+                    for (adj_rib_out, override_support) in [
+                        (false, None),
+                        (true, None),
+                        (false, Some(false)),
+                        (true, Some(true)),
+                        (false, None),
+                        (true, None),
+                    ] {
+                        if version == BmpVersion::Version3 && override_support.is_some() {
+                            continue;
+                        }
+                        let support = override_support.unwrap_or(adj_rib_out == local_send);
+                        let path_id = if support { Some(42) } else { None };
+                        let message = route_monitoring_message(
+                            version,
+                            header(adj_rib_out, bgp_id),
+                            add_path_update(path_id),
+                            override_support,
+                        );
+                        assert_codec_roundtrip(&mut codec, message);
+                    }
+                }
+                let empty_open =
+                    |bgp_id| BgpMessage::Open(BgpOpenMessage::new(64512, 180, bgp_id, vec![]));
+                let reset = peer_up_message(
+                    version,
+                    header(peer_up_out, local_id),
+                    empty_open(local_id),
+                    empty_open(remote_id),
+                );
+                assert_codec_roundtrip(&mut codec, reset);
+                for bgp_id in [local_id, remote_id] {
+                    let key = PeerKey::from_peer_header(&header(false, bgp_id));
+                    let ctx = codec.ctx.get_peer(&key).unwrap();
+                    assert!(ctx.add_path().is_empty());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_bidirectional_add_path_decoding_v3() {
+        assert_bidirectional_add_path_decoding(BmpVersion::Version3);
+    }
+
+    #[test]
+    fn test_bidirectional_add_path_decoding_v4() {
+        assert_bidirectional_add_path_decoding(BmpVersion::Version4);
+    }
+
+    #[test]
     fn test_multiple_peer_up_for_loc_rib() {
         // announces add path for IPv4
         let up1_wire = vec![
@@ -545,8 +892,11 @@ mod tests {
             .expect("peer lookup failed")
             .add_path();
         assert_eq!(
-            add_path1,
-            &HashMap::from([(AddressType::Ipv4Unicast, true)])
+            &**add_path1,
+            &HashMap::from([(
+                AddressType::Ipv4Unicast,
+                AddPathAddressFamily::new(AddressType::Ipv4Unicast, true, true)
+            )])
         );
         let _ = codec
             .decode(&mut buf)
@@ -560,10 +910,16 @@ mod tests {
             .expect("peer lookup failed")
             .add_path();
         assert_eq!(
-            add_path2,
+            &**add_path2,
             &HashMap::from([
-                (AddressType::Ipv4Unicast, true),
-                (AddressType::Ipv6Unicast, true)
+                (
+                    AddressType::Ipv4Unicast,
+                    AddPathAddressFamily::new(AddressType::Ipv4Unicast, true, true)
+                ),
+                (
+                    AddressType::Ipv6Unicast,
+                    AddPathAddressFamily::new(AddressType::Ipv6Unicast, true, true)
+                )
             ])
         );
     }

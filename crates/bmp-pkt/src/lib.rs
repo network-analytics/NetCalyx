@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2022-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -232,6 +233,21 @@ pub enum BmpPeerType {
 }
 
 impl BmpPeerType {
+    /// Whether this header describes the local send direction.
+    pub const fn is_adj_rib_out(&self) -> bool {
+        match self {
+            Self::GlobalInstancePeer { adj_rib_out, .. }
+            | Self::RdInstancePeer { adj_rib_out, .. }
+            | Self::LocalInstancePeer { adj_rib_out, .. } => *adj_rib_out,
+            _ => false,
+        }
+    }
+
+    #[inline]
+    pub const fn is_loc_rib(&self) -> bool {
+        matches!(self, Self::LocRibInstancePeer { .. })
+    }
+
     /// Get the IANA Code for the peer type
     pub const fn get_type(&self) -> BmpPeerTypeCode {
         match self {

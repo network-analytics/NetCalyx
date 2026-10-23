@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2023-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,7 +25,7 @@ use crate::path_attribute::{
     PathAttributeValue,
 };
 use netcalyx_parse_utils::test_helpers::{
-    test_parsed_completely_with_one_input, test_parsed_completely_with_three_inputs, test_write,
+    test_parsed_completely_with_one_input, test_parsed_completely_with_two_inputs, test_write,
     test_write_with_one_input,
 };
 use std::collections::HashMap;
@@ -270,13 +271,7 @@ pub fn test_bgp_ls_mp_reach() -> Result<(), MpReachWritingError> {
         nlri: vec![ls_nlri.clone(), ls_nlri.clone(), ls_nlri],
     };
 
-    test_parsed_completely_with_three_inputs(
-        &good_wire,
-        false,
-        &HashMap::new(),
-        &HashMap::new(),
-        &good,
-    );
+    test_parsed_completely_with_two_inputs(&good_wire, false, &BgpParsingContext::default(), &good);
     test_write_with_one_input(&good, false, &good_wire)?;
 
     Ok(())
@@ -328,13 +323,7 @@ pub fn test_bgp_ls_vpn_mp_reach() -> Result<(), MpReachWritingError> {
         nlri: vec![ls_nlri.clone(), ls_nlri.clone(), ls_nlri],
     };
 
-    test_parsed_completely_with_three_inputs(
-        &good_wire,
-        false,
-        &HashMap::new(),
-        &HashMap::new(),
-        &good,
-    );
+    test_parsed_completely_with_two_inputs(&good_wire, false, &BgpParsingContext::default(), &good);
     test_write_with_one_input(&good, false, &good_wire)?;
 
     Ok(())
@@ -384,14 +373,17 @@ pub fn test_bgp_ls_vpn_mp_unreach() -> Result<(), MpUnreachWritingError> {
 
     let mut add_path_map = HashMap::new();
     add_path_map.insert(AddressType::BgpLsVpn, true);
-
-    test_parsed_completely_with_three_inputs(
-        &good_wire,
-        false,
-        &HashMap::new(),
-        &add_path_map,
-        &good,
+    let ctx = crate::wire::deserializer::BgpParsingContext::new(
+        true,
+        HashMap::new(),
+        add_path_map,
+        true,
+        true,
+        true,
+        true,
     );
+
+    test_parsed_completely_with_two_inputs(&good_wire, false, &ctx, &good);
     test_write_with_one_input(&good, false, &good_wire)?;
 
     Ok(())
