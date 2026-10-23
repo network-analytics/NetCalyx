@@ -246,6 +246,22 @@ pub struct NetconfYangLibraryFetcher {
 /// Base delay for exponential backoff (1 second).
 const BASE_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
 
+/// Names of the modules to load from the device for a subscription: its
+/// target modules plus `ietf-subscribed-notifications`, needed to validate
+/// the subscription lifecycle notifications themselves.
+///
+/// `ietf-subscribed-notifications` is kept out of `SubscriptionInfo::models` on
+/// purpose, so the info is built identically whether it comes from a
+/// subscription-started notification or a NETCONF fetch by subscription id (it
+/// is used as a cache key).
+fn modules_to_load(models: &[YangPushModuleVersion]) -> Vec<&str> {
+    let mut module_names = models.iter().map(|x| x.name()).collect::<Vec<_>>();
+    if !module_names.contains(&"ietf-subscribed-notifications") {
+        module_names.push("ietf-subscribed-notifications");
+    }
+    module_names
+}
+
 impl NetconfYangLibraryFetcher {
     pub fn new(
         user: String,
@@ -315,11 +331,7 @@ impl NetconfYangLibraryFetcher {
                 return Err(Box::new((subscription_info.clone(), err.into())));
             }
         };
-        let modules = subscription_info
-            .models()
-            .iter()
-            .map(|x| x.name())
-            .collect::<Vec<_>>();
+        let modules = modules_to_load(subscription_info.models());
         // TODO: add timeout to loading YANG Library from the device
         let (yang_lib, schemas) = client
             .load_from_modules(&modules, &PermissiveVersionChecker)
@@ -492,10 +504,7 @@ impl NetconfYangLibraryFetcher {
             modules
         };
 
-        let mut module_names = modules.iter().map(|x| x.name()).collect::<Vec<_>>();
-        if !module_names.contains(&"ietf-subscribed-notifications") {
-            module_names.push("ietf-subscribed-notifications");
-        }
+        let module_names = modules_to_load(&modules);
         debug!(
             peer_ip=%peer_ip,
             subscription_id,
@@ -833,6 +842,26 @@ mod retry_tests {
     use super::*;
     use netcalyx_netconf_proto::yanglib::YangLibrary;
     use std::sync::atomic::{AtomicU32, Ordering};
+
+    #[test]
+    fn test_modules_to_load_adds_subscribed_notifications_once() {
+        let models = [YangPushModuleVersion::new(
+            "ietf-interfaces".into(),
+            Some("2018-02-20".into()),
+            None,
+        )];
+        assert_eq!(
+            modules_to_load(&models),
+            ["ietf-interfaces", "ietf-subscribed-notifications"]
+        );
+
+        let models = [YangPushModuleVersion::new(
+            "ietf-subscribed-notifications".into(),
+            None,
+            None,
+        )];
+        assert_eq!(modules_to_load(&models), ["ietf-subscribed-notifications"]);
+    }
 
     fn retry_cfg(max_retries: u32) -> RetryConfig {
         RetryConfig::new(max_retries, std::time::Duration::from_millis(1))

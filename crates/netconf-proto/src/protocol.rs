@@ -1255,7 +1255,8 @@ pub enum RpcReplyContent {
     ErrorsAndData {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         errors: Vec<RpcError>, // TODO: use box instead of vec
-        // TODO: handle different types of responses as we do with the RPC operations
+        // TODO: handle different types of responses as we do with the RPC
+        // operations
         responses: RpcResponse,
     },
 }

@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2022-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -50,10 +51,12 @@ impl WritablePdu<BGPCapabilityWritingError> for BgpCapability {
             Self::EnhancedRouteRefresh => ENHANCED_ROUTE_REFRESH_CAPABILITY_LENGTH as usize,
             Self::CiscoRouteRefresh => ROUTE_REFRESH_CAPABILITY_LENGTH as usize,
             Self::FourOctetAs(value) => value.len(),
-            // GracefulRestartCapability carries n length field, so need to account for it here
+            // GracefulRestartCapability carries n length field, so need to
+            // account for it here
             Self::GracefulRestartCapability(value) => value.len() - 2,
             Self::AddPath(value) => value.len(),
-            // ExtendedNextHopEncoding carries n length field, so need to account for it here
+            // ExtendedNextHopEncoding carries n length field, so need to
+            // account for it here
             Self::ExtendedNextHopEncoding(value) => value.len() - 1,
             Self::ExtendedMessage => EXTENDED_MESSAGE_CAPABILITY_LENGTH as usize,
             Self::MultipleLabels(value) => value.iter().map(|x| x.len()).sum(),

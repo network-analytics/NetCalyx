@@ -239,7 +239,8 @@ impl<'a> ReadablePduWithOneInput<'a, &mut TemplatesMap, LocatedSetParsingError<'
                 check_padding_value(buf)?;
                 Set::OptionsTemplate(option_templates.into_boxed_slice())
             }
-            // We don't need to check for valid Set ID again, since we already checked
+            // We don't need to check for valid Set ID again, since we already
+            // checked
             id => {
                 let template = if let Some(fields) = templates_map.get_mut(&id) {
                     fields

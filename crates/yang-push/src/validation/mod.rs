@@ -128,7 +128,6 @@ use crate::{
 };
 use netcalyx_netconf_proto::xpath::{strip_xpath_predicates, xpath_diff};
 use netcalyx_netconf_proto::yang_push::filters::DatastoreXPathFilter;
-use netcalyx_netconf_proto::yang_push::subscription::YangPushModuleVersion;
 use netcalyx_netconf_proto::yang_push::types::SubscriptionId;
 use netcalyx_udp_notif_pkt::decoded::{UdpNotifPacketDecoded, UdpNotifPayload};
 use netcalyx_udp_notif_pkt::notification::{
@@ -787,8 +786,8 @@ impl ValidationActor {
         // Step 1: decode the raw UDP-Notif payload.
         let decoded = match self.decode_message(peer, packet, !is_reprocessed) {
             Ok(decoded) => decoded,
-            // Decoding errors are logged in the [Self::decode_message], and packets are dropped
-            // here
+            // Decoding errors are logged in the [Self::decode_message], and
+            // packets are dropped here
             Err(_) => return Ok(()),
         };
         let notification_type = decoded
@@ -1537,16 +1536,11 @@ impl ValidationActor {
         publisher_id: u32,
         sub_started: &SubscriptionStartedModified,
     ) -> Option<SubscriptionInfo> {
+        // Keep the models exactly as reported by the device: the fetcher adds
+        // `ietf-subscribed-notifications` at load time, so this info matches
+        // the one built by a fetch by subscription id.
         let modules = match sub_started.module_version() {
-            Some(modules) => {
-                let mut modules = modules.clone();
-                modules.push(YangPushModuleVersion::new(
-                    "ietf-subscribed-notifications".into(),
-                    None,
-                    None,
-                ));
-                modules.into_boxed_slice()
-            }
+            Some(modules) => modules.clone().into_boxed_slice(),
             None => {
                 warn!(
                     peer=%peer,
@@ -2943,6 +2937,85 @@ mod tests {
             fetcher_count.lock().unwrap().len(),
             1,
             "reconnecting from a new source port must not trigger a second cache fetch"
+        );
+
+        handle.shutdown().await.unwrap();
+        caching_handle.shutdown().await.unwrap();
+        caching_join_handle.await.unwrap().unwrap();
+    }
+
+    /// A push-update for an unknown subscription is resolved by subscription
+    /// id (NETCONF path). A later SubscriptionStarted for the same, unchanged
+    /// subscription must build an identical `SubscriptionInfo`, so it is
+    /// served from the cache instead of being treated as a changed
+    /// subscription and fetched from the device a second time.
+    #[tokio::test]
+    #[tracing_test::traced_test]
+    async fn test_validation_actor_subscription_started_after_lookup_by_id_reuses_schema() {
+        let (
+            caching_join_handle,
+            caching_handle,
+            subscription_info,
+            fetcher_count,
+            udp_notif_tx,
+            validated_rx,
+            handle,
+        ) = setup_validation_actor();
+        let peer = SocketAddr::new(subscription_info.peer_ip(), 12345);
+
+        let push_update_payload = serde_json::json!({
+            "ietf-yp-notification:envelope": {
+                "event-time": "2026-04-21T13:33:31.007Z",
+                "hostname": "test-router-01",
+                "sequence-number": 1,
+                "contents": {
+                    "ietf-yang-push:push-update": {
+                        "id": 1,
+                        "datastore-contents": {
+                            "ietf-interfaces:interfaces": {
+                                "interface": [
+                                    {
+                                        "name": "GigabitEthernet0/0/0",
+                                        "type": "iana-if-type:ethernetCsmacd",
+                                        "enabled": true
+                                    }
+                                ]
+                            }
+                        },
+                        "ietf-distributed-notif:message-publisher-id": 16974839
+                    }
+                }
+            }
+        });
+        let bytes = serde_json::to_vec(&push_update_payload).unwrap();
+        udp_notif_tx
+            .send(Arc::new(UdpNotifRequest::new(
+                SessionInfo::new(SocketAddr::from(([127, 0, 0, 1], 10000)), None, peer),
+                UdpNotifPacket::new(
+                    MediaType::YangDataJson,
+                    10,
+                    1,
+                    HashMap::new(),
+                    Bytes::from(bytes),
+                ),
+            )))
+            .await
+            .unwrap();
+        let notification = tokio::time::timeout(Duration::from_secs(2), validated_rx.recv())
+            .await
+            .expect("timeout: push-update resolved by subscription id was not forwarded")
+            .unwrap();
+        assert!(notification.cached_content_id.is_some());
+        assert_eq!(notification.subscription_info, subscription_info);
+
+        // Same subscription announced via SubscriptionStarted.
+        setup_and_load_schema(&udp_notif_tx, &validated_rx, peer).await;
+
+        let total_fetches: usize = fetcher_count.lock().unwrap().values().sum();
+        assert_eq!(
+            total_fetches, 1,
+            "SubscriptionStarted for an unchanged subscription must not refetch the schema \
+            already resolved by subscription id"
         );
 
         handle.shutdown().await.unwrap();

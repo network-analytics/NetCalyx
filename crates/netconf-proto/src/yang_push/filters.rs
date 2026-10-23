@@ -567,7 +567,8 @@ impl DatastoreXPathFilter {
                             chars.next();
                             (li, li + lc.len_utf8())
                         }
-                        // ':' not followed by a valid NCName or '*' — unsupported.
+                        // ':' not followed by a valid NCName or '*' —
+                        // unsupported.
                         _ => return None,
                     };
                     // Wildcard local names (`prefix:*`) have no further
