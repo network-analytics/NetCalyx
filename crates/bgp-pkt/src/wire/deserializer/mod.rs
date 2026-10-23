@@ -41,7 +41,7 @@ use netcalyx_parse_utils::{
 };
 
 use crate::BgpMessage;
-use crate::capabilities::BgpCapability;
+use crate::capabilities::{AddPathCapability, BgpCapability, MultipleLabel};
 use crate::iana::{BgpMessageType, UndefinedBgpMessageType};
 use crate::notification::{BgpNotificationMessage, FiniteStateMachineError, MessageHeaderError};
 use crate::wire::deserializer::capabilities::BgpCapabilityParsingError;
@@ -160,23 +160,33 @@ impl BgpParsingContext {
     }
 
     #[inline]
+    pub fn update_add_path_capability(&mut self, add_path: &AddPathCapability, adj_rib_out: bool) {
+        for address_family in add_path.address_families() {
+            let add_path_support = if adj_rib_out {
+                address_family.send()
+            } else {
+                address_family.receive()
+            };
+            self.add_path_mut()
+                .insert(address_family.address_type(), add_path_support);
+        }
+    }
+
+    #[inline]
+    pub fn update_multiple_label_capability(&mut self, multiple_label: &MultipleLabel) {
+        self.multiple_labels_mut()
+            .insert(multiple_label.address_type(), multiple_label.count());
+    }
+
+    #[inline]
     pub fn update_capabilities(&mut self, capability: &BgpCapability, adj_rib_out: bool) {
         match capability {
             BgpCapability::AddPath(add_path) => {
-                for address_family in add_path.address_families() {
-                    let add_path_support = if adj_rib_out {
-                        address_family.send()
-                    } else {
-                        address_family.receive()
-                    };
-                    self.add_path_mut()
-                        .insert(address_family.address_type(), add_path_support);
-                }
+                self.update_add_path_capability(add_path, adj_rib_out);
             }
             BgpCapability::MultipleLabels(multiple_labels) => {
-                for multiple_label in multiple_labels {
-                    self.multiple_labels_mut()
-                        .insert(multiple_label.address_type(), multiple_label.count());
+                for multiple_label in multiple_labels.labels() {
+                    self.update_multiple_label_capability(multiple_label);
                 }
             }
             _ => {}

@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2022-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,6 +20,8 @@
 use crate::iana::{BgpCapabilityCode, BgpRoleValue};
 use netcalyx_iana::address_family::{AddressFamily, AddressType};
 use serde::{Deserialize, Serialize};
+use std::error::Error;
+use std::fmt::Display;
 use strum_macros::{Display, FromRepr};
 
 /// BGP Capabilities are included as parameters in the
@@ -63,7 +66,7 @@ pub enum BgpCapability {
     ExtendedMessage,
 
     /// Defined in [RFC8277](https://datatracker.ietf.org/doc/html/rfc8277)
-    MultipleLabels(Vec<MultipleLabel>),
+    MultipleLabels(MultipleLabelsCapability),
 
     /// The BGP Role characterizes the relationship between the eBGP speakers
     /// forming a session. BGP Role used in the route leak prevention and
@@ -478,6 +481,69 @@ impl ExtendedNextHopEncoding {
     }
 }
 
+/// Maximum number of Multiple Labels entries: RFC5492's one-octet capability
+/// length permits 255 bytes, and each RFC8277 Section 2.1 entry uses four
+/// bytes.
+pub const MAX_MULTIPLE_LABELS: usize = 63;
+
+/// Multiple Labels Capability, limited to [`MAX_MULTIPLE_LABELS`] entries.
+#[derive(Debug, Hash, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "Vec<MultipleLabel>")]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct MultipleLabelsCapability(Vec<MultipleLabel>);
+
+#[derive(Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct TooManyMultipleLabelsError;
+
+impl Display for TooManyMultipleLabelsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Multiple Labels Capability cannot contain more than {MAX_MULTIPLE_LABELS} entries"
+        )
+    }
+}
+
+impl Error for TooManyMultipleLabelsError {}
+
+impl MultipleLabelsCapability {
+    pub fn new(labels: Vec<MultipleLabel>) -> Result<Self, TooManyMultipleLabelsError> {
+        if labels.len() <= MAX_MULTIPLE_LABELS {
+            Ok(Self(labels))
+        } else {
+            Err(TooManyMultipleLabelsError)
+        }
+    }
+
+    pub const fn labels(&self) -> &[MultipleLabel] {
+        self.0.as_slice()
+    }
+
+    pub fn into_inner(self) -> Vec<MultipleLabel> {
+        self.0
+    }
+}
+
+impl TryFrom<Vec<MultipleLabel>> for MultipleLabelsCapability {
+    type Error = TooManyMultipleLabelsError;
+
+    fn try_from(labels: Vec<MultipleLabel>) -> Result<Self, Self::Error> {
+        Self::new(labels)
+    }
+}
+
+#[cfg(feature = "fuzz")]
+impl<'a> arbitrary::Arbitrary<'a> for MultipleLabelsCapability {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let len = u.int_in_range(0..=MAX_MULTIPLE_LABELS)?;
+        let mut labels = Vec::with_capacity(len);
+        for _ in 0..len {
+            labels.push(MultipleLabel::arbitrary(u)?);
+        }
+        Self::new(labels).map_err(|_| arbitrary::Error::IncorrectFormat)
+    }
+}
+
 /// Addresses support for Multiple Labels Capability
 /// defined by: [RFC8277](https://datatracker.ietf.org/doc/html/rfc8277)
 /// ```text
@@ -528,5 +594,78 @@ impl BgpRoleCapability {
 
     pub const fn role(&self) -> BgpRoleValue {
         self.role
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn labels(len: usize) -> Vec<MultipleLabel> {
+        vec![MultipleLabel::new(AddressType::Ipv4Unicast, 2); len]
+    }
+
+    #[test]
+    fn multiple_labels_length_limit() {
+        for len in [0, MAX_MULTIPLE_LABELS] {
+            let entries = labels(len);
+            let capability = MultipleLabelsCapability::new(entries.clone()).unwrap();
+            assert_eq!(capability.labels(), entries.as_slice());
+            assert_eq!(capability.into_inner(), entries);
+            assert!(MultipleLabelsCapability::try_from(labels(len)).is_ok());
+        }
+        for len in [MAX_MULTIPLE_LABELS + 1, 256] {
+            assert_eq!(
+                MultipleLabelsCapability::new(labels(len)),
+                Err(TooManyMultipleLabelsError)
+            );
+            assert_eq!(
+                MultipleLabelsCapability::try_from(labels(len)),
+                Err(TooManyMultipleLabelsError)
+            );
+        }
+    }
+
+    #[test]
+    fn multiple_labels_json_length_limit() {
+        for len in [0, MAX_MULTIPLE_LABELS, MAX_MULTIPLE_LABELS + 1, 256] {
+            let entries = labels(len);
+            let json = serde_json::to_string(&entries).unwrap();
+            let result = serde_json::from_str::<MultipleLabelsCapability>(&json);
+            if len <= MAX_MULTIPLE_LABELS {
+                let capability = result.unwrap();
+                assert_eq!(serde_json::to_string(&capability).unwrap(), json);
+                assert_eq!(capability.into_inner(), entries);
+            } else {
+                assert!(
+                    result
+                        .unwrap_err()
+                        .to_string()
+                        .contains(&TooManyMultipleLabelsError.to_string())
+                );
+            }
+            let json = format!(r#"{{"MultipleLabels":{json}}}"#);
+            assert_eq!(
+                serde_json::from_str::<BgpCapability>(&json).is_ok(),
+                len <= MAX_MULTIPLE_LABELS
+            );
+        }
+    }
+
+    #[cfg(feature = "fuzz")]
+    #[test]
+    fn multiple_labels_arbitrary_length_limit() {
+        use arbitrary::{Arbitrary, Unstructured};
+
+        let mut max_len = 0;
+        for byte in 0..=u8::MAX {
+            let mut data = vec![0; 4096];
+            data[0] = byte;
+            let capability =
+                MultipleLabelsCapability::arbitrary(&mut Unstructured::new(&data)).unwrap();
+            assert!(capability.labels().len() <= MAX_MULTIPLE_LABELS);
+            max_len = max_len.max(capability.labels().len());
+        }
+        assert_eq!(max_len, MAX_MULTIPLE_LABELS);
     }
 }

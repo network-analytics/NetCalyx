@@ -157,7 +157,16 @@ impl<'a> ReadablePdu<'a, LocatedBgpCapabilityParsingError<'a>> for BgpCapability
                     parse_unrecognized_capability(code.into(), buf)
                 }
                 BgpCapabilityCode::MultipleLabelsCapability => {
-                    let (buf, cap) = parse_till_empty_into_located(buf)?;
+                    let (buf, data) = nom::multi::length_data(be_u8)(buf)?;
+                    let (_, cap) = parse_till_empty_into_located(data)?;
+                    let cap = MultipleLabelsCapability::new(cap).map_err(|error| {
+                        nom::Err::Error(LocatedBgpCapabilityParsingError::new(
+                            data,
+                            BgpCapabilityParsingError::MultipleLabelError(
+                                MultipleLabelParsingError::TooManyMultipleLabelsError(error),
+                            ),
+                        ))
+                    })?;
                     Ok((buf, BgpCapability::MultipleLabels(cap)))
                 }
                 BgpCapabilityCode::BgpRole => {
@@ -500,6 +509,7 @@ impl<'a> ReadablePdu<'a, LocatedExtendedNextHopEncodingCapabilityParsingError<'a
 pub enum MultipleLabelParsingError {
     #[serde(with = "ErrorKindSerdeDeref")]
     NomError(#[from_nom] ErrorKind),
+    TooManyMultipleLabelsError(#[from_external] TooManyMultipleLabelsError),
     AddressFamilyError(#[from_external] UndefinedAddressFamily),
     SubsequentAddressFamilyError(#[from_external] UndefinedSubsequentAddressFamily),
     AddressTypeError(InvalidAddressType),

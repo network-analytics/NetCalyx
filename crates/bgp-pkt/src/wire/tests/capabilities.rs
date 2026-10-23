@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2022-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,9 +21,27 @@ use crate::wire::serializer::capabilities::*;
 use netcalyx_iana::address_family::{
     AddressFamily, AddressType, UndefinedAddressFamily, UndefinedSubsequentAddressFamily,
 };
-use netcalyx_parse_utils::Span;
 use netcalyx_parse_utils::test_helpers::{test_parse_error, test_parsed_completely, test_write};
+use netcalyx_parse_utils::{ReadablePdu, Span};
 use nom::error::ErrorKind;
+
+#[test]
+fn test_multiple_labels() -> Result<(), BGPCapabilityWritingError> {
+    let labels = MultipleLabelsCapability::new(vec![
+        MultipleLabel::new(AddressType::Ipv4NlriMplsLabels, 2),
+        MultipleLabel::new(AddressType::Ipv6NlriMplsLabels, 5),
+    ])
+    .unwrap();
+    let capability = BgpCapability::MultipleLabels(labels);
+    let wire = [8, 8, 0, 1, 4, 2, 0, 2, 4, 5];
+    test_parsed_completely(&wire, &capability);
+    test_write(&capability, &wire)?;
+    let with_next_capability = [8, 8, 0, 1, 4, 2, 0, 2, 4, 5, 2, 0];
+    let (remaining, parsed) = BgpCapability::from_wire(Span::new(&with_next_capability)).unwrap();
+    assert_eq!(parsed, capability);
+    assert_eq!(&*remaining, &[2, 0]);
+    Ok(())
+}
 
 #[test]
 fn test_route_refresh() -> Result<(), BGPCapabilityWritingError> {

@@ -59,7 +59,7 @@ impl WritablePdu<BGPCapabilityWritingError> for BgpCapability {
             // account for it here
             Self::ExtendedNextHopEncoding(value) => value.len() - 1,
             Self::ExtendedMessage => EXTENDED_MESSAGE_CAPABILITY_LENGTH as usize,
-            Self::MultipleLabels(value) => value.iter().map(|x| x.len()).sum(),
+            Self::MultipleLabels(value) => value.labels().iter().map(|x| x.len()).sum(),
             Self::BgpRole(value) => value.len(),
             Self::Experimental(value) => value.value().len(),
             Self::Unrecognized(value) => value.value().len(),
@@ -93,7 +93,8 @@ impl WritablePdu<BGPCapabilityWritingError> for BgpCapability {
             }
             Self::MultipleLabels(value) => {
                 writer.write_u8(self.code().unwrap().into())?;
-                for addr in value {
+                writer.write_u8(len)?;
+                for addr in value.labels() {
                     addr.write(writer)?;
                 }
             }
