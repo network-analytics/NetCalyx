@@ -37,7 +37,7 @@ use std::sync::Arc;
 
 use netcalyx_bgp_pkt::nlri::{MplsLabel, RouteDistinguisher};
 use netcalyx_bmp_pkt::PeerKey;
-use netcalyx_bmp_pkt::v4::PathMarking;
+use netcalyx_bmp_pkt::v4::{PathMarking, PathStatus};
 
 use crate::attrs::RouteAttributes;
 use crate::peers::PeerIndex;
@@ -200,14 +200,14 @@ impl<T: Default + Clone> PeerRibs<T> {
 
 /// All known paths for one prefix within an AFI-SAFI table.
 #[derive(Debug, Clone)]
-pub struct MultiRoute<E = ()> {
-    // N=1 fits measured prod data where multipath is rare; if multipath grows, we could increase,
-    // or if the growth is constrained only on some views make N a const generic here and split
-    // loc_rib/peers in `AfiSafiRib` to size per-view.
-    pub paths: SmallVec<[Route<E>; 1]>,
+pub struct MultiRoute<E = (), const N: usize = 1> {
+    // N=1 fits measured prod data where multipath is rare; if multipath grows
+    // on only some views, split loc_rib/peers in `AfiSafiRib` to size N
+    // per-view.
+    pub paths: SmallVec<[Route<E>; N]>,
 }
 
-impl<E> Default for MultiRoute<E> {
+impl<E, const N: usize> Default for MultiRoute<E, N> {
     fn default() -> Self {
         Self {
             paths: SmallVec::default(),
@@ -215,15 +215,13 @@ impl<E> Default for MultiRoute<E> {
     }
 }
 
-impl<E: Clone> MultiRoute<E> {
+impl<E: Clone, const N: usize> MultiRoute<E, N> {
     /// Returns the "active" path for correlation.
     /// Priority:
     /// 1. Path marked as BEST
     /// 2. Any path marked as PRIMARY (useful for ECMP)
     /// 3. Fallback to lowest Path-ID
     pub fn active_path(&self) -> Option<&Route<E>> {
-        use netcalyx_bmp_pkt::v4::PathStatus;
-
         self.find_by_status(PathStatus::BEST)
             .or_else(|| self.find_by_status(PathStatus::PRIMARY))
             .or_else(|| self.lowest_id_path())
@@ -274,7 +272,7 @@ impl<E: Clone> MultiRoute<E> {
     }
 }
 
-impl MultiRoute<LabeledRouteExtra> {
+impl<const N: usize> MultiRoute<LabeledRouteExtra, N> {
     /// Find a path matching a specific label set (works for both MPLS and SRv6
     /// variants)
     pub fn find_by_labels(&self, labels: &[MplsLabel]) -> Option<&Route<LabeledRouteExtra>> {
