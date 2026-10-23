@@ -150,9 +150,8 @@ impl<'a>
         ctx: &mut BgpParsingContext,
     ) -> IResult<Span<'a>, Self, LocatedBgpUpdateMessageParsingError<'a>> {
         let add_path = ctx
-            .add_path
-            .get(&AddressType::Ipv4Unicast)
-            .is_some_and(|x| *x);
+            .add_path()
+            .add_path_enabled(AddressType::Ipv4Unicast, !ctx.inbound_message);
         let (buf, withdrawn_buf) = nom::multi::length_data(be_u16)(buf)?;
         let (_, withdrawn_routes) = parse_nlri(withdrawn_buf, add_path, false, ctx)?;
         let (buf, mut path_attributes_buf) = nom::multi::length_data(be_u16)(buf)?;

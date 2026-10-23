@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2022-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -368,7 +369,7 @@ impl AddPathCapability {
 /// | Send/Receive (1 octet)                         |
 /// +------------------------------------------------+
 /// ```
-#[derive(Debug, Hash, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Hash, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "fuzz", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct AddPathAddressFamily {

@@ -36,12 +36,12 @@ use netcalyx_parse_utils::test_helpers::*;
 use crate::community::*;
 use crate::iana::{BgpSidAttributeTypeError, IanaValueError, UndefinedRouteDistinguisherTypeCode};
 use crate::update::BgpUpdateMessage;
-use crate::wire::deserializer::BgpParsingContext;
 use crate::wire::deserializer::nlri::{
     Ipv4MplsVpnUnicastAddressParsingError, Ipv4MulticastAddressParsingError,
     Ipv4UnicastAddressParsingError, Ipv6MulticastAddressParsingError,
     Ipv6UnicastAddressParsingError, RouteDistinguisherParsingError,
 };
+use crate::wire::deserializer::{BgpParsingContext, MultipleLabelsMap};
 use crate::wire::serializer::BgpMessageWritingError;
 use nom::error::ErrorKind;
 use std::collections::HashMap;
@@ -1297,49 +1297,49 @@ fn test_mp_reach_nlri_ipv6() -> Result<(), MpReachWritingError> {
     test_parsed_completely_with_three_inputs(
         &good_wire,
         false,
-        &HashMap::new(),
-        &HashMap::new(),
+        &MultipleLabelsMap::default(),
+        &BgpParsingContext::default(),
         &good,
     );
     test_parsed_completely_with_three_inputs(
         &good_extended_wire,
         true,
-        &HashMap::new(),
-        &HashMap::new(),
+        &MultipleLabelsMap::default(),
+        &BgpParsingContext::default(),
         &good,
     );
     test_parsed_completely_with_three_inputs(
         &unknown_address_type_wire,
         false,
-        &HashMap::new(),
-        &HashMap::new(),
+        &MultipleLabelsMap::default(),
+        &BgpParsingContext::default(),
         &unknown_address_type,
     );
 
     test_parse_error_with_three_inputs::<
         MpReach,
         bool,
-        &HashMap<AddressType, u8>,
-        &HashMap<AddressType, bool>,
+        &MultipleLabelsMap,
+        &BgpParsingContext,
         LocatedMpReachParsingError<'_>,
     >(
         &invalid_afi_wire,
         false,
-        &HashMap::new(),
-        &HashMap::new(),
+        &MultipleLabelsMap::default(),
+        &BgpParsingContext::default(),
         nom::Err::Error(invalid_afi),
     );
     test_parse_error_with_three_inputs::<
         MpReach,
         bool,
-        &HashMap<AddressType, u8>,
-        &HashMap<AddressType, bool>,
+        &MultipleLabelsMap,
+        &BgpParsingContext,
         LocatedMpReachParsingError<'_>,
     >(
         &invalid_safi_wire,
         false,
-        &HashMap::new(),
-        &HashMap::new(),
+        &MultipleLabelsMap::default(),
+        &BgpParsingContext::default(),
         nom::Err::Error(invalid_safi),
     );
 
@@ -1382,16 +1382,16 @@ fn test_mp_reach_nlri_ipv4_ipv6_next_hop() -> Result<(), MpReachWritingError> {
     test_parsed_completely_with_three_inputs(
         &good_no_link_local_wire,
         true,
-        &HashMap::new(),
-        &HashMap::new(),
+        &MultipleLabelsMap::default(),
+        &BgpParsingContext::default(),
         &good_no_link_local,
     );
 
     test_parsed_completely_with_three_inputs(
         &good_link_local_wire,
         true,
-        &HashMap::new(),
-        &HashMap::new(),
+        &MultipleLabelsMap::default(),
+        &BgpParsingContext::default(),
         &good_link_local,
     );
 
@@ -1444,16 +1444,16 @@ fn test_mp_reach_nlri_ipv4_mpls_labels_ipv6_next_hop() -> Result<(), MpReachWrit
     test_parsed_completely_with_three_inputs(
         &good_no_link_local_wire,
         true,
-        &HashMap::new(),
-        &HashMap::new(),
+        &MultipleLabelsMap::default(),
+        &BgpParsingContext::default(),
         &good_no_link_local,
     );
 
     test_parsed_completely_with_three_inputs(
         &good_link_local_wire,
         true,
-        &HashMap::new(),
-        &HashMap::new(),
+        &MultipleLabelsMap::default(),
+        &BgpParsingContext::default(),
         &good_link_local,
     );
 
