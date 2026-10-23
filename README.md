@@ -167,6 +167,23 @@ ls crates/*/examples
 cargo run -p netcalyx-flow-service --example print-flow
 ```
 
+## Benchmarks
+
+Benchmarks use [criterion](https://crates.io/crates/criterion) and live under `crates/*/benches`. Some crates gate them
+behind a feature (e.g. `bench` for `netcalyx-bgp-pkt`), see the crate's `Cargo.toml` and README.
+
+To compare a branch against `main`, save a baseline on `main` and compare against it on the branch. Always pass
+`--bench <name>` when using criterion options, otherwise the libtest harness of the lib target rejects them.
+
+```bash
+git checkout main
+cargo bench -p netcalyx-bgp-pkt --features bench --bench serde_benchmark -- --save-baseline main
+git checkout <branch>
+cargo bench -p netcalyx-bgp-pkt --features bench --bench serde_benchmark -- --baseline main
+```
+
+Run both on an idle machine back to back; differences of a few percent are usually noise.
+
 ## Fuzz Testing
 
 ```bash

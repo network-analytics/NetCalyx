@@ -246,8 +246,22 @@ pub fn main() {
 
 # Development documentation
 
-* Running Packet Serde benchmarks*
-  ```cargo bench --features bench```
+* Running Packet Serde benchmarks
+
+  ```bash
+  cargo bench --features bench --bench serde_benchmark
+  ```
+
+  To compare a branch against `main`, save a [criterion](https://crates.io/crates/criterion) baseline on `main` and
+  compare against it on the branch. `--bench serde_benchmark` is required when passing criterion options, otherwise
+  the libtest harness of the lib target rejects them.
+
+  ```bash
+  git checkout main
+  cargo bench --features bench --bench serde_benchmark -- --save-baseline main
+  git checkout <branch>
+  cargo bench --features bench --bench serde_benchmark -- --baseline main
+  ```
 
 * Using this library to fuzz other code accepting `BgpMessage`
 
