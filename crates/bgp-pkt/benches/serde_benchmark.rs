@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2022-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -48,7 +49,7 @@ use netcalyx_iana::address_family::AddressType;
 use netcalyx_parse_utils::{ReadablePduWithOneInput, Span, WritablePdu};
 use netcalyx_pcap_reader::{PcapIter, TransportProtocol};
 use pcap_parser::LegacyPcapReader;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::hint::black_box;
 use std::io::Cursor;
 use tokio_util::codec::Decoder;
@@ -226,7 +227,8 @@ struct Exemplar {
 fn pcap_tcp_flows(pcap_bytes: &'static [u8]) -> Vec<Vec<u8>> {
     let reader = LegacyPcapReader::new(165_536, Cursor::new(pcap_bytes)).unwrap();
     let iter = PcapIter::new(Box::new(reader));
-    let mut flows: HashMap<_, Vec<u8>> = HashMap::new();
+    // Ordered so exemplar selection is stable across runs.
+    let mut flows: BTreeMap<_, Vec<u8>> = BTreeMap::new();
     for (src_ip, src_port, dst_ip, dst_port, protocol, value) in iter {
         if protocol != TransportProtocol::TCP || dst_port != BGP_PORT {
             continue;
