@@ -119,7 +119,7 @@ fn multi_route_active_path_prefers_best_over_lowest_id() {
         path_marking: PathMarking::new(netcalyx_bmp_pkt::v4::PathStatus::empty(), None),
         ..route(200)
     };
-    let multi = MultiRoute {
+    let multi: MultiRoute = MultiRoute {
         paths: SmallVec::from_vec(vec![other, best]),
     };
     assert_eq!(multi.active_path().unwrap().path_id, 5);
@@ -137,7 +137,7 @@ fn active_path_falls_back_to_lowest_id_when_nothing_is_best_or_primary() {
         path_marking: PathMarking::new(PathStatus::empty(), None),
         ..route(100)
     };
-    let multi = MultiRoute {
+    let multi: MultiRoute = MultiRoute {
         paths: SmallVec::from_vec(vec![a, b]),
     };
     assert_eq!(multi.active_path().unwrap().path_id, 2);
@@ -155,7 +155,7 @@ fn active_path_prefers_primary_over_lowest_id_when_nothing_is_best() {
         path_marking: PathMarking::new(PathStatus::empty(), None),
         ..route(100)
     };
-    let multi = MultiRoute {
+    let multi: MultiRoute = MultiRoute {
         paths: SmallVec::from_vec(vec![lower_id_non_primary, primary]),
     };
     assert_eq!(multi.active_path().unwrap().path_id, 9);
@@ -171,7 +171,7 @@ fn find_by_path_id_returns_the_matching_route() {
         path_id: 2,
         ..route(100)
     };
-    let multi = MultiRoute {
+    let multi: MultiRoute = MultiRoute {
         paths: SmallVec::from_vec(vec![a, b]),
     };
     assert_eq!(multi.find_by_path_id(2).unwrap().path_id, 2);
@@ -185,7 +185,7 @@ fn filter_by_status_returns_every_primary_path_for_ecmp() {
         path_marking: PathMarking::new(status, None),
         ..route(100)
     };
-    let multi = MultiRoute {
+    let multi: MultiRoute = MultiRoute {
         paths: SmallVec::from_vec(vec![
             make(1, PathStatus::PRIMARY),
             make(2, PathStatus::PRIMARY),
@@ -198,7 +198,7 @@ fn filter_by_status_returns_every_primary_path_for_ecmp() {
 
 #[test]
 fn has_invalid_path_detects_any_path_marked_invalid() {
-    let clean = MultiRoute {
+    let clean: MultiRoute = MultiRoute {
         paths: SmallVec::from_vec(vec![Route {
             path_marking: PathMarking::new(PathStatus::BEST, None),
             ..route(100)
@@ -206,7 +206,7 @@ fn has_invalid_path_detects_any_path_marked_invalid() {
     };
     assert!(!clean.has_invalid_path());
 
-    let with_invalid = MultiRoute {
+    let with_invalid: MultiRoute = MultiRoute {
         paths: SmallVec::from_vec(vec![
             Route {
                 path_marking: PathMarking::new(PathStatus::BEST, None),
@@ -237,7 +237,7 @@ fn find_by_labels_and_srv6_sid_match_the_right_variant() {
         })),
         ..labeled_route()
     };
-    let multi = MultiRoute {
+    let multi: MultiRoute<LabeledRouteExtra> = MultiRoute {
         paths: SmallVec::from_vec(vec![mpls_route, srv6_route]),
     };
 
