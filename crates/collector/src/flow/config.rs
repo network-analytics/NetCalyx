@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2025-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -318,7 +319,8 @@ impl FieldConfig {
                 )))
             }
 
-            // Single or Coalesce selection cannot be used with aggregating transforms
+            // Single or Coalesce selection cannot be used with aggregating
+            // transforms
             (
                 FieldSelectFunction::Single(_)
                 | FieldSelectFunction::Coalesce(_)
@@ -414,8 +416,8 @@ impl FieldConfig {
 
             // String transforms require TryInto<String>
             // - Generally implemented for all types except Bytes
-            // - Exception: also implemented for IE::mplsVpnRouteDistinguisher (octetArray with
-            //   custom string conversion)
+            // - Exception: also implemented for IE::mplsVpnRouteDistinguisher
+            //   (octetArray with custom string conversion)
             FieldTransformFunction::String
             | FieldTransformFunction::TrimmedString
             | FieldTransformFunction::LowercaseString

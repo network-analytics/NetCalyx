@@ -248,7 +248,8 @@ pub struct CachingStats {
     pub device_fetch_succeeded: opentelemetry::metrics::Counter<u64>,
     pub device_fetch_failed: opentelemetry::metrics::Counter<u64>,
     // Observable instruments that read from YangModuleCache atomics.
-    // Held here to keep the OTel callbacks registered for the lifetime of the actor.
+    // Held here to keep the OTel callbacks registered for the lifetime of the
+    // actor.
     _yang_module_cache_hits: opentelemetry::metrics::ObservableCounter<u64>,
     _yang_module_cache_misses: opentelemetry::metrics::ObservableCounter<u64>,
     _yang_module_cache_coalesced: opentelemetry::metrics::ObservableCounter<u64>,

@@ -786,8 +786,8 @@ impl ValidationActor {
         // Step 1: decode the raw UDP-Notif payload.
         let decoded = match self.decode_message(peer, packet, !is_reprocessed) {
             Ok(decoded) => decoded,
-            // Decoding errors are logged in the [Self::decode_message], and packets are dropped
-            // here
+            // Decoding errors are logged in the [Self::decode_message], and
+            // packets are dropped here
             Err(_) => return Ok(()),
         };
         let notification_type = decoded

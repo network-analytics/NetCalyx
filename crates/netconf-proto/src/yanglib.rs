@@ -1835,7 +1835,8 @@ pub struct ModuleSetBuilder {
     module_set: ModuleSet,
     // The yang schema string indexed by name
     yang_schemas: HashMap<Box<str>, Box<str>>,
-    // Keep track of submodule schemas separately for easier backward compatibility checks
+    // Keep track of submodule schemas separately for easier backward
+    // compatibility checks
     submodules: HashMap<Box<str>, Submodule>,
 }
 

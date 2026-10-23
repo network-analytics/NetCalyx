@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2025-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -154,7 +155,8 @@ impl From<ie::Field> for RawValue {
             InformationElementDataType::boolean => val.try_into().map(RawValue::Boolean),
             InformationElementDataType::macAddress => val.try_into().map(RawValue::String),
             InformationElementDataType::string => val.try_into().map(RawValue::String),
-            // TODO: support the various timestamps in AVRO: timestamp-millis and timestamp-micro
+            // TODO: support the various timestamps in AVRO: timestamp-millis
+            // and timestamp-micro
             InformationElementDataType::dateTimeSeconds
             | InformationElementDataType::dateTimeMilliseconds
             | InformationElementDataType::dateTimeMicroseconds
