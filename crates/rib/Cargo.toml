@@ -19,6 +19,6 @@ netcalyx-bgp-pkt = { workspace = true }
 netcalyx-bmp-pkt = { workspace = true }
 netcalyx-iana = { workspace = true }
 rustc-hash = { workspace = true }
-smallvec = { workspace = true }
+smallvec = { workspace = true, features = ["const_generics"] }
 ipnet = { workspace = true }
 prefix-trie = { workspace = true }
