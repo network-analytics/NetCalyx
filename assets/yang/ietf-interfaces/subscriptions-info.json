@@ -18,9 +18,6 @@
       {
         "name": "ietf-interfaces",
         "revision": "2018-02-20"
-      },
-      {
-        "name": "ietf-subscribed-notifications"
       }
     ],
     "content_id": "test-content-id-1"
