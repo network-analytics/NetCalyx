@@ -101,7 +101,8 @@ pub struct AsPathSegment {
 /// communities, etc.) and whole-attribute sets.
 #[derive(Default)]
 pub struct AttrStore {
-    // as_path and as4_path share one pool: same element type, segments are often identical
+    // as_path and as4_path share one pool: same element type, segments are
+    // often identical
     as_path: SliceInterner<AsPathSegment>,
     cluster_list: SliceInterner<Ipv4Addr>,
     communities: SliceInterner<Box<str>>,
