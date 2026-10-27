@@ -26,13 +26,18 @@
 //! (the local decision process's output: the best path, and optionally
 //! backup/ECMP paths, tagged via path status) plus the four adj-ribs (`in`/
 //! `out` x `pre`/`post` policy: what was received from, or is being advertised
-//! to, one peer) held per peer in [`PeerRibs`].
+//! to, one peer).
+//!
+//! Each `(router, table, view)` owns ONE trie shared by every peer; a route
+//! records the router-local [`PeerId`] it was learned from (`None` for
+//! loc-rib paths).
 
 use ipnet::{Ipv4Net, Ipv6Net};
 use prefix_trie::{Prefix, PrefixMap};
 use rustc_hash::FxHashMap;
-use smallvec::SmallVec;
+use std::collections::BTreeSet;
 use std::net::{IpAddr, Ipv6Addr};
+use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use netcalyx_bgp_pkt::nlri::{MplsLabel, RouteDistinguisher};
@@ -42,6 +47,92 @@ use netcalyx_bmp_pkt::v4::{PathMarking, PathStatus};
 use crate::attrs::RouteAttributes;
 use crate::peers::PeerIndex;
 use crate::types::{AfiSafiType, LabeledRouteExtra, RibContext, RibView, TableId};
+
+/// Order in which views are stored; also the index of each [`RibView`].
+pub const RIB_VIEWS: [RibView; 5] = [
+    RibView::Loc,
+    RibView::AdjOutPre,
+    RibView::AdjOutPost,
+    RibView::AdjInPost,
+    RibView::AdjInPre,
+];
+
+#[inline]
+fn view_index(view: RibView) -> usize {
+    view as usize
+}
+
+/// Router-local peer handle; `Option<PeerId>` is 4 bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct PeerId(NonZeroU32);
+
+impl PeerId {
+    fn from_index(i: usize) -> Self {
+        PeerId(NonZeroU32::new(i as u32 + 1).expect("peer id overflow"))
+    }
+
+    fn index(self) -> usize {
+        self.0.get() as usize - 1
+    }
+}
+
+/// Interns `PeerKey`s into dense, recyclable [`PeerId`]s.
+#[derive(Default, Clone)]
+pub struct PeerTable {
+    keys: Vec<Option<PeerKey>>,
+    ids: FxHashMap<PeerKey, PeerId>,
+    free: Vec<PeerId>,
+}
+
+impl PeerTable {
+    pub fn intern(&mut self, key: PeerKey) -> PeerId {
+        if let Some(id) = self.ids.get(&key) {
+            return *id;
+        }
+        let id = match self.free.pop() {
+            Some(id) => {
+                self.keys[id.index()] = Some(key);
+                id
+            }
+            None => {
+                self.keys.push(Some(key));
+                PeerId::from_index(self.keys.len() - 1)
+            }
+        };
+        self.ids.insert(key, id);
+        id
+    }
+
+    pub fn id(&self, key: &PeerKey) -> Option<PeerId> {
+        self.ids.get(key).copied()
+    }
+
+    pub fn key(&self, id: PeerId) -> Option<&PeerKey> {
+        self.keys.get(id.index())?.as_ref()
+    }
+
+    pub fn release(&mut self, key: &PeerKey) -> Option<PeerId> {
+        let id = self.ids.remove(key)?;
+        self.keys[id.index()] = None;
+        self.free.push(id);
+        Some(id)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (PeerId, &PeerKey)> {
+        self.keys
+            .iter()
+            .enumerate()
+            .filter_map(|(i, k)| Some((PeerId::from_index(i), k.as_ref()?)))
+    }
+
+    pub fn len(&self) -> usize {
+        self.ids.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.ids.is_empty()
+    }
+}
 
 /// Main RIB store: maps router IPs to their RIBs.
 #[derive(Default)]
@@ -58,12 +149,49 @@ pub struct RibStore {
 #[derive(Default, Clone)]
 pub struct RouterRib {
     /// Resolves a neighbor address to its peer(s), scoped by RIB context (RD).
-    pub peer_index: PeerIndex<(RibContext, IpAddr), PeerKey>,
+    pub peer_index: PeerIndex<(RibContext, IpAddr), PeerId>,
     /// A single flat map of every table the router has
     pub tables: FxHashMap<TableId, Arc<AfiSafiTable>>,
+    /// Peers known to this router, interned to router-local ids.
+    pub peers: PeerTable,
 }
 
 impl RouterRib {
+    /// Interns `key` and indexes its address for neighbor resolution.
+    pub fn add_peer(&mut self, key: PeerKey) -> PeerId {
+        let id = self.peers.intern(key);
+        if let Some(addr) = key.peer_address() {
+            self.peer_index
+                .insert((RibContext::from(key.rd()), addr), id);
+        }
+        id
+    }
+
+    /// Peers `addr` resolves to within `context`.
+    pub fn resolve_peer(&self, context: RibContext, addr: IpAddr) -> &[PeerId] {
+        self.peer_index.get(&(context, addr))
+    }
+
+    /// Purges `key`'s paths from every table/view holding any, then forgets
+    /// it. Returns the number of paths removed.
+    pub fn remove_peer(&mut self, key: &PeerKey) -> usize {
+        let Some(id) = self.peers.id(key) else {
+            return 0;
+        };
+        let mut removed = 0;
+        // Views are checked before they are made unique, so only tries that
+        // hold the peer are deep-copied; the table shell itself is shallow.
+        for table in self.tables.values_mut() {
+            removed += Arc::make_mut(table).remove_peer(id);
+        }
+        if let Some(addr) = key.peer_address() {
+            self.peer_index
+                .remove(&(RibContext::from(key.rd()), addr), id);
+        }
+        self.peers.release(key);
+        removed
+    }
+
     /// Inserts a table, deriving its `TableId` from `table` itself so the map
     /// key can never disagree with the AFI-SAFI actually stored there.
     pub fn insert_table(&mut self, context: RibContext, table: AfiSafiTable) -> TableId {
@@ -88,135 +216,203 @@ pub enum AfiSafiTable {
     L3VpnIpv6Unicast(AfiSafiRib<VpnRoutes<Ipv6Net>>),
 }
 
-/// Per-router, per-AFI-SAFI RIB state. Each view is behind its own `Arc` so
-/// copy-on-write is per trie.
+/// Behaviour every per-view container (`Routes`, `VpnRoutes`) provides so
+/// [`AfiSafiRib`] can manage peers and counts generically.
+pub trait RibTable: Default + Clone {
+    fn path_count(&self) -> usize;
+    fn prefix_count(&self) -> usize;
+    fn has_peer(&self, peer: PeerId) -> bool;
+    /// Removes every path learned from `peer`; returns how many.
+    fn remove_peer(&mut self, peer: PeerId) -> usize;
+    /// Adds the peer of every path to `out`.
+    fn collect_peers(&self, out: &mut BTreeSet<PeerId>);
+}
+
+/// Per-router, per-AFI-SAFI RIB state: one trie per view, shared by all peers.
+/// Each view is behind its own `Arc` so copy-on-write is per trie.
 #[derive(Clone)]
 pub struct AfiSafiRib<T: Clone> {
-    pub loc_rib: Option<Arc<T>>,
-    pub peers: FxHashMap<PeerKey, PeerRibs<T>>,
+    views: [Option<Arc<T>>; 5],
 }
 
 impl<T: Clone> Default for AfiSafiRib<T> {
     fn default() -> Self {
         Self {
-            loc_rib: None,
-            peers: FxHashMap::default(),
+            views: Default::default(),
         }
     }
 }
 
 impl<T: Clone> AfiSafiRib<T> {
-    /// Read access to `loc_rib`; `None` until a route has been installed.
-    pub fn loc_rib_ref(&self) -> Option<&T> {
-        self.loc_rib.as_deref()
-    }
-}
-
-impl<T: Default + Clone> AfiSafiRib<T> {
-    /// Copy-on-write mutable access, allocating `loc_rib` on first use.
-    pub fn loc_rib_mut(&mut self) -> &mut T {
-        Arc::make_mut(self.loc_rib.get_or_insert_with(|| Arc::new(T::default())))
-    }
-}
-
-#[derive(Clone)]
-pub struct PeerRibs<T: Clone> {
-    pub adj_rib_in_pre: Option<Arc<T>>,
-    pub adj_rib_in_post: Option<Arc<T>>,
-    pub adj_rib_out_pre: Option<Arc<T>>,
-    pub adj_rib_out_post: Option<Arc<T>>,
-}
-
-impl<T: Clone> Default for PeerRibs<T> {
-    fn default() -> Self {
-        Self {
-            adj_rib_in_pre: None,
-            adj_rib_in_post: None,
-            adj_rib_out_pre: None,
-            adj_rib_out_post: None,
-        }
-    }
-}
-
-impl<T: Clone> PeerRibs<T> {
-    pub fn adj_rib_in_pre_ref(&self) -> Option<&T> {
-        self.adj_rib_in_pre.as_deref()
-    }
-    pub fn adj_rib_in_post_ref(&self) -> Option<&T> {
-        self.adj_rib_in_post.as_deref()
-    }
-    pub fn adj_rib_out_pre_ref(&self) -> Option<&T> {
-        self.adj_rib_out_pre.as_deref()
-    }
-    pub fn adj_rib_out_post_ref(&self) -> Option<&T> {
-        self.adj_rib_out_post.as_deref()
-    }
-
-    /// Resolves a [`RibView`] to its field on this peer, the one accessor
-    /// every view-keyed reader (lookup, introspection) should go through.
-    /// `None` for `RibView::Loc` (not a `PeerRibs` field — see
-    /// [`AfiSafiRib::loc_rib_ref`]) or for a view never populated here.
+    /// Read access to a view; `None` until a route has been installed.
     pub fn view(&self, view: RibView) -> Option<&T> {
-        match view {
-            RibView::AdjInPre => self.adj_rib_in_pre_ref(),
-            RibView::AdjInPost => self.adj_rib_in_post_ref(),
-            RibView::AdjOutPre => self.adj_rib_out_pre_ref(),
-            RibView::AdjOutPost => self.adj_rib_out_post_ref(),
-            RibView::Loc => None,
-        }
+        self.views[view_index(view)].as_deref()
     }
 
-    /// [`PeerRibs::view`] for callers holding the raw BMP `(post_policy,
-    /// adj_rib_out)` flags instead of a [`RibView`].
+    /// Read access to `loc_rib`.
+    pub fn loc_rib_ref(&self) -> Option<&T> {
+        self.view(RibView::Loc)
+    }
+
+    /// [`AfiSafiRib::view`] for callers holding the raw BMP `(post_policy,
+    /// adj_rib_out)` flags.
     pub fn adj_rib_view_ref(&self, post_policy: bool, adj_rib_out: bool) -> Option<&T> {
         self.view(RibView::from_peer_flags(post_policy, adj_rib_out))
     }
+
+    pub fn clear_view(&mut self, view: RibView) {
+        self.views[view_index(view)] = None;
+    }
 }
 
-impl<T: Default + Clone> PeerRibs<T> {
-    /// Copy-on-write mutable counterpart to [`PeerRibs::view`], allocating
-    /// the selected view on first use. `None` for `RibView::Loc`.
-    pub fn view_mut(&mut self, view: RibView) -> Option<&mut T> {
-        let slot = match view {
-            RibView::AdjInPre => &mut self.adj_rib_in_pre,
-            RibView::AdjInPost => &mut self.adj_rib_in_post,
-            RibView::AdjOutPre => &mut self.adj_rib_out_pre,
-            RibView::AdjOutPost => &mut self.adj_rib_out_post,
-            RibView::Loc => return None,
-        };
-        Some(Arc::make_mut(
-            slot.get_or_insert_with(|| Arc::new(T::default())),
-        ))
+impl<T: RibTable> AfiSafiRib<T> {
+    /// Copy-on-write mutable access, allocating the view on first use.
+    pub fn view_mut(&mut self, view: RibView) -> &mut T {
+        Arc::make_mut(self.views[view_index(view)].get_or_insert_with(|| Arc::new(T::default())))
     }
 
-    /// [`PeerRibs::view_mut`] for callers holding the raw BMP `(post_policy,
-    /// adj_rib_out)` flags instead of a [`RibView`]. Infallible: the flag
-    /// conversion never yields `RibView::Loc`.
+    pub fn loc_rib_mut(&mut self) -> &mut T {
+        self.view_mut(RibView::Loc)
+    }
+
+    /// [`AfiSafiRib::view_mut`] for callers holding the raw BMP `(post_policy,
+    /// adj_rib_out)` flags.
     pub fn adj_rib_view_mut(&mut self, post_policy: bool, adj_rib_out: bool) -> &mut T {
         self.view_mut(RibView::from_peer_flags(post_policy, adj_rib_out))
-            .expect("from_peer_flags never returns RibView::Loc")
+    }
+
+    /// Populated views, in [`RIB_VIEWS`] order.
+    pub fn views_iter(&self) -> impl Iterator<Item = (RibView, &T)> {
+        RIB_VIEWS
+            .into_iter()
+            .filter_map(|v| self.view(v).map(|t| (v, t)))
+    }
+
+    pub fn has_peer(&self, peer: PeerId) -> bool {
+        self.views_iter().any(|(_, t)| t.has_peer(peer))
+    }
+
+    /// Purges `peer` from every view, dropping views left empty.
+    pub fn remove_peer(&mut self, peer: PeerId) -> usize {
+        let mut removed = 0;
+        for view in &mut self.views {
+            let Some(arc) = view else { continue };
+            if !arc.has_peer(peer) {
+                continue;
+            }
+            let table = Arc::make_mut(arc);
+            removed += table.remove_peer(peer);
+            if table.prefix_count() == 0 {
+                *view = None;
+            }
+        }
+        removed
+    }
+
+    /// Total path count across all views.
+    pub fn route_count(&self) -> usize {
+        self.views_iter().map(|(_, t)| t.path_count()).sum()
+    }
+
+    /// Total prefix (trie node) count across all views.
+    pub fn prefix_count(&self) -> usize {
+        self.views_iter().map(|(_, t)| t.prefix_count()).sum()
+    }
+
+    pub fn view_counts(&self) -> RibViewCounts {
+        let mut out = RibViewCounts::default();
+        for (view, t) in self.views_iter() {
+            out.0[view_index(view)] = t.path_count();
+        }
+        out
+    }
+
+    /// Distinct peers holding a path in any view, in id order.
+    pub fn peer_ids(&self) -> BTreeSet<PeerId> {
+        let mut ids = BTreeSet::new();
+        for (_, t) in self.views_iter() {
+            t.collect_peers(&mut ids);
+        }
+        ids
+    }
+}
+
+/// Path counts per RIB view, indexable via [`RibViewCounts::get`].
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct RibViewCounts(pub [usize; 5]);
+
+impl RibViewCounts {
+    pub fn get(&self, view: RibView) -> usize {
+        self.0[view_index(view)]
     }
 }
 
 /// All known paths for one prefix within an AFI-SAFI table.
 #[derive(Debug, Clone)]
-pub struct MultiRoute<E = (), const N: usize = 1> {
-    // N=1 fits measured prod data where multipath is rare; if multipath grows
-    // on only some views, split loc_rib/peers in `AfiSafiRib` to size N
-    // per-view.
-    pub paths: SmallVec<[Route<E>; N]>,
+pub struct MultiRoute<E = ()> {
+    // A plain Vec: paths are mutated in place on every update, which an
+    // `Arc<[_]>` would turn into a reallocation per write.
+    pub paths: Vec<Route<E>>,
 }
 
-impl<E, const N: usize> Default for MultiRoute<E, N> {
+impl<E> Default for MultiRoute<E> {
     fn default() -> Self {
-        Self {
-            paths: SmallVec::default(),
-        }
+        Self { paths: Vec::new() }
     }
 }
 
-impl<E: Clone, const N: usize> MultiRoute<E, N> {
-    /// Returns the "active" path for correlation.
+impl<E> MultiRoute<E> {
+    /// Inserts `route`, replacing the path with the same `(peer, path_id)`
+    /// and returning it.
+    pub fn upsert(&mut self, route: Route<E>) -> Option<Route<E>> {
+        match self
+            .paths
+            .iter_mut()
+            .find(|r| r.peer == route.peer && r.path_id == route.path_id)
+        {
+            Some(existing) => Some(std::mem::replace(existing, route)),
+            None => {
+                self.paths.push(route);
+                None
+            }
+        }
+    }
+
+    pub fn remove(&mut self, peer: Option<PeerId>, path_id: u32) -> Option<Route<E>> {
+        let pos = self
+            .paths
+            .iter()
+            .position(|r| r.peer == peer && r.path_id == path_id)?;
+        Some(self.paths.remove(pos))
+    }
+
+    /// Removes every path tagged `peer` (`None` = loc-rib paths).
+    pub fn remove_all(&mut self, peer: Option<PeerId>) -> usize {
+        let before = self.paths.len();
+        self.paths.retain(|r| r.peer != peer);
+        before - self.paths.len()
+    }
+
+    pub fn has_peer(&self, peer: PeerId) -> bool {
+        self.paths.iter().any(|r| r.peer == Some(peer))
+    }
+
+    pub fn has(&self, peer: Option<PeerId>) -> bool {
+        self.paths.iter().any(|r| r.peer == peer)
+    }
+
+    /// BEST > PRIMARY > lowest path-id, among paths tagged `peer`.
+    pub fn active_path_of(&self, peer: Option<PeerId>) -> Option<&Route<E>> {
+        let mine = || self.paths.iter().filter(move |r| r.peer == peer);
+        mine()
+            .find(|r| r.path_marking.path_status().contains(PathStatus::BEST))
+            .or_else(|| mine().find(|r| r.path_marking.path_status().contains(PathStatus::PRIMARY)))
+            .or_else(|| mine().min_by_key(|r| r.path_id))
+    }
+}
+
+impl<E: Clone> MultiRoute<E> {
+    /// Returns the "active" path for correlation, across all peers.
     /// Priority:
     /// 1. Path marked as BEST
     /// 2. Any path marked as PRIMARY (useful for ECMP)
@@ -272,7 +468,7 @@ impl<E: Clone, const N: usize> MultiRoute<E, N> {
     }
 }
 
-impl<const N: usize> MultiRoute<LabeledRouteExtra, N> {
+impl MultiRoute<LabeledRouteExtra> {
     /// Find a path matching a specific label set (works for both MPLS and SRv6
     /// variants)
     pub fn find_by_labels(&self, labels: &[MplsLabel]) -> Option<&Route<LabeledRouteExtra>> {
@@ -295,6 +491,8 @@ impl<const N: usize> MultiRoute<LabeledRouteExtra, N> {
 #[derive(Debug, Clone)]
 pub struct Route<E = ()> {
     pub attrs: Arc<RouteAttributes>,
+    /// Peer the path was learned from; `None` for loc-rib paths.
+    pub peer: Option<PeerId>,
     pub path_id: u32,
     /// BMP Path Marking Information
     pub path_marking: PathMarking,
@@ -302,13 +500,15 @@ pub struct Route<E = ()> {
     pub extra: E,
 }
 
-// Routing table types
+/// Routing table: one trie shared by every peer of a view.
 #[derive(Debug, Clone)]
-pub struct Routes<P: Prefix> {
-    pub routes: PrefixMap<P, MultiRoute>,
+pub struct Routes<P: Prefix, E = ()> {
+    pub routes: PrefixMap<P, MultiRoute<E>>,
 }
 
-impl<P: Prefix> Default for Routes<P> {
+pub type LabeledRoutes<P> = Routes<P, LabeledRouteExtra>;
+
+impl<P: Prefix, E> Default for Routes<P, E> {
     fn default() -> Self {
         Self {
             routes: PrefixMap::new(),
@@ -316,24 +516,13 @@ impl<P: Prefix> Default for Routes<P> {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct LabeledRoutes<P: Prefix> {
-    pub routes: PrefixMap<P, MultiRoute<LabeledRouteExtra>>,
-}
-
-impl<P: Prefix> Default for LabeledRoutes<P> {
-    fn default() -> Self {
-        Self {
-            routes: PrefixMap::new(),
-        }
-    }
-}
+pub type VpnTrie<P> = PrefixMap<P, MultiRoute<LabeledRouteExtra>>;
 
 /// One trie per route distinguisher, each behind its own `Arc` so a write to
 /// one VRF does not clone the rest.
 #[derive(Debug, Clone)]
 pub struct VpnRoutes<P: Prefix> {
-    pub tables: FxHashMap<RouteDistinguisher, Arc<PrefixMap<P, MultiRoute<LabeledRouteExtra>>>>,
+    pub tables: FxHashMap<RouteDistinguisher, Arc<VpnTrie<P>>>,
 }
 
 impl<P: Prefix> Default for VpnRoutes<P> {
@@ -346,10 +535,7 @@ impl<P: Prefix> Default for VpnRoutes<P> {
 
 impl<P: Prefix> VpnRoutes<P> {
     /// Read access to one RD's trie; `None` if never populated.
-    pub fn table_ref(
-        &self,
-        rd: RouteDistinguisher,
-    ) -> Option<&PrefixMap<P, MultiRoute<LabeledRouteExtra>>> {
+    pub fn table_ref(&self, rd: RouteDistinguisher) -> Option<&VpnTrie<P>> {
         self.tables.get(&rd).map(Arc::as_ref)
     }
 }
@@ -357,10 +543,7 @@ impl<P: Prefix> VpnRoutes<P> {
 impl<P: Prefix + Clone> VpnRoutes<P> {
     /// Copy-on-write mutable access to one RD's trie, allocating it on
     /// first use.
-    pub fn table_mut(
-        &mut self,
-        rd: RouteDistinguisher,
-    ) -> &mut PrefixMap<P, MultiRoute<LabeledRouteExtra>> {
+    pub fn table_mut(&mut self, rd: RouteDistinguisher) -> &mut VpnTrie<P> {
         Arc::make_mut(
             self.tables
                 .entry(rd)
@@ -369,70 +552,113 @@ impl<P: Prefix + Clone> VpnRoutes<P> {
     }
 }
 
+fn trie_has_peer<P: Prefix, E>(t: &PrefixMap<P, MultiRoute<E>>, peer: PeerId) -> bool {
+    t.iter().any(|(_, m)| m.has_peer(peer))
+}
+
+fn trie_remove_peer<P: Prefix, E>(t: &mut PrefixMap<P, MultiRoute<E>>, peer: PeerId) -> usize {
+    let mut removed = 0;
+    for (_, m) in t.iter_mut() {
+        removed += m.remove_all(Some(peer));
+    }
+    t.retain(|_, m| !m.paths.is_empty());
+    removed
+}
+
+fn trie_collect_peers<P: Prefix, E>(t: &PrefixMap<P, MultiRoute<E>>, out: &mut BTreeSet<PeerId>) {
+    for (_, m) in t {
+        out.extend(m.paths.iter().filter_map(|r| r.peer));
+    }
+}
+
+impl<P: Prefix + Clone, E: Clone> RibTable for Routes<P, E> {
+    fn path_count(&self) -> usize {
+        self.routes.iter().map(|(_, m)| m.paths.len()).sum()
+    }
+    fn prefix_count(&self) -> usize {
+        self.routes.len()
+    }
+    fn has_peer(&self, peer: PeerId) -> bool {
+        trie_has_peer(&self.routes, peer)
+    }
+    fn remove_peer(&mut self, peer: PeerId) -> usize {
+        trie_remove_peer(&mut self.routes, peer)
+    }
+    fn collect_peers(&self, out: &mut BTreeSet<PeerId>) {
+        trie_collect_peers(&self.routes, out)
+    }
+}
+
+impl<P: Prefix + Clone> RibTable for VpnRoutes<P> {
+    fn path_count(&self) -> usize {
+        self.tables
+            .values()
+            .map(|t| t.iter().map(|(_, m)| m.paths.len()).sum::<usize>())
+            .sum()
+    }
+    fn prefix_count(&self) -> usize {
+        self.tables.values().map(|t| t.len()).sum()
+    }
+    fn has_peer(&self, peer: PeerId) -> bool {
+        self.tables.values().any(|t| trie_has_peer(t, peer))
+    }
+    fn remove_peer(&mut self, peer: PeerId) -> usize {
+        let mut removed = 0;
+        self.tables.retain(|_, t| {
+            if trie_has_peer(t, peer) {
+                let t = Arc::make_mut(t);
+                removed += trie_remove_peer(t, peer);
+                !t.is_empty()
+            } else {
+                true
+            }
+        });
+        removed
+    }
+    fn collect_peers(&self, out: &mut BTreeSet<PeerId>) {
+        for t in self.tables.values() {
+            trie_collect_peers(t, out);
+        }
+    }
+}
+
 // AfiSafiTable helpers
+
+macro_rules! with_rib {
+    ($self:expr, $f:ident => $body:expr) => {
+        match $self {
+            AfiSafiTable::Ipv4Unicast($f) => $body,
+            AfiSafiTable::Ipv6Unicast($f) => $body,
+            AfiSafiTable::Ipv4LabeledUnicast($f) => $body,
+            AfiSafiTable::Ipv6LabeledUnicast($f) => $body,
+            AfiSafiTable::L3VpnIpv4Unicast($f) => $body,
+            AfiSafiTable::L3VpnIpv6Unicast($f) => $body,
+        }
+    };
+}
 
 impl AfiSafiTable {
     pub fn clear_loc_rib(&mut self) {
-        match self {
-            AfiSafiTable::Ipv4Unicast(f) => f.loc_rib = None,
-            AfiSafiTable::Ipv6Unicast(f) => f.loc_rib = None,
-            AfiSafiTable::Ipv4LabeledUnicast(f) => f.loc_rib = None,
-            AfiSafiTable::Ipv6LabeledUnicast(f) => f.loc_rib = None,
-            AfiSafiTable::L3VpnIpv4Unicast(f) => f.loc_rib = None,
-            AfiSafiTable::L3VpnIpv6Unicast(f) => f.loc_rib = None,
-        }
+        with_rib!(self, f => f.clear_view(RibView::Loc))
     }
 
-    pub fn remove_peer(&mut self, peer_key: &PeerKey) {
-        match self {
-            AfiSafiTable::Ipv4Unicast(f) => {
-                f.peers.remove(peer_key);
-            }
-            AfiSafiTable::Ipv6Unicast(f) => {
-                f.peers.remove(peer_key);
-            }
-            AfiSafiTable::Ipv4LabeledUnicast(f) => {
-                f.peers.remove(peer_key);
-            }
-            AfiSafiTable::Ipv6LabeledUnicast(f) => {
-                f.peers.remove(peer_key);
-            }
-            AfiSafiTable::L3VpnIpv4Unicast(f) => {
-                f.peers.remove(peer_key);
-            }
-            AfiSafiTable::L3VpnIpv6Unicast(f) => {
-                f.peers.remove(peer_key);
-            }
-        }
+    pub fn has_peer(&self, peer: PeerId) -> bool {
+        with_rib!(self, f => f.has_peer(peer))
     }
 
-    /// Total path count across loc_rib and all peer adj-rib views.
+    /// Purges `peer` from every view; returns the number of paths removed.
+    pub fn remove_peer(&mut self, peer: PeerId) -> usize {
+        with_rib!(self, f => f.remove_peer(peer))
+    }
+
+    /// Total path count across all views.
     pub fn route_count(&self) -> usize {
-        match self {
-            AfiSafiTable::Ipv4Unicast(f) => count_rib_routes(f, count_paths),
-            AfiSafiTable::Ipv6Unicast(f) => count_rib_routes(f, count_paths),
-            AfiSafiTable::Ipv4LabeledUnicast(f) => count_rib_routes(f, count_labeled_paths),
-            AfiSafiTable::Ipv6LabeledUnicast(f) => count_rib_routes(f, count_labeled_paths),
-            AfiSafiTable::L3VpnIpv4Unicast(f) => count_rib_routes(f, count_vpn_paths),
-            AfiSafiTable::L3VpnIpv6Unicast(f) => count_rib_routes(f, count_vpn_paths),
-        }
+        with_rib!(self, f => f.route_count())
     }
 
-    /// Total prefix (trie node) count across loc_rib and all peer adj-rib
-    /// views.
+    /// Total prefix (trie node) count across all views.
     pub fn prefix_count(&self) -> usize {
-        match self {
-            AfiSafiTable::Ipv4Unicast(f) => count_rib_routes(f, |t| t.routes.len()),
-            AfiSafiTable::Ipv6Unicast(f) => count_rib_routes(f, |t| t.routes.len()),
-            AfiSafiTable::Ipv4LabeledUnicast(f) => count_rib_routes(f, |t| t.routes.len()),
-            AfiSafiTable::Ipv6LabeledUnicast(f) => count_rib_routes(f, |t| t.routes.len()),
-            AfiSafiTable::L3VpnIpv4Unicast(f) => count_rib_routes(f, |t: &VpnRoutes<_>| {
-                t.tables.values().map(|m| m.len()).sum()
-            }),
-            AfiSafiTable::L3VpnIpv6Unicast(f) => count_rib_routes(f, |t: &VpnRoutes<_>| {
-                t.tables.values().map(|m| m.len()).sum()
-            }),
-        }
+        with_rib!(self, f => f.prefix_count())
     }
 
     pub fn afi_safi_type(&self) -> AfiSafiType {
@@ -446,86 +672,15 @@ impl AfiSafiTable {
         }
     }
 
-    /// Entries per RIB view.
+    /// Path counts per RIB view.
     pub fn view_counts(&self) -> RibViewCounts {
-        match self {
-            AfiSafiTable::Ipv4Unicast(f) => view_counts_of(f, count_paths),
-            AfiSafiTable::Ipv6Unicast(f) => view_counts_of(f, count_paths),
-            AfiSafiTable::Ipv4LabeledUnicast(f) => view_counts_of(f, count_labeled_paths),
-            AfiSafiTable::Ipv6LabeledUnicast(f) => view_counts_of(f, count_labeled_paths),
-            AfiSafiTable::L3VpnIpv4Unicast(f) => view_counts_of(f, count_vpn_paths),
-            AfiSafiTable::L3VpnIpv6Unicast(f) => view_counts_of(f, count_vpn_paths),
-        }
+        with_rib!(self, f => f.view_counts())
     }
 
-    pub fn peer_keys(&self) -> Vec<PeerKey> {
-        match self {
-            AfiSafiTable::Ipv4Unicast(f) => f.peers.keys().copied().collect(),
-            AfiSafiTable::Ipv6Unicast(f) => f.peers.keys().copied().collect(),
-            AfiSafiTable::Ipv4LabeledUnicast(f) => f.peers.keys().copied().collect(),
-            AfiSafiTable::Ipv6LabeledUnicast(f) => f.peers.keys().copied().collect(),
-            AfiSafiTable::L3VpnIpv4Unicast(f) => f.peers.keys().copied().collect(),
-            AfiSafiTable::L3VpnIpv6Unicast(f) => f.peers.keys().copied().collect(),
-        }
+    /// Distinct peers holding a path in this table.
+    pub fn peer_ids(&self) -> BTreeSet<PeerId> {
+        with_rib!(self, f => f.peer_ids())
     }
-}
-
-fn count_paths<P: Prefix>(t: &Routes<P>) -> usize {
-    t.routes.iter().map(|(_, m)| m.paths.len()).sum()
-}
-
-fn count_labeled_paths<P: Prefix>(t: &LabeledRoutes<P>) -> usize {
-    t.routes.iter().map(|(_, m)| m.paths.len()).sum()
-}
-
-fn count_vpn_paths<P: Prefix>(t: &VpnRoutes<P>) -> usize {
-    t.tables
-        .values()
-        .map(|m| m.iter().map(|(_, r)| r.paths.len()).sum::<usize>())
-        .sum()
-}
-
-fn count_rib_routes<T: Clone>(rib: &AfiSafiRib<T>, count: impl Fn(&T) -> usize + Copy) -> usize {
-    let loc = rib.loc_rib_ref().map(count).unwrap_or(0);
-    let peers: usize = rib
-        .peers
-        .values()
-        .map(|pr| {
-            pr.adj_rib_in_pre_ref().map(count).unwrap_or(0)
-                + pr.adj_rib_in_post_ref().map(count).unwrap_or(0)
-                + pr.adj_rib_out_pre_ref().map(count).unwrap_or(0)
-                + pr.adj_rib_out_post_ref().map(count).unwrap_or(0)
-        })
-        .sum();
-    loc + peers
-}
-
-/// Entries per RIB view: `loc-rib` plus the four adj-ribs, summed over every
-/// peer for the adj-rib side.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct RibViewCounts {
-    pub loc: usize,
-    pub adj_out_pre: usize,
-    pub adj_out_post: usize,
-    pub adj_in_post: usize,
-    pub adj_in_pre: usize,
-}
-
-fn view_counts_of<T: Clone>(
-    rib: &AfiSafiRib<T>,
-    count: impl Fn(&T) -> usize + Copy,
-) -> RibViewCounts {
-    let mut out = RibViewCounts {
-        loc: rib.loc_rib_ref().map(count).unwrap_or(0),
-        ..Default::default()
-    };
-    for pr in rib.peers.values() {
-        out.adj_out_pre += pr.adj_rib_out_pre_ref().map(count).unwrap_or(0);
-        out.adj_out_post += pr.adj_rib_out_post_ref().map(count).unwrap_or(0);
-        out.adj_in_post += pr.adj_rib_in_post_ref().map(count).unwrap_or(0);
-        out.adj_in_pre += pr.adj_rib_in_pre_ref().map(count).unwrap_or(0);
-    }
-    out
 }
 
 #[cfg(test)]

@@ -25,7 +25,7 @@ pub mod peers;
 pub mod types;
 
 pub use attrs::{AttrStore, RouteAttributes};
-pub use model::{AfiSafiTable, RibStore, RouterRib};
+pub use model::{AfiSafiRib, AfiSafiTable, PeerId, PeerTable, RibStore, RibTable, RouterRib};
 pub use types::{
     AfiSafiType, LabeledRouteExtra, RibContext, RibView, Srv6RouteExtra, TableId, peer_identity,
 };

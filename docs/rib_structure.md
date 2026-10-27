@@ -10,29 +10,25 @@ RibStore
 ├─ attr_store: AttrStore
 └─ ribs: FxHashMap<IpAddr, Arc<RouterRib>>                     [Arc 1]  one entry per router
     └─ RouterRib
-        ├─ peer_index: PeerIndex<(RibContext, IpAddr), PeerKey>
+        ├─ peers: PeerTable                                    PeerKey <-> router-local PeerId
+        ├─ peer_index: PeerIndex<(RibContext, IpAddr), PeerId>
         └─ tables: FxHashMap<TableId, Arc<AfiSafiTable>>       [Arc 2]  one per (context, afi-safi)
             └─ AfiSafiTable::Ipv4Unicast(AfiSafiRib<Routes<Ipv4Net>>)
-                ├─ loc_rib: Option<Arc<Routes<Ipv4Net>>>       [Arc 3]
-                │   └─ routes: PrefixMap<Ipv4Net, MultiRoute>  [TRIE]
-                └─ peers: FxHashMap<PeerKey, PeerRibs<Routes<Ipv4Net>>>
-                    └─ PeerRibs                                four independent views
-                        ├─ adj_rib_in_pre:   Option<Arc<Routes<Ipv4Net>>>  [Arc 3, own TRIE]
-                        ├─ adj_rib_in_post:  Option<Arc<Routes<Ipv4Net>>>  [Arc 3, own TRIE]
-                        ├─ adj_rib_out_pre:  Option<Arc<Routes<Ipv4Net>>>  [Arc 3, own TRIE]
-                        └─ adj_rib_out_post: Option<Arc<Routes<Ipv4Net>>>  [Arc 3, own TRIE]
+                └─ views: [Option<Arc<Routes<Ipv4Net>>>; 5]    [Arc 3]  one trie per view, shared by all peers
+                    │      loc, adj_out_pre, adj_out_post, adj_in_post, adj_in_pre
+                    └─ routes: PrefixMap<Ipv4Net, MultiRoute>  [TRIE]
+                        └─ MultiRoute::paths: Route { peer: Option<PeerId>, path_id, .. }
 ```
 
 `Ipv6Unicast`, `Ipv4LabeledUnicast` and `Ipv6LabeledUnicast` repeat the same
 shape with `Ipv6Net` and/or `LabeledRoutes` in place of `Routes`.
 
 The two L3VPN variants (`L3VpnIpv4Unicast`, `L3VpnIpv6Unicast`) replace every
-leaf above — `loc_rib` and each `adj_rib_*` — with one extra layer, keyed by
-route distinguisher:
+view leaf above with one extra layer, keyed by route distinguisher:
 
 ```text
 AfiSafiTable::L3VpnIpv4Unicast(AfiSafiRib<VpnRoutes<Ipv4Net>>)
-    └─ (loc_rib, or each adj_rib_* in PeerRibs): Option<Arc<VpnRoutes<Ipv4Net>>>  [Arc 3]
+    └─ each view: Option<Arc<VpnRoutes<Ipv4Net>>>                                 [Arc 3]
         └─ VpnRoutes::tables: FxHashMap<RouteDistinguisher, Arc<PrefixMap<..>>>   [Arc 4]
             └─ [TRIE]  one per VRF
 ```
@@ -46,11 +42,16 @@ AfiSafiTable::L3VpnIpv4Unicast(AfiSafiRib<VpnRoutes<Ipv4Net>>)
 | Arc 3 | one view's trie (`Routes`/`LabeledRoutes`/`VpnRoutes`) | next write to that view |
 | Arc 4 | one VRF's `PrefixMap` (VPN only) | next write to that VRF |
 
-Trie count for one router with K peers, P AFI-SAFIs, V VRFs:
+Trie count for one router with P AFI-SAFIs and V VRFs, independent of the
+number of peers K:
 
 ```text
-tries = P × (1_loc + K × 4_adj)     # the VPN families additionally multiply by V (one trie per RD)
+tries = P × 5_views     # the VPN families additionally multiply by V (one trie per RD)
 ```
+
+Each route carries the `PeerId` it was learned from (`None` for loc-rib
+paths); peers are interned per router in `PeerTable`, and ids are recycled
+when a peer is removed.
 
 ## Copy-on-write
 
@@ -74,5 +75,5 @@ to, one peer), keyed by policy stage and direction:
 | adj-rib-in  | `adj_rib_in_pre`  | `adj_rib_in_post`  |
 | adj-rib-out | `adj_rib_out_pre` | `adj_rib_out_post` |
 
-The whole `RouterRib` is published as one unit — `loc-rib` and every peer's
-four adj-rib views together.
+The whole `RouterRib` is published as one unit — every view of every table
+together.
