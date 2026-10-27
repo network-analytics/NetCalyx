@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2023-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,7 +31,7 @@ use netcalyx_parse_utils::test_helpers::{
 use std::collections::HashMap;
 
 use crate::nlri::MplsLabel;
-use crate::wire::deserializer::BgpParsingContext;
+use crate::wire::deserializer::{BgpParsingContext, MultipleLabelsMap};
 use crate::wire::serializer::path_attribute::PathAttributeWritingError;
 use netcalyx_iana::address_family::AddressType;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -273,8 +274,8 @@ pub fn test_bgp_ls_mp_reach() -> Result<(), MpReachWritingError> {
     test_parsed_completely_with_three_inputs(
         &good_wire,
         false,
-        &HashMap::new(),
-        &HashMap::new(),
+        &MultipleLabelsMap::default(),
+        &crate::wire::deserializer::BgpParsingContext::default(),
         &good,
     );
     test_write_with_one_input(&good, false, &good_wire)?;
@@ -331,8 +332,8 @@ pub fn test_bgp_ls_vpn_mp_reach() -> Result<(), MpReachWritingError> {
     test_parsed_completely_with_three_inputs(
         &good_wire,
         false,
-        &HashMap::new(),
-        &HashMap::new(),
+        &MultipleLabelsMap::default(),
+        &crate::wire::deserializer::BgpParsingContext::default(),
         &good,
     );
     test_write_with_one_input(&good, false, &good_wire)?;
@@ -384,12 +385,21 @@ pub fn test_bgp_ls_vpn_mp_unreach() -> Result<(), MpUnreachWritingError> {
 
     let mut add_path_map = HashMap::new();
     add_path_map.insert(AddressType::BgpLsVpn, true);
+    let ctx = crate::wire::deserializer::BgpParsingContext::new(
+        true,
+        HashMap::new(),
+        add_path_map,
+        true,
+        true,
+        true,
+        true,
+    );
 
     test_parsed_completely_with_three_inputs(
         &good_wire,
         false,
-        &HashMap::new(),
-        &add_path_map,
+        &MultipleLabelsMap::default(),
+        &ctx,
         &good,
     );
     test_write_with_one_input(&good, false, &good_wire)?;

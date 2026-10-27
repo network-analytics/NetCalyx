@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2022-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -74,6 +75,150 @@ pub(crate) const BGP_MARKER: &[u8] = &[0xff; 16];
 pub(crate) const MY_AS: &[u8] = &[0x01, 0x02];
 pub(crate) const HOLD_TIME: &[u8] = &[0x03, 0x04];
 pub(crate) const BGP_ID: &[u8] = &[0xFF, 0x00, 0x00, 0x01];
+
+#[test]
+fn test_add_path_map_direction_lookup() {
+    let ipv4 = AddressType::Ipv4Unicast;
+    let ipv6 = AddressType::Ipv6Unicast;
+    let mut map = crate::wire::deserializer::AddPathMap::default();
+    assert!(!map.add_path_enabled(ipv4, false));
+    assert!(!map.add_path_enabled(ipv4, true));
+    map.insert(ipv4, AddPathAddressFamily::new(ipv4, false, true));
+    map.insert(ipv6, AddPathAddressFamily::new(ipv6, true, false));
+    assert!(map.add_path_enabled(ipv4, false));
+    assert!(!map.add_path_enabled(ipv4, true));
+    assert!(!map.add_path_enabled(ipv6, false));
+    assert!(map.add_path_enabled(ipv6, true));
+    let collected: crate::wire::deserializer::AddPathMap =
+        map.iter().map(|(key, value)| (*key, *value)).collect();
+    assert_eq!(collected, map);
+    map.clear();
+    assert!(map.is_empty());
+    assert_eq!(collected.len(), 2);
+}
+
+#[test]
+fn test_directional_add_path_storage() {
+    let ipv4 = AddressType::Ipv4Unicast;
+    let ipv6 = AddressType::Ipv6Unicast;
+    let mut ctx = BgpParsingContext::new(
+        true,
+        HashMap::new(),
+        HashMap::from([(ipv4, true)]),
+        true,
+        true,
+        true,
+        true,
+    );
+    assert!(ctx.add_path().add_path_enabled(ipv4, false));
+    assert!(!ctx.add_path().add_path_enabled(ipv4, true));
+    ctx.add_path_mut()
+        .insert(ipv6, AddPathAddressFamily::new(ipv6, true, false));
+    assert!(!ctx.add_path().add_path_enabled(ipv6, false));
+    assert!(ctx.add_path().add_path_enabled(ipv6, true));
+    let cloned = ctx.clone();
+    assert_eq!(ctx.add_path(), cloned.add_path());
+    ctx.add_path_mut().clear();
+    assert!(ctx.add_path().is_empty());
+    for out in [false, true] {
+        assert!(!ctx.add_path().add_path_enabled(ipv4, out));
+        assert!(!ctx.add_path().add_path_enabled(ipv6, out));
+    }
+    assert!(cloned.add_path().add_path_enabled(ipv4, false));
+    assert!(cloned.add_path().add_path_enabled(ipv6, true));
+    assert!(BgpParsingContext::default().add_path().is_empty());
+    assert!(BgpParsingContext::asn2_default().add_path().is_empty());
+}
+
+#[test]
+fn test_add_path_capability_preserves_both_directions() {
+    let ipv4 = AddressType::Ipv4Unicast;
+    let ipv6 = AddressType::Ipv6Unicast;
+    let capability = AddPathCapability::new(vec![
+        AddPathAddressFamily::new(ipv4, false, true),
+        AddPathAddressFamily::new(ipv6, true, false),
+    ]);
+    let mut ctx = BgpParsingContext::default();
+    ctx.update_capabilities(&BgpCapability::AddPath(capability.clone()));
+    assert_eq!(ctx.add_path().len(), 2);
+    for family in capability.address_families() {
+        assert_eq!(ctx.add_path().get(&family.address_type()), Some(family));
+    }
+}
+
+#[test]
+fn test_add_path_direction_selection_and_capability_updates() {
+    let ipv4 = AddressType::Ipv4Unicast;
+    let mut ctx = BgpParsingContext::default();
+    ctx.update_capabilities(&BgpCapability::AddPath(AddPathCapability::new(vec![
+        AddPathAddressFamily::new(ipv4, false, true),
+    ])));
+    for out in [false, true, false] {
+        ctx.set_inbound_message(!out);
+        assert_eq!(ctx.add_path().add_path_enabled(ipv4, out), !out);
+    }
+    ctx.set_inbound_message(false);
+    ctx.add_path_mut()
+        .insert(ipv4, AddPathAddressFamily::new(ipv4, true, true));
+    assert!(ctx.add_path().add_path_enabled(ipv4, true));
+    let capability =
+        BgpCapability::AddPath(AddPathCapability::new(vec![AddPathAddressFamily::new(
+            ipv4, false, false,
+        )]));
+    ctx.update_capabilities(&capability);
+    assert!(!ctx.add_path().add_path_enabled(ipv4, false));
+    assert!(!ctx.add_path().add_path_enabled(ipv4, true));
+}
+
+#[test]
+fn test_multiple_labels_map() {
+    let ipv4 = AddressType::Ipv4NlriMplsLabels;
+    let mut map: crate::wire::deserializer::MultipleLabelsMap =
+        [(ipv4, (2, 5))].into_iter().collect();
+    assert_eq!(map.get(&ipv4), Some(&(2, 5)));
+    assert_eq!(map.multiple_labels_limit(ipv4, true), 2);
+    assert_eq!(map.multiple_labels_limit(ipv4, false), 5);
+    for inbound in [true, false] {
+        assert_eq!(
+            map.multiple_labels_limit(AddressType::Ipv6NlriMplsLabels, inbound),
+            1
+        );
+    }
+    let cloned = map.clone();
+    assert_eq!(map, cloned);
+    map.insert(ipv4, (3, 4));
+    assert_eq!(cloned.get(&ipv4), Some(&(2, 5)));
+    map.clear();
+    assert!(map.is_empty());
+    assert!(crate::wire::deserializer::MultipleLabelsMap::default().is_empty());
+}
+
+#[test]
+fn test_directional_multiple_labels_storage() {
+    let ipv4 = AddressType::Ipv4NlriMplsLabels;
+    let ipv6 = AddressType::Ipv6NlriMplsLabels;
+    let mut ctx = BgpParsingContext::default();
+    for (inbound, ipv4_limit, ipv6_limit) in [(true, 2, 3), (false, 5, 4)] {
+        ctx.set_inbound_message(inbound);
+        ctx.update_capabilities(&BgpCapability::MultipleLabels(vec![
+            crate::capabilities::MultipleLabel::new(ipv4, ipv4_limit),
+        ]));
+        ctx.update_capabilities(&BgpCapability::MultipleLabels(vec![
+            crate::capabilities::MultipleLabel::new(ipv6, ipv6_limit),
+        ]));
+    }
+    assert_eq!(ctx.multiple_labels().get(&ipv4), Some(&(2, 5)));
+    assert_eq!(ctx.multiple_labels().get(&ipv6), Some(&(3, 4)));
+    let mut message_ctx = ctx.clone();
+    message_ctx.set_inbound_message(false);
+    message_ctx.update_capabilities(&BgpCapability::MultipleLabels(vec![
+        crate::capabilities::MultipleLabel::new(ipv4, 1),
+    ]));
+    assert_eq!(message_ctx.multiple_labels().get(&ipv4), Some(&(2, 1)));
+    assert_eq!(ctx.multiple_labels().get(&ipv4), Some(&(2, 5)));
+    ctx.multiple_labels_mut().clear();
+    assert!(ctx.multiple_labels().is_empty());
+}
 
 #[test]
 fn test_bgp_message_not_synchronized_marker() {

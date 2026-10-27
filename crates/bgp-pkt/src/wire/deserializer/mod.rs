@@ -41,7 +41,7 @@ use netcalyx_parse_utils::{
 };
 
 use crate::BgpMessage;
-use crate::capabilities::BgpCapability;
+use crate::capabilities::{AddPathAddressFamily, AddPathCapability, BgpCapability, MultipleLabel};
 use crate::iana::{BgpMessageType, UndefinedBgpMessageType};
 use crate::notification::{BgpNotificationMessage, FiniteStateMachineError, MessageHeaderError};
 use crate::wire::deserializer::capabilities::BgpCapabilityParsingError;
@@ -89,11 +89,88 @@ impl BgpParsingIgnoredErrors {
     }
 }
 
+/// ADD-PATH support indexed by address family, from the local OPEN's
+/// perspective.
+///
+/// This maybe should be replaced by a Vec<> wrapper like AddPathCapability
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct AddPathMap(HashMap<AddressType, AddPathAddressFamily>);
+
+impl AddPathMap {
+    pub fn add_path_enabled(&self, address_type: AddressType, adj_rib_out: bool) -> bool {
+        self.0.get(&address_type).is_some_and(|family| {
+            if adj_rib_out {
+                family.send()
+            } else {
+                family.receive()
+            }
+        })
+    }
+}
+
+impl FromIterator<(AddressType, AddPathAddressFamily)> for AddPathMap {
+    fn from_iter<T: IntoIterator<Item = (AddressType, AddPathAddressFamily)>>(iter: T) -> Self {
+        Self(iter.into_iter().collect())
+    }
+}
+
+impl std::ops::Deref for AddPathMap {
+    type Target = HashMap<AddressType, AddPathAddressFamily>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for AddPathMap {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+/// Receiver label limits indexed by address family as (inbound, outbound).
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct MultipleLabelsMap(HashMap<AddressType, (u8, u8)>);
+
+impl MultipleLabelsMap {
+    /// Return the receiver limit for the message direction, defaulting to one
+    /// label.
+    pub fn multiple_labels_limit(&self, address_type: AddressType, inbound_message: bool) -> u8 {
+        self.0.get(&address_type).map_or(
+            1,
+            |limits| {
+                if inbound_message { limits.0 } else { limits.1 }
+            },
+        )
+    }
+}
+
+impl FromIterator<(AddressType, (u8, u8))> for MultipleLabelsMap {
+    fn from_iter<T: IntoIterator<Item = (AddressType, (u8, u8))>>(iter: T) -> Self {
+        Self(iter.into_iter().collect())
+    }
+}
+
+impl std::ops::Deref for MultipleLabelsMap {
+    type Target = HashMap<AddressType, (u8, u8)>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for MultipleLabelsMap {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct BgpParsingContext {
     asn4: bool,
-    multiple_labels: HashMap<AddressType, u8>,
-    add_path: HashMap<AddressType, bool>,
+    inbound_message: bool,
+    multiple_labels: MultipleLabelsMap,
+    add_path: AddPathMap,
     fail_on_non_unicast_withdraw_nlri: bool,
     fail_on_non_unicast_update_nlri: bool,
     fail_on_capability_error: bool,
@@ -102,6 +179,8 @@ pub struct BgpParsingContext {
 }
 
 impl BgpParsingContext {
+    /// Initialize receive-side ADD-PATH support; send-side support defaults
+    /// to disabled until supplied by negotiated capabilities.
     pub fn new(
         asn4: bool,
         multiple_labels: HashMap<AddressType, u8>,
@@ -113,8 +192,17 @@ impl BgpParsingContext {
     ) -> Self {
         Self {
             asn4,
-            multiple_labels,
-            add_path,
+            inbound_message: true,
+            multiple_labels: multiple_labels
+                .into_iter()
+                .map(|(family, limit)| (family, (limit, limit)))
+                .collect(),
+            add_path: add_path
+                .into_iter()
+                .map(|(family, receive)| {
+                    (family, AddPathAddressFamily::new(family, false, receive))
+                })
+                .collect(),
             fail_on_non_unicast_withdraw_nlri,
             fail_on_non_unicast_update_nlri,
             fail_on_capability_error,
@@ -143,41 +231,59 @@ impl BgpParsingContext {
         self.asn4 = value
     }
 
-    pub const fn multiple_labels(&self) -> &HashMap<AddressType, u8> {
+    /// Select inbound (default) or outbound BGP message parsing.
+    pub fn set_inbound_message(&mut self, inbound_message: bool) {
+        self.inbound_message = inbound_message;
+    }
+
+    /// Receiver label limits indexed by address family as (inbound, outbound).
+    pub const fn multiple_labels(&self) -> &MultipleLabelsMap {
         &self.multiple_labels
     }
 
-    pub fn multiple_labels_mut(&mut self) -> &mut HashMap<AddressType, u8> {
+    pub fn multiple_labels_mut(&mut self) -> &mut MultipleLabelsMap {
         &mut self.multiple_labels
     }
 
-    pub const fn add_path(&self) -> &HashMap<AddressType, bool> {
+    /// Negotiated ADD-PATH settings from the local OPEN's perspective.
+    pub const fn add_path(&self) -> &AddPathMap {
         &self.add_path
     }
 
-    pub fn add_path_mut(&mut self) -> &mut HashMap<AddressType, bool> {
+    pub fn add_path_mut(&mut self) -> &mut AddPathMap {
         &mut self.add_path
     }
 
-    #[inline]
-    pub fn update_capabilities(&mut self, capability: &BgpCapability, adj_rib_out: bool) {
-        match capability {
-            BgpCapability::AddPath(add_path) => {
-                for address_family in add_path.address_families() {
-                    let add_path_support = if adj_rib_out {
-                        address_family.send()
-                    } else {
-                        address_family.receive()
-                    };
-                    self.add_path_mut()
-                        .insert(address_family.address_type(), add_path_support);
-                }
+    pub fn update_add_path(&mut self, add_path: &AddPathCapability) {
+        for address_family in add_path.address_families() {
+            self.add_path
+                .insert(address_family.address_type(), *address_family);
+        }
+    }
+
+    pub fn update_multiple_labels(&mut self, multiple_labels: &[MultipleLabel], inbound: bool) {
+        for multiple_label in multiple_labels {
+            let limits = self
+                .multiple_labels
+                .entry(multiple_label.address_type())
+                .or_insert((1, 1));
+            if inbound {
+                limits.0 = multiple_label.count();
+            } else {
+                limits.1 = multiple_label.count();
             }
+        }
+    }
+
+    /// Store capability settings, including both ADD-PATH directions from
+    /// the local OPEN's perspective. Multiple Labels updates the receiver
+    /// limit for the current message direction.
+    #[inline]
+    pub fn update_capabilities(&mut self, capability: &BgpCapability) {
+        match capability {
+            BgpCapability::AddPath(add_path) => self.update_add_path(add_path),
             BgpCapability::MultipleLabels(multiple_labels) => {
-                for multiple_label in multiple_labels {
-                    self.multiple_labels_mut()
-                        .insert(multiple_label.address_type(), multiple_label.count());
-                }
+                self.update_multiple_labels(multiple_labels, self.inbound_message);
             }
             _ => {}
         }

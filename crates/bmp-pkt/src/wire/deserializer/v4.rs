@@ -16,7 +16,7 @@
 
 use crate::iana::{BmpMessageType, UndefinedBmpMessageType};
 use crate::wire::deserializer::BmpParsingContext;
-use crate::{BmpPeerType, PeerHeader, PeerKey, v3, v4};
+use crate::{PeerHeader, PeerKey, v3, v4};
 use netcalyx_bgp_pkt::BgpMessage;
 use netcalyx_bgp_pkt::wire::deserializer::capabilities::BgpCapabilityParsingError;
 use netcalyx_bgp_pkt::wire::deserializer::{
@@ -29,9 +29,8 @@ use crate::wire::deserializer::v3::{
     StatisticsReportMessageParsingError, TerminationMessageParsingError,
 };
 use netcalyx_parse_utils::{
-    ErrorKindSerdeDeref, ReadablePdu, ReadablePduWithOneInput, ReadablePduWithTwoInputs, Span,
-    parse_into_located, parse_into_located_one_input, parse_into_located_two_inputs,
-    parse_till_empty_into_located,
+    ErrorKindSerdeDeref, ReadablePdu, ReadablePduWithOneInput, Span, parse_into_located,
+    parse_into_located_one_input, parse_till_empty_into_located,
 };
 use netcalyx_serde_macros::LocatedError;
 use nom::IResult;
@@ -181,15 +180,8 @@ impl<'a>
         let bgp_ctx = ctx.entry(peer_key).or_default();
         bgp_ctx.set_asn4(peer_header.is_asn4());
 
-        // Determine if we need to track Adj-RIB-Out based on Peer Type,
-        // which is useful to select ADD-Path behavior for either sending
-        // or receiving
-        let adj_rib_out = match peer_header.peer_type() {
-            BmpPeerType::GlobalInstancePeer { adj_rib_out, .. }
-            | BmpPeerType::RdInstancePeer { adj_rib_out, .. }
-            | BmpPeerType::LocalInstancePeer { adj_rib_out, .. } => adj_rib_out,
-            _ => false,
-        };
+        let adj_rib_out = peer_header.peer_type().is_adj_rib_out();
+        bgp_ctx.set_inbound_message(!adj_rib_out);
 
         // Context represents what we learnt from the BGP Open
         // We do not want to alter it permanently based on TLVs
@@ -226,8 +218,7 @@ impl<'a>
                     _ => {}
                 }
 
-                let (tmp, element) =
-                    parse_into_located_two_inputs(buf, &mut ctx_clone, adj_rib_out)?;
+                let (tmp, element) = parse_into_located_one_input(buf, &mut ctx_clone)?;
                 tlvs.push(element);
                 buf = tmp;
             }
@@ -292,17 +283,12 @@ impl<'a> FromExternalError<Span<'a>, FromUtf8Error> for LocatedRouteMonitoringTl
 }
 
 impl<'a>
-    ReadablePduWithTwoInputs<
-        'a,
-        &mut BgpParsingContext,
-        bool,
-        LocatedRouteMonitoringTlvParsingError<'a>,
-    > for v4::RouteMonitoringTlv
+    ReadablePduWithOneInput<'a, &mut BgpParsingContext, LocatedRouteMonitoringTlvParsingError<'a>>
+    for v4::RouteMonitoringTlv
 {
     fn from_wire(
         buf: Span<'a>,
         ctx: &mut BgpParsingContext,
-        adj_rib_out: bool,
     ) -> IResult<Span<'a>, Self, LocatedRouteMonitoringTlvParsingError<'a>> {
         // Can't use read_tlv_header_t16_l16 because Index is in the middle
         // of the header and not counted in Length
@@ -340,7 +326,7 @@ impl<'a>
                 }
                 v4::RouteMonitoringTlvType::StatelessParsing => {
                     let (_, bgp_capability) = parse_into_located(data)?;
-                    ctx.update_capabilities(&bgp_capability, adj_rib_out);
+                    ctx.update_capabilities(&bgp_capability);
                     v4::RouteMonitoringTlvValue::StatelessParsing(bgp_capability)
                 }
                 v4::RouteMonitoringTlvType::PathMarking => {
