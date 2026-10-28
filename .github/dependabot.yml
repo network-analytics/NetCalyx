@@ -8,12 +8,43 @@ updates:
     directory: /
     schedule:
       interval: daily
+    open-pull-requests-limit: 10
     ignore:
       - dependency-name: "*"
-        # patch and minor updates don't matter for libraries as consumers of this library build
-        # with their own lockfile, rather than the version specified in this library's lockfile
-        # remove this ignore rule if your package has binaries to ensure that the binaries are
-        # built with the exact set of dependencies and those are up to date.
+        # Dependency management workflow:
+        # - Weekly `cargo update` (update-cargo-lock.yml): semver-compatible bumps in Cargo.lock.
+        # - Dependabot (daily): breaking bumps (1.x -> 2.0, 0.32 -> 0.33). Minor stays enabled
+        #   for 0.x; redundant >=1.0 minor PRs auto-close once cargo update lands.
+        # - Dependabot security updates: any semver level, regardless of this rule
+        #   (if enabled at repo settings)
         update-types:
           - "version-update:semver-patch"
-          - "version-update:semver-minor"
+    # Crates that share types across their public APIs should be bumped together
+    groups:
+      opentelemetry:
+        patterns:
+          - "opentelemetry*"
+          - "tracing-subscriber"
+      avro:
+        patterns:
+          - "apache-avro"
+          - "schema_registry_converter"
+          - "schema-registry-client"
+      syn:
+        patterns:
+          - "syn"
+          - "quote"
+          - "proc-macro2"
+          - "prettyplease"
+      strum:
+        patterns:
+          - "strum"
+          - "strum_macros"
+      tower:
+        patterns:
+          - "tower"
+          - "tower-service"
+      arbitrary:
+        patterns:
+          - "arbitrary"
+          - "arbitrary_ext"
