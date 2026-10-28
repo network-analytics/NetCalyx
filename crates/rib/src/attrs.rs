@@ -34,10 +34,12 @@ use netcalyx_bgp_pkt::path_attribute::{As2Aggregator, As4Aggregator, AsPathSegme
 
 /// Flattened route attributes for fast enricher field access.
 /// Arc-wrapped collections enable sharing across routes with identical sets.
+/// Absent collections default to `None`; interning also normalizes empty
+/// slices.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RouteAttributes {
     pub origin: Origin,
-    pub as_path: Arc<[AsPathSegment]>,
+    pub as_path: Option<Arc<[AsPathSegment]>>,
     pub as4_path: Option<Arc<[AsPathSegment]>>,
 
     pub next_hop: Option<IpAddr>,
@@ -51,7 +53,7 @@ pub struct RouteAttributes {
     pub atomic_aggregate: bool,
 
     pub originator_id: Option<Ipv4Addr>,
-    pub cluster_list: Arc<[Ipv4Addr]>,
+    pub cluster_list: Option<Arc<[Ipv4Addr]>>,
     pub aigp_metric: Option<u64>,
     pub otc: Option<u32>,
     pub psid_label_index: Option<u32>,
@@ -68,7 +70,7 @@ impl Default for RouteAttributes {
     fn default() -> Self {
         Self {
             origin: Origin::Incomplete,
-            as_path: Arc::new([]),
+            as_path: None,
             as4_path: None,
             next_hop: None,
             link_local_next_hop: None,
@@ -78,7 +80,7 @@ impl Default for RouteAttributes {
             aggregator4: None,
             atomic_aggregate: false,
             originator_id: None,
-            cluster_list: Arc::new([]),
+            cluster_list: None,
             aigp_metric: None,
             communities: None,
             ext_communities: None,
@@ -121,25 +123,42 @@ impl AttrStore {
     }
 
     /// Intern `attrs`, deduplicating sub-components and the whole struct.
+    /// Empty optional slices are normalized to `None` before interning.
     pub fn intern(&mut self, mut attrs: RouteAttributes) -> Arc<RouteAttributes> {
-        attrs.as_path = self.as_path.intern(&attrs.as_path);
-        attrs.as4_path = attrs.as4_path.as_deref().map(|p| self.as_path.intern(p));
-        attrs.cluster_list = self.cluster_list.intern(&attrs.cluster_list);
+        attrs.as_path = attrs
+            .as_path
+            .as_deref()
+            .filter(|p| !p.is_empty())
+            .map(|p| self.as_path.intern(p));
+        attrs.as4_path = attrs
+            .as4_path
+            .as_deref()
+            .filter(|p| !p.is_empty())
+            .map(|p| self.as_path.intern(p));
+        attrs.cluster_list = attrs
+            .cluster_list
+            .as_deref()
+            .filter(|c| !c.is_empty())
+            .map(|c| self.cluster_list.intern(c));
         attrs.communities = attrs
             .communities
             .as_deref()
+            .filter(|c| !c.is_empty())
             .map(|c| self.communities.intern(c));
         attrs.ext_communities = attrs
             .ext_communities
             .as_deref()
+            .filter(|e| !e.is_empty())
             .map(|e| self.ext_communities.intern(e));
         attrs.ext_communities_ipv6 = attrs
             .ext_communities_ipv6
             .as_deref()
+            .filter(|e| !e.is_empty())
             .map(|e| self.ext_communities_ipv6.intern(e));
         attrs.large_communities = attrs
             .large_communities
             .as_deref()
+            .filter(|l| !l.is_empty())
             .map(|l| self.large_communities.intern(l));
 
         if let Some(existing) = self.attrs.get(&attrs) {
@@ -229,6 +248,96 @@ mod tests {
     }
 
     #[test]
+    fn intern_normalizes_empty_optional_slices() {
+        for empty_first in [false, true] {
+            let mut store = AttrStore::new();
+            let empty = RouteAttributes {
+                as_path: Some(Arc::new([])),
+                as4_path: Some(Arc::new([])),
+                cluster_list: Some(Arc::new([])),
+                communities: Some(Arc::new([])),
+                ext_communities: Some(Arc::new([])),
+                ext_communities_ipv6: Some(Arc::new([])),
+                large_communities: Some(Arc::new([])),
+                ..Default::default()
+            };
+            let absent = RouteAttributes::default();
+            let (first, second) = if empty_first {
+                (empty, absent)
+            } else {
+                (absent, empty)
+            };
+            let a = store.intern(first);
+            let b = store.intern(second);
+
+            assert!(a.as4_path.is_none());
+            assert!(a.communities.is_none());
+            assert!(a.ext_communities.is_none());
+            assert!(a.ext_communities_ipv6.is_none());
+            assert!(a.large_communities.is_none());
+            assert!(a.as_path.is_none());
+            assert!(a.cluster_list.is_none());
+            assert!(Arc::ptr_eq(&a, &b));
+            assert_eq!(store.unique_attrs(), 1);
+            assert_eq!(store.as_path.pool_len(), 0);
+            assert_eq!(store.cluster_list.pool_len(), 0);
+            assert_eq!(store.communities.pool_len(), 0);
+            assert_eq!(store.ext_communities.pool_len(), 0);
+            assert_eq!(store.ext_communities_ipv6.pool_len(), 0);
+            assert_eq!(store.large_communities.pool_len(), 0);
+        }
+    }
+
+    #[test]
+    fn intern_preserves_and_deduplicates_nonempty_optional_slices() {
+        let mut store = AttrStore::new();
+        let attrs = RouteAttributes {
+            as_path: Some(Arc::from([AsPathSegment {
+                segment_type: AsPathSegmentType::AsSequence,
+                as_numbers: Box::new([65000]),
+            }])),
+            as4_path: Some(Arc::from([AsPathSegment {
+                segment_type: AsPathSegmentType::AsSequence,
+                as_numbers: Box::new([65000]),
+            }])),
+            cluster_list: Some(Arc::from([Ipv4Addr::new(1, 1, 1, 1)])),
+            communities: Some(Arc::from([Box::from("65000:1")])),
+            ext_communities: Some(Arc::from([Box::from("rt:65000:1")])),
+            ext_communities_ipv6: Some(Arc::from([Box::from("rt:2001:db8::1:1")])),
+            large_communities: Some(Arc::from([Box::from("65000:1:1")])),
+            ..Default::default()
+        };
+        let a = store.intern(attrs.clone());
+        let b = store.intern(RouteAttributes {
+            local_pref: Some(100),
+            ..attrs.clone()
+        });
+
+        assert_eq!(*a, attrs);
+        assert!(!Arc::ptr_eq(&a, &b));
+        assert!(Arc::ptr_eq(
+            a.as_path.as_ref().unwrap(),
+            b.as_path.as_ref().unwrap()
+        ));
+        assert!(Arc::ptr_eq(
+            a.cluster_list.as_ref().unwrap(),
+            b.cluster_list.as_ref().unwrap()
+        ));
+        assert!(Arc::ptr_eq(
+            a.as4_path.as_ref().unwrap(),
+            b.as4_path.as_ref().unwrap()
+        ));
+        for (left, right) in [
+            (&a.communities, &b.communities),
+            (&a.ext_communities, &b.ext_communities),
+            (&a.ext_communities_ipv6, &b.ext_communities_ipv6),
+            (&a.large_communities, &b.large_communities),
+        ] {
+            assert!(Arc::ptr_eq(left.as_ref().unwrap(), right.as_ref().unwrap()));
+        }
+    }
+
+    #[test]
     fn intern_keeps_distinct_attrs_separate() {
         let mut store = AttrStore::new();
         let a = store.intern(RouteAttributes {
@@ -271,7 +380,7 @@ mod tests {
 
         let a = store.intern(RouteAttributes {
             local_pref: Some(1),
-            as_path: Arc::clone(&as_path),
+            as_path: Some(Arc::clone(&as_path)),
             ..Default::default()
         });
         let b = store.intern(RouteAttributes {
@@ -285,7 +394,10 @@ mod tests {
         // collapse to the same allocation regardless of which field they
         // came in on.
         assert!(!Arc::ptr_eq(&a, &b));
-        assert!(Arc::ptr_eq(&a.as_path, b.as4_path.as_ref().unwrap()));
+        assert!(Arc::ptr_eq(
+            a.as_path.as_ref().unwrap(),
+            b.as4_path.as_ref().unwrap()
+        ));
     }
 
     #[test]
@@ -296,19 +408,22 @@ mod tests {
 
         let a = store.intern(RouteAttributes {
             local_pref: Some(1),
-            cluster_list: Arc::clone(&cluster_list),
+            cluster_list: Some(Arc::clone(&cluster_list)),
             communities: Some(Arc::clone(&communities)),
             ..Default::default()
         });
         let b = store.intern(RouteAttributes {
             local_pref: Some(2),
-            cluster_list: Arc::clone(&cluster_list),
+            cluster_list: Some(Arc::clone(&cluster_list)),
             communities: Some(Arc::clone(&communities)),
             ..Default::default()
         });
 
         assert!(!Arc::ptr_eq(&a, &b));
-        assert!(Arc::ptr_eq(&a.cluster_list, &b.cluster_list));
+        assert!(Arc::ptr_eq(
+            a.cluster_list.as_ref().unwrap(),
+            b.cluster_list.as_ref().unwrap()
+        ));
         assert!(Arc::ptr_eq(
             a.communities.as_ref().unwrap(),
             b.communities.as_ref().unwrap()
@@ -323,7 +438,7 @@ mod tests {
             as_numbers: Box::new([65000]),
         }]);
         let attrs = store.intern(RouteAttributes {
-            as_path,
+            as_path: Some(as_path),
             ..Default::default()
         });
         assert_eq!(store.as_path_pool_len(), 1);
