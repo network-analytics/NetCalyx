@@ -56,3 +56,6 @@ jobs:
             CI will run against the updated `Cargo.lock` to verify nothing is broken.
           labels: dependencies, automated
           delete-branch: true
+          # Commit via the API so the app bot is author/committer
+          # (default author is github.actor)
+          sign-commits: true
