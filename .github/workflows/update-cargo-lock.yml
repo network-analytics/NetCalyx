@@ -1,3 +1,5 @@
+# Weekly `cargo update` of semver-compatible deps
+# Opens a PR if Cargo.lock changed
 name: Update Cargo.lock
 
 on:
@@ -9,8 +11,7 @@ jobs:
   update:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
 
     steps:
       - uses: actions/checkout@v7
@@ -30,11 +31,20 @@ jobs:
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
 
+      # Short-lived GitHub App token, so CI runs on the PR
+      - name: Generate app token
+        if: steps.changes.outputs.changed == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.CARGO_UPDATE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CARGO_UPDATE_APP_PRIVATE_KEY }}
+
       - name: Create Pull Request
         if: steps.changes.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v8
         with:
-          token: ${{ secrets.PR_PAT }}
+          token: ${{ steps.app-token.outputs.token }}
           commit-message: "chore: update Cargo.lock dependencies"
           branch: chore/cargo-update
           branch-suffix: timestamp
