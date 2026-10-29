@@ -810,6 +810,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cookie-factory"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9885fa71e26b8ab7855e2ec7cae6e9b380edff76cd052e07c683a0319d51b3a2"
+dependencies = [
+ "futures",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3035,6 +3044,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "netcalyx-pcap-tools"
+version = "0.3.0"
+dependencies = [
+ "bytes",
+ "clap",
+ "netcalyx-bmp-pkt",
+ "netcalyx-pcap-reader",
+ "pcap-parser",
+ "pdu",
+ "shadow-rs",
+ "tempfile",
+ "thiserror",
+ "tokio-util",
+]
+
+[[package]]
 name = "netcalyx-serde-macros"
 version = "0.3.0"
 dependencies = [
@@ -3656,6 +3681,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1099a3a64b376c536394622c9e5ea8ecfac3e3e44f88857b1e7da114135d3df4"
 dependencies = [
  "circular",
+ "cookie-factory",
  "nom 8.0.0",
  "rusticata-macros",
 ]

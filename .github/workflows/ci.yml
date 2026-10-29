@@ -522,6 +522,86 @@ jobs:
           path: target/${{ matrix.target }}/release/${{ steps.binary_filename.outputs.name }}
           retention-days: 30
 
+  # Build pcap-tools binary
+  build-pcap-tools-bin:
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    needs: version
+    name: Build pcap-tools binary (${{ matrix.dist_and_arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary_name: netcalyx-pcap-tools
+            strip_command: true
+            smoke_test: true
+            dist_and_arch: x86_64-ubuntu_latest # used just for naming the binary
+          - os: ubuntu-latest
+            container: rockylinux/rockylinux:8.10
+            target: x86_64-unknown-linux-gnu
+            binary_name: netcalyx-pcap-tools
+            strip_command: true
+            smoke_test: true
+            install_deps: |
+              dnf install -y gcc gcc-c++ perl-core cmake git curl
+              dnf install -y https://github.com/PowerShell/PowerShell/releases/download/v7.5.2/powershell-7.5.2-1.rh.x86_64.rpm
+            dist_and_arch: x86_64-el8_10 # used just for naming the binary
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary_name: netcalyx-pcap-tools.exe
+            strip_command: false # strip command not available on Windows
+            smoke_test: true
+            dist_and_arch: x86_64-windows-latest.exe # used just for naming the binary
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            binary_name: netcalyx-pcap-tools
+            strip_command: true
+            smoke_test: false # cross-compiled on the arm64 runner
+            dist_and_arch: x86_64-apple-latest # used just for naming the binary
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            binary_name: netcalyx-pcap-tools
+            strip_command: true
+            smoke_test: true
+            dist_and_arch: aarch64-apple-latest # used just for naming the binary
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # needs full git history so shadow-rs embeds tag/commit info
+      - name: Install build dependencies
+        if: matrix.install_deps
+        run: ${{ matrix.install_deps }}
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Build pcap-tools
+        run: cargo build --locked --release --target ${{ matrix.target }} -p netcalyx-pcap-tools
+      - name: Smoke test (run --help)
+        if: matrix.smoke_test == 'true'
+        run: ./target/${{ matrix.target }}/release/${{ matrix.binary_name }} --help
+      - name: Strip binary (Unix only)
+        if: matrix.strip_command == 'true'
+        run: strip target/${{ matrix.target }}/release/${{ matrix.binary_name }}
+      - name: Create complete binary file name
+        id: binary_filename
+        shell: pwsh # for Windows compatibility, available on all platforms
+        run: |
+          $name = "netcalyx-pcap-tools-${{ needs.version.outputs.version }}-${{ needs.version.outputs.release }}-${{ matrix.dist_and_arch }}"
+          "name=$name" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+      - name: Rename binary
+        shell: pwsh # for Windows compatibility, available on all platforms
+        run: Move-Item -Path "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" -Destination "target/${{ matrix.target }}/release/${{ steps.binary_filename.outputs.name }}"
+      - name: Upload pcap-tools artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.binary_filename.outputs.name }}
+          path: target/${{ matrix.target }}/release/${{ steps.binary_filename.outputs.name }}
+          retention-days: 30
+
   # Build yang-consumer binary
   #
   # Windows and x86_64-apple-darwin are intentionally omitted: yang5/rdkafka
