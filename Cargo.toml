@@ -19,6 +19,7 @@ members = [
     "crates/yang-push",
     "crates/yang-consumer",
     "crates/pcap-decoder",
+    "crates/pcap-tools",
     "crates/netconf-proto",
     "fuzz",
 ]
