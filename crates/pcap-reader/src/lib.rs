@@ -44,15 +44,22 @@
 //!         .entry(key)
 //!         .or_insert((BmpCodec::default(), BytesMut::new()));
 //!     buf.extend_from_slice(value.as_slice());
-//!     match codec.decode(buf) {
-//!         Ok(Some(msg)) => println!("{}", serde_json::to_string(&msg).unwrap()),
-//!         Ok(None) => {}
-//!         Err(err) => println!("Error parsing BMP Message: {:?}", err),
+//!     // A segment can carry multiple messages
+//!     loop {
+//!         match codec.decode(buf) {
+//!             Ok(Some(msg)) => println!("{}", serde_json::to_string(&msg).unwrap()),
+//!             Ok(None) => break,
+//!             Err(err) => {
+//!                 println!("Error parsing BMP Message: {:?}", err);
+//!                 break;
+//!             }
+//!         }
 //!     }
 //! }
 //! ```
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::time::Duration;
 
 use pcap_parser::data::PacketData;
 use pcap_parser::traits::PcapReaderIterator;
@@ -69,16 +76,24 @@ pub enum TransportProtocol {
 /// Iterator over pcap files
 pub struct PcapIter<'a> {
     reader: Box<dyn PcapReaderIterator + 'a>,
-    link_types: Vec<Linktype>,
+    /// Per interface: link type, timestamp offset (seconds) and timestamp
+    /// resolution (units per second)
+    interfaces: Vec<(Linktype, u64, u64)>,
     frame_counter: usize,
+    timestamp: Duration,
+    link_type: Linktype,
+    raw_frame: Vec<u8>,
 }
 
 impl<'a> PcapIter<'a> {
     pub const fn new(reader: Box<dyn PcapReaderIterator + 'a>) -> Self {
         Self {
             reader,
-            link_types: vec![],
+            interfaces: vec![],
             frame_counter: 0,
+            timestamp: Duration::ZERO,
+            link_type: Linktype::NULL,
+            raw_frame: vec![],
         }
     }
 
@@ -86,6 +101,26 @@ impl<'a> PcapIter<'a> {
     pub const fn frame_counter(&self) -> usize {
         self.frame_counter
     }
+
+    /// Capture timestamp (since UNIX epoch) of the last returned frame
+    pub const fn timestamp(&self) -> Duration {
+        self.timestamp
+    }
+
+    /// Link type of the last returned frame
+    pub const fn link_type(&self) -> Linktype {
+        self.link_type
+    }
+
+    /// Captured bytes (including link layer header) of the last returned frame
+    pub fn raw_frame(&self) -> &[u8] {
+        &self.raw_frame
+    }
+}
+
+fn to_duration(secs: u32, fraction: u32, resolution: u64) -> Duration {
+    let nanos = u64::from(fraction) * 1_000_000_000 / resolution;
+    Duration::new(u64::from(secs), nanos as u32)
 }
 
 impl Iterator for PcapIter<'_> {
@@ -97,39 +132,70 @@ impl Iterator for PcapIter<'_> {
                 Ok((offset, block)) => {
                     match block {
                         PcapBlockOwned::Legacy(legacy_packet) => {
+                            let (link_type, _, resolution) = self.interfaces[0];
+                            let caplen = legacy_packet.caplen as usize;
                             self.frame_counter += 1;
-                            let link_type = self.link_types[0];
-                            let packet_data = data::get_packetdata(
-                                legacy_packet.data,
-                                link_type,
-                                legacy_packet.caplen as usize,
-                            );
+                            let packet_data =
+                                data::get_packetdata(legacy_packet.data, link_type, caplen);
                             let result = PcapIter::parse_packet(packet_data);
+                            if result.is_some() {
+                                self.link_type = link_type;
+                                self.timestamp = to_duration(
+                                    legacy_packet.ts_sec,
+                                    legacy_packet.ts_usec,
+                                    resolution,
+                                );
+                                self.raw_frame.clear();
+                                self.raw_frame.extend_from_slice(
+                                    &legacy_packet.data[..caplen.min(legacy_packet.data.len())],
+                                );
+                            }
                             self.reader.consume(offset);
-                            return result;
+                            if result.is_some() {
+                                return result;
+                            }
                         }
                         PcapBlockOwned::LegacyHeader(header) => {
                             self.reader.consume(offset);
-                            self.link_types.push(header.network);
+                            let resolution = if header.is_nanosecond_precision() {
+                                1_000_000_000
+                            } else {
+                                1_000_000
+                            };
+                            self.interfaces.push((header.network, 0, resolution));
                             continue;
                         }
                         PcapBlockOwned::NG(Block::InterfaceDescription(description)) => {
-                            // Memorize link type for that given interface
-                            self.link_types.push(description.linktype);
+                            // Memorize link type and timestamp format for that
+                            // given interface
+                            self.interfaces.push((
+                                description.linktype,
+                                u64::try_from(description.ts_offset()).unwrap_or(0),
+                                description.ts_resolution().unwrap_or(1_000_000),
+                            ));
                             self.reader.consume(offset);
                             continue;
                         }
                         PcapBlockOwned::NG(Block::EnhancedPacket(packet)) => {
+                            let (link_type, ts_offset, resolution) =
+                                self.interfaces[packet.if_id as usize];
+                            let caplen = packet.caplen as usize;
                             self.frame_counter += 1;
-                            let link_type = self.link_types[packet.if_id as usize];
-                            let packet_data = data::get_packetdata(
-                                packet.data,
-                                link_type,
-                                packet.caplen as usize,
-                            );
+                            let packet_data = data::get_packetdata(packet.data, link_type, caplen);
                             let result = PcapIter::parse_packet(packet_data);
+                            if result.is_some() {
+                                let (secs, fraction) = packet.decode_ts(ts_offset, resolution);
+                                self.link_type = link_type;
+                                self.timestamp = to_duration(secs, fraction, resolution);
+                                self.raw_frame.clear();
+                                self.raw_frame.extend_from_slice(
+                                    &packet.data[..caplen.min(packet.data.len())],
+                                );
+                            }
                             self.reader.consume(offset);
-                            return result;
+                            if result.is_some() {
+                                return result;
+                            }
                         }
                         PcapBlockOwned::NG(Block::SimplePacket(_)) => {
                             todo!()
@@ -312,9 +378,16 @@ mod tests {
         let mut iter = PcapIter::new(reader);
         let mut results = vec![];
         while let Some(val) = iter.next() {
+            if results.is_empty() {
+                assert_eq!(iter.link_type(), Linktype::ETHERNET);
+                assert_eq!(iter.timestamp(), Duration::new(954_392_208, 953_280_000));
+                assert_eq!(iter.raw_frame().len(), 60);
+            }
             results.push(val);
         }
-        assert_eq!(results.len(), 20)
+        assert_eq!(results.len(), 20);
+        assert_eq!(iter.frame_counter(), 20);
+        assert_eq!(iter.timestamp(), Duration::new(954_392_217, 533_067_000));
     }
 
     #[allow(clippy::while_let_on_iterator)]
@@ -328,8 +401,16 @@ mod tests {
         let mut iter = PcapIter::new(reader);
         let mut results = vec![];
         while let Some(val) = iter.next() {
+            if results.is_empty() {
+                assert_eq!(iter.link_type(), Linktype::ETHERNET);
+                // Nanosecond if_tsresol
+                assert_eq!(iter.timestamp(), Duration::new(1_664_821_745, 954_189_467));
+                assert_eq!(iter.raw_frame().len(), 138);
+            }
             results.push(val);
         }
-        assert_eq!(results.len(), 9)
+        assert_eq!(results.len(), 9);
+        assert_eq!(iter.timestamp(), Duration::new(1_664_821_878, 4_147_116));
+        assert_eq!(iter.raw_frame().len(), 295);
     }
 }
