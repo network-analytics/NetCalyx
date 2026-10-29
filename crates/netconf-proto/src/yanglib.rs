@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io;
 use std::path::Path;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 // ============================================================================
 // Core Structures
 // ============================================================================
@@ -403,6 +403,10 @@ impl YangLibrary {
         schema: &schema_registry_client::rest::models::Schema,
     ) -> Result<RegisteredSchema, SchemaConstructionError> {
         let subject = format!("{}{}", subject_prefix.unwrap_or(""), name);
+        trace!(
+            "registering schema `{name}` as subject `{subject}` with payload {}",
+            serde_json::to_string(schema).unwrap_or_else(|_| format!("{schema:?}"))
+        );
         let registered_schema_result = client.register_schema(&subject, schema, false).await;
         let registered_schema = match registered_schema_result {
             Ok(registered_schema) => {
@@ -431,7 +435,7 @@ impl YangLibrary {
             }
             Err(e) => {
                 warn!(
-                    "Failed to register schema `{name}` as subject `{subject}` with error `{e}`, trying again with disabling compatibility check"
+                    "Failed to register schema `{name}` as subject `{subject}` with error `{e:?}`, trying again with disabling compatibility check"
                 );
                 let server_config = schema_registry_client::rest::models::ServerConfig {
                     compatibility: Some(
@@ -439,16 +443,36 @@ impl YangLibrary {
                     ),
                     ..Default::default()
                 };
+                trace!(
+                    "updating config for subject `{subject}` with payload {}",
+                    serde_json::to_string(&server_config)
+                        .unwrap_or_else(|_| format!("{server_config:?}"))
+                );
                 client
                     .update_config(&subject, &server_config)
                     .await
-                    .map_err(SchemaConstructionError::RegistrationError)?;
+                    .map_err(|e| {
+                        warn!("Failed to update config for subject `{subject}`: {e}");
+                        SchemaConstructionError::RegistrationError(e)
+                    })?;
+                trace!(
+                    "re-registering schema `{name}` as subject `{subject}` with payload {}",
+                    serde_json::to_string(schema).unwrap_or_else(|_| format!("{schema:?}"))
+                );
                 client
                     .register_schema(&subject, schema, false)
                     .await
-                    .map_err(SchemaConstructionError::RegistrationError)?
+                    .map_err(|e| {
+                        warn!("Failed to register schema `{name}` as subject `{subject}` after disabling compatibility check: {e:?}");
+                        SchemaConstructionError::RegistrationError(e)
+                    })?
             }
         };
+        trace!(
+            "received response for subject `{subject}`: {}",
+            serde_json::to_string(&registered_schema)
+                .unwrap_or_else(|_| format!("{registered_schema:?}"))
+        );
         info!(
             "registered schema {name} with subject `{:?}`, version `{:?}` and ID `{:?}`",
             registered_schema.subject, registered_schema.version, registered_schema.id,
