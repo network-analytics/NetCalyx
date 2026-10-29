@@ -185,10 +185,17 @@ where
         let link_type = iter.link_type();
         let segment = TcpSegment::parse(link_type, iter.raw_frame())
             .map_err(|reason| SplitError::MalformedFrame { frame, reason })?;
+        let flow = (src_ip, src_port, dst_ip, dst_port);
+        // New connection reusing the four-tuple, restart reassembly
+        if segment.syn
+            && let Some(old) = flows.remove(&flow)
+            && old.pending_len() > 0
+        {
+            stats.incomplete_flows.push((flow, old.pending_len()));
+        }
         if segment.payload().is_empty() {
             continue;
         }
-        let flow = (src_ip, src_port, dst_ip, dst_port);
         let state = flows
             .entry(flow)
             .or_insert_with(|| FlowState::new(segment.seq));
@@ -216,11 +223,12 @@ where
     writer.finish()?;
 
     stats.frames_in = iter.frame_counter();
-    stats.incomplete_flows = flows
-        .into_iter()
-        .map(|(flow, state)| (flow, state.pending_len()))
-        .filter(|(_, len)| *len > 0)
-        .collect();
+    stats.incomplete_flows.extend(
+        flows
+            .into_iter()
+            .map(|(flow, state)| (flow, state.pending_len()))
+            .filter(|(_, len)| *len > 0),
+    );
     Ok(stats)
 }
 
@@ -234,6 +242,7 @@ struct TcpSegment<'a> {
     payload_end: usize,
     is_ipv4: bool,
     seq: u32,
+    syn: bool,
 }
 
 impl<'a> TcpSegment<'a> {
@@ -270,8 +279,12 @@ impl<'a> TcpSegment<'a> {
             return Err(format!("expected TCP, got IP protocol {protocol}"));
         }
         let tcp_offset = ip_offset + ip_header_len;
-        let tcp = TcpPdu::new(&frame[tcp_offset..])
-            .map_err(|err| format!("invalid TCP header: {err:?}"))?;
+        let tcp = TcpPdu::new(
+            frame
+                .get(tcp_offset..)
+                .ok_or_else(|| "truncated TCP header".to_string())?,
+        )
+        .map_err(|err| format!("invalid TCP header: {err:?}"))?;
         let payload_offset = tcp_offset + tcp.computed_data_offset();
         // Bound by the IP length to drop link layer padding/trailers
         let payload_end = ip_offset + ip_packet_len;
@@ -286,6 +299,7 @@ impl<'a> TcpSegment<'a> {
             payload_end,
             is_ipv4,
             seq: tcp.sequence_number(),
+            syn: tcp.syn(),
         })
     }
 
@@ -427,6 +441,48 @@ mod tests {
         };
         let tcp = TcpPdu::new(&packet[34..]).unwrap();
         assert_eq!(tcp.checksum(), tcp.computed_checksum(&ip));
+    }
+
+    #[test]
+    fn test_split_resets_flow_on_syn() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("in.pcap");
+        let output = dir.path().join("out.pcap");
+        let tcp = 14 + 20;
+        let segment = |seq: u32, flags: u8, payload: &[u8]| {
+            let mut frame = ipv4_tcp_frame(payload);
+            frame[tcp + 4..tcp + 8].copy_from_slice(&seq.to_be_bytes());
+            frame[tcp + TCP_FLAGS_OFFSET] = flags;
+            frame
+        };
+        let mut writer = crate::writer::LegacyPcapWriter::new(File::create(&input).unwrap());
+        for frame in [
+            // First connection, message (length-prefixed) left incomplete
+            segment(100, 0x18, &[3, 0xaa]),
+            // Second connection on the same four-tuple
+            segment(5000, TCP_FLAG_SYN, &[]),
+            segment(5001, 0x18, &[2, 0xbb]),
+        ] {
+            writer
+                .write_frame(Linktype::ETHERNET, std::time::Duration::ZERO, &frame)
+                .unwrap();
+        }
+        writer.finish().unwrap();
+
+        let mut messages = vec![];
+        let stats = split_tcp_messages(
+            &input,
+            &output,
+            &[10000],
+            None,
+            |buf| Ok(buf.first().map(|len| usize::from(*len))),
+            |_, _, msg| messages.push(msg.to_vec()),
+        )
+        .unwrap();
+        assert_eq!(messages, vec![vec![2, 0xbb]]);
+        assert_eq!(stats.messages_out, 1);
+        assert_eq!(stats.incomplete_flows.len(), 1);
+        assert_eq!(stats.incomplete_flows[0].1, 2);
     }
 
     #[test]

@@ -32,7 +32,7 @@ netcalyx-pcap-tools bmp-split --help
 netcalyx-pcap-tools bmp-split --input in.pcap --output out.pcap --ports 1790 [--validate]
 ```
 
-- Input can be PCAP or PCAPNG, output is legacy PCAP (microsecond timestamps).
+- Input can be PCAP or PCAPNG (Enhanced Packet Blocks), output is legacy PCAP (microsecond timestamps).
 - Only TCP packets towards `--ports` with payload are kept, all other frames are dropped.
 - The destination port of the output packets is rewritten to 1790 (BMP default), override with `--rewrite-port`.
 - Each new segment reuses the link/IP/TCP headers and the timestamp of the frame that completed the message; IP length,
@@ -42,7 +42,8 @@ netcalyx-pcap-tools bmp-split --input in.pcap --output out.pcap --ports 1790 [--
   generated segments, so the output is a plain data stream.
 - Input and output must be different files.
 - TCP streams are reassembled by sequence number: retransmissions and duplicates (e.g., the same packet captured on
-  multiple interfaces with `-i any`) are dropped and out-of-order segments are reordered.
+  multiple interfaces with `-i any`) are dropped and out-of-order segments are reordered. A SYN restarts reassembly
+  of its four-tuple, so reconnections reusing the same source port are handled if their handshake is captured.
 - `--validate` decodes every message with the NetCalyx BMP parser and reports failures.
 
 ## Adding a new command
