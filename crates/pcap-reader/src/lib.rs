@@ -78,7 +78,7 @@ pub struct PcapIter<'a> {
     reader: Box<dyn PcapReaderIterator + 'a>,
     /// Per interface: link type, timestamp offset (seconds) and timestamp
     /// resolution (units per second)
-    interfaces: Vec<(Linktype, u64, u64)>,
+    interfaces: Vec<(Linktype, i64, u64)>,
     frame_counter: usize,
     timestamp: Duration,
     link_type: Linktype,
@@ -118,9 +118,15 @@ impl<'a> PcapIter<'a> {
     }
 }
 
-fn to_duration(secs: u32, fraction: u32, resolution: u64) -> Duration {
+fn to_duration(secs: u32, fraction: u32, resolution: u64, offset: i64) -> Duration {
     let nanos = u64::from(fraction) * 1_000_000_000 / resolution;
-    Duration::new(u64::from(secs), nanos as u32)
+    let ts = Duration::new(u64::from(secs), nanos as u32);
+    let offset_abs = Duration::from_secs(offset.unsigned_abs());
+    if offset < 0 {
+        ts.saturating_sub(offset_abs)
+    } else {
+        ts.saturating_add(offset_abs)
+    }
 }
 
 impl Iterator for PcapIter<'_> {
@@ -144,6 +150,7 @@ impl Iterator for PcapIter<'_> {
                                     legacy_packet.ts_sec,
                                     legacy_packet.ts_usec,
                                     resolution,
+                                    0,
                                 );
                                 self.raw_frame.clear();
                                 self.raw_frame.extend_from_slice(
@@ -170,7 +177,7 @@ impl Iterator for PcapIter<'_> {
                             // given interface
                             self.interfaces.push((
                                 description.linktype,
-                                u64::try_from(description.ts_offset()).unwrap_or(0),
+                                description.ts_offset(),
                                 description.ts_resolution().unwrap_or(1_000_000),
                             ));
                             self.reader.consume(offset);
@@ -184,9 +191,11 @@ impl Iterator for PcapIter<'_> {
                             let packet_data = data::get_packetdata(packet.data, link_type, caplen);
                             let result = PcapIter::parse_packet(packet_data);
                             if result.is_some() {
-                                let (secs, fraction) = packet.decode_ts(ts_offset, resolution);
+                                // decode_ts only takes an unsigned offset,
+                                // apply the signed one here
+                                let (secs, fraction) = packet.decode_ts(0, resolution);
                                 self.link_type = link_type;
-                                self.timestamp = to_duration(secs, fraction, resolution);
+                                self.timestamp = to_duration(secs, fraction, resolution, ts_offset);
                                 self.raw_frame.clear();
                                 self.raw_frame.extend_from_slice(
                                     &packet.data[..caplen.min(packet.data.len())],
@@ -366,6 +375,14 @@ mod tests {
     use std::fs::File;
 
     use super::*;
+
+    #[test]
+    fn test_to_duration() {
+        assert_eq!(to_duration(10, 5, 1_000_000, 0), Duration::new(10, 5_000));
+        assert_eq!(to_duration(10, 5, 1_000_000_000, 3), Duration::new(13, 5));
+        assert_eq!(to_duration(10, 5, 1_000_000_000, -3), Duration::new(7, 5));
+        assert_eq!(to_duration(10, 5, 1_000_000_000, -20), Duration::ZERO);
+    }
 
     #[allow(clippy::while_let_on_iterator)]
     #[test]
