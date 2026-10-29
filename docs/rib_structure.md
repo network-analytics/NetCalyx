@@ -60,20 +60,21 @@ walks down that chain calling `Arc::make_mut` at each level: every level above
 the touched trie is a shallow clone of a map of `Arc`s, and only the single
 trie being written is deep-copied. Superseded versions are reclaimed by plain
 refcounting when the next publish drops the old snapshot — the cascade stops
-wherever the new snapshot still shares the value. Full lifecycle walkthrough:
-module doc on [`crates/rib/src/model.rs`](../crates/rib/src/model.rs).
+wherever the new snapshot still shares the value. See also the module doc on
+[`crates/rib/src/model.rs`](../crates/rib/src/model.rs).
 
 ## RIB views
 
-Five perspectives on one table's routes: `loc-rib` (the local decision
-process's output: the best path, and optionally additional backup or ECMP
-paths) plus four adj-ribs (what was received from, or is being advertised
-to, one peer), keyed by policy stage and direction:
+Five perspectives on one table's routes (`RibView`): `loc-rib` (the local
+decision process's output: the best path, and optionally additional backup or
+ECMP paths) plus four adj-ribs (what was received from, or is being advertised
+to, each peer; all peers share the view's trie, told apart by `Route::peer`),
+keyed by policy stage and direction:
 
 | | pre-policy | post-policy |
 |---|---|---|
-| adj-rib-in  | `adj_rib_in_pre`  | `adj_rib_in_post`  |
-| adj-rib-out | `adj_rib_out_pre` | `adj_rib_out_post` |
+| adj-rib-in  | `RibView::AdjInPre`  | `RibView::AdjInPost`  |
+| adj-rib-out | `RibView::AdjOutPre` | `RibView::AdjOutPost` |
 
 The whole `RouterRib` is published as one unit — every view of every table
 together.

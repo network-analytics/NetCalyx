@@ -487,6 +487,27 @@ fn remove_peer_purges_only_that_peers_paths_across_views() {
 }
 
 #[test]
+fn absent_and_zero_rd_resolve_to_the_same_peer() {
+    let zero_rd = RouteDistinguisher::As2Administrator { asn2: 0, number: 0 };
+    let base = peer_key(1);
+    let with_zero_rd = PeerKey::new(
+        base.peer_address(),
+        base.peer_type(),
+        Some(zero_rd),
+        base.asn(),
+        base.bgp_id(),
+    );
+    let mut rib_router = RouterRib::default();
+    let id = rib_router.add_peer(base);
+    assert_eq!(rib_router.add_peer(with_zero_rd), id);
+    assert_eq!(rib_router.peers.len(), 1);
+    assert_eq!(rib_router.peers.id(&with_zero_rd), Some(id));
+
+    rib_router.remove_peer(&with_zero_rd);
+    assert!(rib_router.peers.is_empty());
+}
+
+#[test]
 fn afi_safi_type_matches_the_table_variant() {
     let table = AfiSafiTable::L3VpnIpv6Unicast(AfiSafiRib::default());
     assert_eq!(table.afi_safi_type(), AfiSafiType::L3VpnIpv6Unicast);

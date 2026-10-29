@@ -60,16 +60,22 @@ impl From<Option<RouteDistinguisher>> for RibContext {
 /// updates would produce two different `PeerKey`s for the same session,
 /// splitting its adj-rib between them.
 pub fn peer_identity(header: &PeerHeader) -> PeerKey {
-    let rd = match RibContext::from(header.rd()) {
+    normalize_peer_key(PeerKey::from_peer_header(header))
+}
+
+/// Folds an all-zero RD into `None`, matching [`RibContext`]; see
+/// [`peer_identity`].
+pub fn normalize_peer_key(key: PeerKey) -> PeerKey {
+    let rd = match RibContext::from(key.rd()) {
         RibContext::Global => None,
         RibContext::Vrf(rd) => Some(rd),
     };
     PeerKey::new(
-        header.address(),
-        header.peer_type(),
+        key.peer_address(),
+        key.peer_type(),
         rd,
-        header.peer_as(),
-        header.bgp_id(),
+        key.asn(),
+        key.bgp_id(),
     )
 }
 
