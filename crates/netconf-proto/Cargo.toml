@@ -30,10 +30,10 @@ indexmap = { workspace = true, features = ["serde"] }
 petgraph = { workspace = true, default-features = false }
 sha2 = { workspace = true }
 schema-registry-client = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 clap = { workspace = true, features = ["derive"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 anyhow = { workspace = true }
-serde_json = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "sync"] }
