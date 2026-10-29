@@ -38,6 +38,9 @@ netcalyx-pcap-tools bmp-split --input in.pcap --output out.pcap --ports 1790 [--
 - Each new segment reuses the link/IP/TCP headers and the timestamp of the frame that completed the message; IP length,
   TCP sequence number and checksums are recomputed so the stream is still reassembled correctly by Wireshark.
 - Messages larger than a single IP packet are spread over multiple segments.
+- Control segments without payload (handshake, teardown) are dropped and SYN/FIN/RST flags are cleared on the
+  generated segments, so the output is a plain data stream.
+- Input and output must be different files.
 - TCP streams are reassembled by sequence number: retransmissions and duplicates (e.g., the same packet captured on
   multiple interfaces with `-i any`) are dropped and out-of-order segments are reordered.
 - `--validate` decodes every message with the NetCalyx BMP parser and reports failures.

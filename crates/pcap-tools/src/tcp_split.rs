@@ -25,12 +25,16 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufWriter};
 use std::net::IpAddr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub const PCAP_BUFFER_SIZE: usize = 165_536;
 
 const IP_PROTO_TCP: u8 = 6;
 const IPV6_HEADER_LEN: usize = 40;
+const TCP_FLAGS_OFFSET: usize = 13;
+const TCP_FLAG_FIN: u8 = 0x01;
+const TCP_FLAG_SYN: u8 = 0x02;
+const TCP_FLAG_RST: u8 = 0x04;
 
 pub type FlowKey = (IpAddr, u16, IpAddr, u16);
 
@@ -41,6 +45,9 @@ pub enum SplitError {
 
     #[error("failed to open pcap: {0}")]
     Pcap(String),
+
+    #[error("input and output refer to the same file: {}", .0.display())]
+    SameFile(PathBuf),
 
     #[error("frame {frame}: {reason}")]
     MalformedFrame { frame: usize, reason: String },
@@ -157,6 +164,12 @@ where
     L: Fn(&[u8]) -> Result<Option<usize>, String>,
     M: FnMut(FlowKey, usize, &[u8]),
 {
+    // Creating the output would truncate the input while it is being read
+    if let (Ok(input), Ok(output)) = (input.canonicalize(), output.canonicalize())
+        && input == output
+    {
+        return Err(SplitError::SameFile(output));
+    }
     let reader = pcap_parser::create_reader(PCAP_BUFFER_SIZE, File::open(input)?)
         .map_err(|err| SplitError::Pcap(format!("{err:?}")))?;
     let mut iter = PcapIter::new(reader);
@@ -319,6 +332,9 @@ impl<'a> TcpSegment<'a> {
             out[tcp + 2..tcp + 4].copy_from_slice(&dst_port.to_be_bytes());
         }
         out[tcp + 4..tcp + 8].copy_from_slice(&seq.to_be_bytes());
+        // Control segments are not reproduced, keep the output a plain data
+        // stream
+        out[tcp + TCP_FLAGS_OFFSET] &= !(TCP_FLAG_FIN | TCP_FLAG_SYN | TCP_FLAG_RST);
         let checksum = {
             let ip_pdu = Ip::new(&out[ip..]).map_err(|err| format!("invalid IP: {err:?}"))?;
             TcpPdu::new(&out[tcp..])
@@ -394,5 +410,34 @@ mod tests {
                 .with_payload(0, None, &[0; u16::MAX as usize])
                 .is_err()
         );
+    }
+
+    #[test]
+    fn test_tcp_segment_with_payload_clears_control_flags() {
+        let mut frame = ipv4_tcp_frame(&[1, 2, 3]);
+        let flags = 14 + 20 + TCP_FLAGS_OFFSET;
+        let data_flags = frame[flags];
+        frame[flags] |= TCP_FLAG_FIN | TCP_FLAG_SYN | TCP_FLAG_RST;
+        let segment = TcpSegment::parse(Linktype::ETHERNET, &frame).unwrap();
+
+        let packet = segment.with_payload(1, None, &[1]).unwrap();
+        assert_eq!(packet[flags], data_flags);
+        let Ok(ip) = Ip::new(&packet[14..]) else {
+            panic!("expected IP");
+        };
+        let tcp = TcpPdu::new(&packet[34..]).unwrap();
+        assert_eq!(tcp.checksum(), tcp.computed_checksum(&ip));
+    }
+
+    #[test]
+    fn test_split_rejects_same_input_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("capture.pcap");
+        std::fs::write(&path, b"original").unwrap();
+        let alias = dir.path().join(".").join("capture.pcap");
+
+        let result = split_tcp_messages(&path, &alias, &[1790], None, |_| Ok(None), |_, _, _| {});
+        assert!(matches!(result, Err(SplitError::SameFile(_))));
+        assert_eq!(std::fs::read(&path).unwrap(), b"original");
     }
 }
