@@ -46,7 +46,9 @@ use netcalyx_bmp_pkt::v4::{PathMarking, PathStatus};
 
 use crate::attrs::RouteAttributes;
 use crate::peers::PeerIndex;
-use crate::types::{AfiSafiType, LabeledRouteExtra, RibContext, RibView, TableId};
+use crate::types::{
+    AfiSafiType, LabeledRouteExtra, RibContext, RibView, TableId, normalize_peer_key,
+};
 
 /// Order in which views are stored; also the index of each [`RibView`].
 pub const RIB_VIEWS: [RibView; 5] = [
@@ -77,6 +79,9 @@ impl PeerId {
 }
 
 /// Interns `PeerKey`s into dense, recyclable [`PeerId`]s.
+///
+/// Keys are normalized with [`normalize_peer_key`] on every lookup, so an
+/// absent RD and the all-zero RD resolve to the same peer.
 #[derive(Default, Clone)]
 pub struct PeerTable {
     keys: Vec<Option<PeerKey>>,
@@ -86,6 +91,7 @@ pub struct PeerTable {
 
 impl PeerTable {
     pub fn intern(&mut self, key: PeerKey) -> PeerId {
+        let key = normalize_peer_key(key);
         if let Some(id) = self.ids.get(&key) {
             return *id;
         }
@@ -104,7 +110,7 @@ impl PeerTable {
     }
 
     pub fn id(&self, key: &PeerKey) -> Option<PeerId> {
-        self.ids.get(key).copied()
+        self.ids.get(&normalize_peer_key(*key)).copied()
     }
 
     pub fn key(&self, id: PeerId) -> Option<&PeerKey> {
@@ -112,7 +118,7 @@ impl PeerTable {
     }
 
     pub fn release(&mut self, key: &PeerKey) -> Option<PeerId> {
-        let id = self.ids.remove(key)?;
+        let id = self.ids.remove(&normalize_peer_key(*key))?;
         self.keys[id.index()] = None;
         self.free.push(id);
         Some(id)
