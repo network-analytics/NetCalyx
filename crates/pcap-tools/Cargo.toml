@@ -1,0 +1,31 @@
+lints.workspace = true
+
+[package]
+name = "netcalyx-pcap-tools"
+version = "0.3.0"
+edition = "2024"
+authors = ["NetCalyx Authors"]
+license = "Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/network-analytics/NetCalyx"
+description = "CLI utilities to manipulate PCAP files containing network telemetry protocols."
+keywords = ["pcap", "bmp", "protocol", "tools"]
+categories = ["network-programming", "command-line-utilities"]
+build = "build.rs"
+
+[dependencies]
+netcalyx-pcap-reader = { workspace = true }
+netcalyx-bmp-pkt = { workspace = true, features = ["codec"] }
+pcap-parser = { workspace = true, features = ["serialize"] }
+pdu = { workspace = true }
+bytes = { workspace = true }
+tokio-util = { workspace = true, default-features = false, features = ["codec"] }
+clap = { workspace = true, features = ["default", "derive", "string"] }
+thiserror = { workspace = true }
+shadow-rs = { workspace = true, features = ["default", "metadata", "build"] }
+
+[build-dependencies]
+shadow-rs = { workspace = true, default-features = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
