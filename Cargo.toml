@@ -86,9 +86,9 @@ opentelemetry-appender-tracing = { version = "0.33" }
 anyhow = { version = "1" }
 serde_with = { version = "3.20" }
 indexmap = { version = "2.14" }
-apache-avro = { version = "0.21" }
+apache-avro = { version = "0.22" }
 # TODO: clean-up and consolidate towards schema-registry-client
-schema_registry_converter = { version = "4.9", default-features = false }
+schema_registry_converter = { version = "6.0", default-features = false }
 rdkafka = { version = "0.39", default-features = false }
 tracing-test = { version = "0.2" }
 syn = { version = "2.0", default-features = false }
