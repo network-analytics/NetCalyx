@@ -41,7 +41,7 @@ use netcalyx_parse_utils::{
 };
 
 use crate::BgpMessage;
-use crate::capabilities::{AddPathCapability, BgpCapability, MultipleLabel};
+use crate::capabilities::{AddPathAddressFamily, AddPathCapability, BgpCapability, MultipleLabel};
 use crate::iana::{BgpMessageType, UndefinedBgpMessageType};
 use crate::notification::{BgpNotificationMessage, FiniteStateMachineError, MessageHeaderError};
 use crate::wire::deserializer::capabilities::BgpCapabilityParsingError;
@@ -89,11 +89,58 @@ impl BgpParsingIgnoredErrors {
     }
 }
 
+/// ADD-PATH support indexed by address family, from the local OPEN's
+/// perspective.
+///
+/// TODO This maybe should be replaced by a Vec<> wrapper like AddPathCapability
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "fuzz", derive(arbitrary::Arbitrary))]
+pub struct AddPathMap(HashMap<AddressType, AddPathAddressFamily>);
+
+impl AddPathMap {
+    pub fn add_path_enabled(&self, address_type: AddressType, adj_rib_out: bool) -> bool {
+        self.0.get(&address_type).is_some_and(|family| {
+            if adj_rib_out {
+                family.send()
+            } else {
+                family.receive()
+            }
+        })
+    }
+}
+
+impl FromIterator<(AddressType, AddPathAddressFamily)> for AddPathMap {
+    fn from_iter<T: IntoIterator<Item = (AddressType, AddPathAddressFamily)>>(iter: T) -> Self {
+        Self(iter.into_iter().collect())
+    }
+}
+
+impl FromIterator<AddPathAddressFamily> for AddPathMap {
+    fn from_iter<T: IntoIterator<Item = AddPathAddressFamily>>(iter: T) -> Self {
+        Self(iter.into_iter().map(|x| (x.address_type(), x)).collect())
+    }
+}
+
+impl std::ops::Deref for AddPathMap {
+    type Target = HashMap<AddressType, AddPathAddressFamily>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for AddPathMap {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct BgpParsingContext {
     asn4: bool,
+    inbound_message: bool,
     multiple_labels: HashMap<AddressType, u8>,
-    add_path: HashMap<AddressType, bool>,
+    add_path: AddPathMap,
     fail_on_non_unicast_withdraw_nlri: bool,
     fail_on_non_unicast_update_nlri: bool,
     fail_on_capability_error: bool,
@@ -102,10 +149,11 @@ pub struct BgpParsingContext {
 }
 
 impl BgpParsingContext {
+    /// Initialize ADD-PATH settings for both inbound and outbound messages.
     pub fn new(
         asn4: bool,
         multiple_labels: HashMap<AddressType, u8>,
-        add_path: HashMap<AddressType, bool>,
+        add_path: AddPathMap,
         fail_on_non_unicast_withdraw_nlri: bool,
         fail_on_non_unicast_update_nlri: bool,
         fail_on_capability_error: bool,
@@ -113,6 +161,7 @@ impl BgpParsingContext {
     ) -> Self {
         Self {
             asn4,
+            inbound_message: true,
             multiple_labels,
             add_path,
             fail_on_non_unicast_withdraw_nlri,
@@ -127,7 +176,7 @@ impl BgpParsingContext {
         Self::new(
             false,
             HashMap::new(),
-            HashMap::new(),
+            AddPathMap::default(),
             true,
             true,
             true,
@@ -143,6 +192,11 @@ impl BgpParsingContext {
         self.asn4 = value
     }
 
+    /// Select inbound (default) or outbound BGP message parsing.
+    pub fn set_inbound_message(&mut self, inbound_message: bool) {
+        self.inbound_message = inbound_message;
+    }
+
     pub const fn multiple_labels(&self) -> &HashMap<AddressType, u8> {
         &self.multiple_labels
     }
@@ -151,24 +205,19 @@ impl BgpParsingContext {
         &mut self.multiple_labels
     }
 
-    pub const fn add_path(&self) -> &HashMap<AddressType, bool> {
+    /// Negotiated ADD-PATH settings from the local OPEN's perspective.
+    pub const fn add_path(&self) -> &AddPathMap {
         &self.add_path
     }
 
-    pub fn add_path_mut(&mut self) -> &mut HashMap<AddressType, bool> {
+    pub fn add_path_mut(&mut self) -> &mut AddPathMap {
         &mut self.add_path
     }
 
-    #[inline]
-    pub fn update_add_path_capability(&mut self, add_path: &AddPathCapability, adj_rib_out: bool) {
+    pub fn update_add_path(&mut self, add_path: &AddPathCapability) {
         for address_family in add_path.address_families() {
-            let add_path_support = if adj_rib_out {
-                address_family.send()
-            } else {
-                address_family.receive()
-            };
-            self.add_path_mut()
-                .insert(address_family.address_type(), add_path_support);
+            self.add_path
+                .insert(address_family.address_type(), *address_family);
         }
     }
 
@@ -178,12 +227,20 @@ impl BgpParsingContext {
             .insert(multiple_label.address_type(), multiple_label.count());
     }
 
+    /// Whether ADD-PATH applies to `address_type` for the current message
+    /// direction.
     #[inline]
-    pub fn update_capabilities(&mut self, capability: &BgpCapability, adj_rib_out: bool) {
+    pub fn add_path_enabled(&self, address_type: AddressType) -> bool {
+        self.add_path
+            .add_path_enabled(address_type, !self.inbound_message)
+    }
+
+    /// Store capability settings, including both ADD-PATH directions from
+    /// the local OPEN's perspective.
+    #[inline]
+    pub fn update_capabilities(&mut self, capability: &BgpCapability) {
         match capability {
-            BgpCapability::AddPath(add_path) => {
-                self.update_add_path_capability(add_path, adj_rib_out);
-            }
+            BgpCapability::AddPath(add_path) => self.update_add_path(add_path),
             BgpCapability::MultipleLabels(multiple_labels) => {
                 for multiple_label in multiple_labels.labels() {
                     self.update_multiple_label_capability(multiple_label);
@@ -221,7 +278,15 @@ impl BgpParsingContext {
 
 impl Default for BgpParsingContext {
     fn default() -> Self {
-        Self::new(true, HashMap::new(), HashMap::new(), true, true, true, true)
+        Self::new(
+            true,
+            HashMap::new(),
+            AddPathMap::default(),
+            true,
+            true,
+            true,
+            true,
+        )
     }
 }
 

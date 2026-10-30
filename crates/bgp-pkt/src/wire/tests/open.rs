@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2022-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,11 +24,11 @@ use std::net::Ipv4Addr;
 use crate::BgpOpenMessage;
 use crate::capabilities::BgpCapability;
 use crate::open::{BGP_VERSION, BgpOpenMessageParameter};
-use crate::wire::deserializer::BgpParsingContext;
 use crate::wire::deserializer::capabilities::BgpCapabilityParsingError;
 use crate::wire::deserializer::open::{
     BgpOpenMessageParsingError, BgpParameterParsingError, LocatedBgpOpenMessageParsingError,
 };
+use crate::wire::deserializer::{AddPathMap, BgpParsingContext};
 use crate::wire::serializer::open::BgpOpenMessageWritingError;
 use crate::wire::tests::{BGP_ID, HOLD_TIME, MY_AS};
 
@@ -108,7 +109,15 @@ fn test_open_bad_capability_params() -> Result<(), BgpOpenMessageWritingError> {
         LocatedBgpOpenMessageParsingError<'_>,
     >(
         &bad_wire,
-        &mut BgpParsingContext::new(true, HashMap::new(), HashMap::new(), true, true, true, true),
+        &mut BgpParsingContext::new(
+            true,
+            HashMap::new(),
+            AddPathMap::default(),
+            true,
+            true,
+            true,
+            true,
+        ),
         &bad,
     );
 
@@ -117,7 +126,7 @@ fn test_open_bad_capability_params() -> Result<(), BgpOpenMessageWritingError> {
         &mut BgpParsingContext::new(
             true,
             HashMap::new(),
-            HashMap::new(),
+            AddPathMap::default(),
             true,
             true,
             false,

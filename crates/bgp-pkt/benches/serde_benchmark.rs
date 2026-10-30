@@ -254,9 +254,7 @@ fn apply_open_caps(ctx: &mut BgpParsingContext, msg: &BgpMessage) {
         if let BgpCapability::FourOctetAs(_) = cap {
             has_asn4 = true;
         }
-        // adj_rib_out=false: pcaps captured at port 179 are the receive
-        // side of the session, so we want the receive ADD-PATH semantics.
-        ctx.update_capabilities(cap, false);
+        ctx.update_capabilities(cap);
     }
     ctx.set_asn4(has_asn4);
 }

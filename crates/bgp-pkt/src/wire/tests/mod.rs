@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2022-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -52,7 +53,7 @@ use crate::wire::deserializer::path_attribute::{
 };
 use crate::wire::deserializer::route_refresh::BgpRouteRefreshMessageParsingError;
 use crate::wire::deserializer::{
-    BgpMessageParsingError, BgpParsingContext, LocatedBgpMessageParsingError,
+    AddPathMap, BgpMessageParsingError, BgpParsingContext, LocatedBgpMessageParsingError,
 };
 use crate::wire::serializer::BgpMessageWritingError;
 use crate::{BgpMessage, BgpNotificationMessage, BgpOpenMessage, BgpRouteRefreshMessage};
@@ -74,6 +75,100 @@ pub(crate) const BGP_MARKER: &[u8] = &[0xff; 16];
 pub(crate) const MY_AS: &[u8] = &[0x01, 0x02];
 pub(crate) const HOLD_TIME: &[u8] = &[0x03, 0x04];
 pub(crate) const BGP_ID: &[u8] = &[0xFF, 0x00, 0x00, 0x01];
+
+#[test]
+fn test_add_path_map_direction_lookup() {
+    let ipv4 = AddressType::Ipv4Unicast;
+    let ipv6 = AddressType::Ipv6Unicast;
+    let mut map = crate::wire::deserializer::AddPathMap::default();
+    assert!(!map.add_path_enabled(ipv4, false));
+    assert!(!map.add_path_enabled(ipv4, true));
+    map.insert(ipv4, AddPathAddressFamily::new(ipv4, false, true));
+    map.insert(ipv6, AddPathAddressFamily::new(ipv6, true, false));
+    assert!(map.add_path_enabled(ipv4, false));
+    assert!(!map.add_path_enabled(ipv4, true));
+    assert!(!map.add_path_enabled(ipv6, false));
+    assert!(map.add_path_enabled(ipv6, true));
+    let collected: crate::wire::deserializer::AddPathMap =
+        map.iter().map(|(key, value)| (*key, *value)).collect();
+    assert_eq!(collected, map);
+    map.clear();
+    assert!(map.is_empty());
+    assert_eq!(collected.len(), 2);
+}
+
+#[test]
+fn test_directional_add_path_storage() {
+    let ipv4 = AddressType::Ipv4Unicast;
+    let ipv6 = AddressType::Ipv6Unicast;
+    let mut ctx = BgpParsingContext::new(
+        true,
+        HashMap::new(),
+        AddPathMap::from_iter([AddPathAddressFamily::new(ipv4, false, true)]),
+        true,
+        true,
+        true,
+        true,
+    );
+    assert!(ctx.add_path().add_path_enabled(ipv4, false));
+    assert!(!ctx.add_path().add_path_enabled(ipv4, true));
+    ctx.add_path_mut()
+        .insert(ipv6, AddPathAddressFamily::new(ipv6, true, false));
+    assert!(!ctx.add_path().add_path_enabled(ipv6, false));
+    assert!(ctx.add_path().add_path_enabled(ipv6, true));
+    let cloned = ctx.clone();
+    assert_eq!(ctx.add_path(), cloned.add_path());
+    ctx.add_path_mut().clear();
+    assert!(ctx.add_path().is_empty());
+    for out in [false, true] {
+        assert!(!ctx.add_path().add_path_enabled(ipv4, out));
+        assert!(!ctx.add_path().add_path_enabled(ipv6, out));
+    }
+    assert!(cloned.add_path().add_path_enabled(ipv4, false));
+    assert!(cloned.add_path().add_path_enabled(ipv6, true));
+    assert!(BgpParsingContext::default().add_path().is_empty());
+    assert!(BgpParsingContext::asn2_default().add_path().is_empty());
+}
+
+#[test]
+fn test_add_path_capability_preserves_both_directions() {
+    let ipv4 = AddressType::Ipv4Unicast;
+    let ipv6 = AddressType::Ipv6Unicast;
+    let capability = AddPathCapability::new(vec![
+        AddPathAddressFamily::new(ipv4, false, true),
+        AddPathAddressFamily::new(ipv6, true, false),
+    ]);
+    let mut ctx = BgpParsingContext::default();
+    ctx.update_capabilities(&BgpCapability::AddPath(capability.clone()));
+    assert_eq!(ctx.add_path().len(), 2);
+    for family in capability.address_families() {
+        assert_eq!(ctx.add_path().get(&family.address_type()), Some(family));
+    }
+}
+
+#[test]
+fn test_add_path_direction_selection_and_capability_updates() {
+    let ipv4 = AddressType::Ipv4Unicast;
+    let mut ctx = BgpParsingContext::default();
+    ctx.update_capabilities(&BgpCapability::AddPath(AddPathCapability::new(vec![
+        AddPathAddressFamily::new(ipv4, false, true),
+    ])));
+    for out in [false, true, false] {
+        ctx.set_inbound_message(!out);
+        assert_eq!(ctx.add_path_enabled(ipv4), !out);
+    }
+    ctx.set_inbound_message(false);
+    ctx.add_path_mut()
+        .insert(ipv4, AddPathAddressFamily::new(ipv4, true, true));
+    assert!(ctx.add_path().add_path_enabled(ipv4, true));
+    let capability =
+        BgpCapability::AddPath(AddPathCapability::new(vec![AddPathAddressFamily::new(
+            ipv4, false, false,
+        )]));
+    ctx.update_capabilities(&capability);
+    assert!(!ctx.add_path().add_path_enabled(ipv4, false));
+    assert!(!ctx.add_path().add_path_enabled(ipv4, true));
+}
 
 #[test]
 fn test_bgp_message_not_synchronized_marker() {
@@ -734,7 +829,11 @@ fn test_bgp_add_path() -> Result<(), BgpMessageWritingError> {
         &mut BgpParsingContext::new(
             true,
             HashMap::new(),
-            HashMap::from([(AddressType::Ipv4Unicast, true)]),
+            AddPathMap::from_iter([AddPathAddressFamily::new(
+                AddressType::Ipv4Unicast,
+                true,
+                true,
+            )]),
             true,
             true,
             true,
@@ -768,7 +867,11 @@ fn test_bgp_add_path_withdraw() -> Result<(), BgpMessageWritingError> {
         &mut BgpParsingContext::new(
             true,
             HashMap::new(),
-            HashMap::from([(AddressType::Ipv4Unicast, true)]),
+            AddPathMap::from_iter([AddPathAddressFamily::new(
+                AddressType::Ipv4Unicast,
+                true,
+                true,
+            )]),
             true,
             true,
             true,
@@ -839,7 +942,11 @@ fn test_bgp_add_path_mp_ipv6_unicast() -> Result<(), BgpMessageWritingError> {
         &mut BgpParsingContext::new(
             true,
             HashMap::new(),
-            HashMap::from([(AddressType::Ipv6Unicast, true)]),
+            AddPathMap::from_iter([AddPathAddressFamily::new(
+                AddressType::Ipv6Unicast,
+                true,
+                true,
+            )]),
             true,
             true,
             true,
@@ -974,7 +1081,11 @@ fn test_evpn_mp_reach() -> Result<(), BgpMessageWritingError> {
         &mut BgpParsingContext::new(
             true,
             HashMap::new(),
-            HashMap::from([(AddressType::Ipv6Unicast, true)]),
+            AddPathMap::from_iter([AddPathAddressFamily::new(
+                AddressType::Ipv6Unicast,
+                true,
+                true,
+            )]),
             true,
             true,
             true,
@@ -1088,7 +1199,11 @@ fn test_evpn_withdraw() -> Result<(), BgpMessageWritingError> {
         &mut BgpParsingContext::new(
             true,
             HashMap::new(),
-            HashMap::from([(AddressType::Ipv6Unicast, true)]),
+            AddPathMap::from_iter([AddPathAddressFamily::new(
+                AddressType::Ipv6Unicast,
+                true,
+                true,
+            )]),
             true,
             true,
             true,
@@ -1146,7 +1261,11 @@ fn test_bgp_role_otc_open() -> Result<(), BgpMessageWritingError> {
         &mut BgpParsingContext::new(
             true,
             HashMap::new(),
-            HashMap::from([(AddressType::Ipv6Unicast, true)]),
+            AddPathMap::from_iter([AddPathAddressFamily::new(
+                AddressType::Ipv6Unicast,
+                true,
+                true,
+            )]),
             true,
             true,
             true,
@@ -1213,7 +1332,11 @@ fn test_bgp_rfc7606_attr() -> Result<(), BgpMessageWritingError> {
     let mut ctx = BgpParsingContext::new(
         true,
         HashMap::new(),
-        HashMap::from([(AddressType::Ipv4Unicast, true)]),
+        AddPathMap::from_iter([AddPathAddressFamily::new(
+            AddressType::Ipv4Unicast,
+            true,
+            true,
+        )]),
         true,
         true,
         true,

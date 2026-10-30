@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2022-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -243,6 +244,7 @@ impl<'a>
         let peer_key = PeerKey::from_peer_header(&peer_header);
         let bgp_ctx = ctx.entry(peer_key).or_default();
         bgp_ctx.set_asn4(peer_header.is_asn4());
+        bgp_ctx.set_inbound_message(!peer_header.peer_type().is_adj_rib_out());
         let input = buf;
         let (buf, update_message): (Span<'_>, BgpMessage) =
             parse_into_located_one_input(buf, bgp_ctx)?;
@@ -628,6 +630,7 @@ impl<'a>
         let peer_key = PeerKey::from_peer_header(&peer_header);
         let bgp_ctx = ctx.entry(peer_key).or_default();
         bgp_ctx.set_asn4(peer_header.is_asn4());
+        bgp_ctx.set_inbound_message(!peer_header.peer_type().is_adj_rib_out());
         let mut mirrored = Vec::new();
         while !buf.is_empty() {
             let (tmp, element) = parse_into_located_one_input(buf, &mut *bgp_ctx)?;

@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2022-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -34,7 +35,7 @@ use netcalyx_bgp_pkt::path_attribute::{
 use netcalyx_bgp_pkt::update::BgpUpdateMessage;
 use netcalyx_bgp_pkt::wire::deserializer::update::BgpUpdateMessageParsingError;
 use netcalyx_bgp_pkt::wire::deserializer::{
-    BgpMessageParsingError, BgpParsingContext, Ipv4PrefixParsingError,
+    AddPathMap, BgpMessageParsingError, BgpParsingContext, Ipv4PrefixParsingError,
 };
 use netcalyx_iana::address_family::AddressType;
 use netcalyx_parse_utils::Span;
@@ -42,7 +43,6 @@ use netcalyx_parse_utils::test_helpers::{
     test_parse_error_with_one_input, test_parsed_completely_with_one_input, test_write,
 };
 use nom::error::ErrorKind;
-use std::collections::HashMap;
 use std::net::Ipv6Addr;
 use std::str::FromStr;
 
@@ -399,7 +399,11 @@ fn test_bmp_v4_route_monitoring_without_stateless_parsing() -> Result<(), BmpMes
         BgpParsingContext::new(
             true,
             Default::default(),
-            HashMap::from([(AddressType::Ipv4Unicast, true)]),
+            AddPathMap::from_iter([AddPathAddressFamily::new(
+                AddressType::Ipv4Unicast,
+                true,
+                true,
+            )]),
             true,
             true,
             true,

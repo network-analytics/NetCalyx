@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2023-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,18 +25,19 @@ use crate::path_attribute::{
     PathAttributeValue,
 };
 use netcalyx_parse_utils::test_helpers::{
-    test_parsed_completely_with_one_input, test_parsed_completely_with_three_inputs, test_write,
+    test_parsed_completely_with_one_input, test_parsed_completely_with_two_inputs, test_write,
     test_write_with_one_input,
 };
 use std::collections::HashMap;
 
 use crate::nlri::MplsLabel;
-use crate::wire::deserializer::BgpParsingContext;
+use crate::wire::deserializer::{AddPathMap, BgpParsingContext};
 use crate::wire::serializer::path_attribute::PathAttributeWritingError;
 use netcalyx_iana::address_family::AddressType;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
 
+use crate::capabilities::AddPathAddressFamily;
 use crate::nlri::{
     BgpLsLocalNodeDescriptors, BgpLsNodeDescriptors, BgpLsRemoteNodeDescriptors,
     LabeledIpv4NextHop, LabeledNextHop, RouteDistinguisher,
@@ -105,7 +107,7 @@ fn test_wire() -> Result<(), PathAttributeWritingError> {
         &mut BgpParsingContext::new(
             true,
             HashMap::new(),
-            HashMap::new(),
+            AddPathMap::default(),
             false,
             false,
             false,
@@ -270,13 +272,7 @@ pub fn test_bgp_ls_mp_reach() -> Result<(), MpReachWritingError> {
         nlri: vec![ls_nlri.clone(), ls_nlri.clone(), ls_nlri],
     };
 
-    test_parsed_completely_with_three_inputs(
-        &good_wire,
-        false,
-        &HashMap::new(),
-        &HashMap::new(),
-        &good,
-    );
+    test_parsed_completely_with_two_inputs(&good_wire, false, &BgpParsingContext::default(), &good);
     test_write_with_one_input(&good, false, &good_wire)?;
 
     Ok(())
@@ -328,13 +324,7 @@ pub fn test_bgp_ls_vpn_mp_reach() -> Result<(), MpReachWritingError> {
         nlri: vec![ls_nlri.clone(), ls_nlri.clone(), ls_nlri],
     };
 
-    test_parsed_completely_with_three_inputs(
-        &good_wire,
-        false,
-        &HashMap::new(),
-        &HashMap::new(),
-        &good,
-    );
+    test_parsed_completely_with_two_inputs(&good_wire, false, &BgpParsingContext::default(), &good);
     test_write_with_one_input(&good, false, &good_wire)?;
 
     Ok(())
@@ -382,16 +372,11 @@ pub fn test_bgp_ls_vpn_mp_unreach() -> Result<(), MpUnreachWritingError> {
         nlri: vec![ls_nlri.clone(), ls_nlri.clone(), ls_nlri],
     };
 
-    let mut add_path_map = HashMap::new();
-    add_path_map.insert(AddressType::BgpLsVpn, true);
+    let add_path_map =
+        AddPathMap::from_iter([AddPathAddressFamily::new(AddressType::BgpLsVpn, true, true)]);
+    let ctx = BgpParsingContext::new(true, HashMap::new(), add_path_map, true, true, true, true);
 
-    test_parsed_completely_with_three_inputs(
-        &good_wire,
-        false,
-        &HashMap::new(),
-        &add_path_map,
-        &good,
-    );
+    test_parsed_completely_with_two_inputs(&good_wire, false, &ctx, &good);
     test_write_with_one_input(&good, false, &good_wire)?;
 
     Ok(())
