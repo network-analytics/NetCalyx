@@ -9,8 +9,7 @@ jobs:
   update:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
 
     steps:
       - uses: actions/checkout@v7
@@ -29,11 +28,20 @@ jobs:
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
 
+      # Short-lived GitHub App token, so CI runs on the PR
+      - name: Generate app token
+        if: steps.changes.outputs.changed == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.NETCALYX_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.NETCALYX_BOT_APP_PRIVATE_KEY }}
+
       - name: Create Pull Request
         if: steps.changes.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v8
         with:
-          token: ${{ secrets.PR_PAT }}
+          token: ${{ steps.app-token.outputs.token }}
           commit-message: "chore: update IANA IPFIX registry"
           branch: chore/ipfix-iana
           branch-suffix: timestamp
@@ -44,3 +52,6 @@ jobs:
             This PR was created by the **Update IANA IPFIX registry** workflow.
           labels: dependencies, automated
           delete-branch: true
+          # Commit via the API so the app bot is author/committer
+          # (default author is github.actor)
+          sign-commits: true
