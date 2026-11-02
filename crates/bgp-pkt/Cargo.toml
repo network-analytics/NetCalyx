@@ -15,6 +15,7 @@ keywords = ["bgp", "parser", "protocol"]
 categories = ["network-programming", "parsing"]
 
 [dependencies]
+derive_more = { workspace = true }
 netcalyx-iana = { workspace = true }
 netcalyx-locate = { workspace = true, optional = true }
 netcalyx-parse-utils = { workspace = true, optional = true }

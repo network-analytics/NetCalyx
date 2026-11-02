@@ -121,6 +121,7 @@ bitflags = { version = "2.13" }
 axum = { version = "0.8"}
 schemars = { version = "1.2", features = ["derive"] }
 itertools = { version = "0.15" }
+derive_more = { version = "2.1", default-features = false, features = ["from"] }
 
 [profile.release]
 codegen-units = 1

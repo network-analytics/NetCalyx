@@ -28,10 +28,9 @@ use netcalyx_parse_utils::test_helpers::{
     test_parsed_completely_with_one_input, test_parsed_completely_with_two_inputs, test_write,
     test_write_with_one_input,
 };
-use std::collections::HashMap;
 
 use crate::nlri::MplsLabel;
-use crate::wire::deserializer::{AddPathMap, BgpParsingContext};
+use crate::wire::deserializer::{AddPathMap, BgpParsingContext, MultipleLabelsMap};
 use crate::wire::serializer::path_attribute::PathAttributeWritingError;
 use netcalyx_iana::address_family::AddressType;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -106,7 +105,7 @@ fn test_wire() -> Result<(), PathAttributeWritingError> {
         &good_wire,
         &mut BgpParsingContext::new(
             true,
-            HashMap::new(),
+            MultipleLabelsMap::default(),
             AddPathMap::default(),
             false,
             false,
@@ -374,7 +373,15 @@ pub fn test_bgp_ls_vpn_mp_unreach() -> Result<(), MpUnreachWritingError> {
 
     let add_path_map =
         AddPathMap::from_iter([AddPathAddressFamily::new(AddressType::BgpLsVpn, true, true)]);
-    let ctx = BgpParsingContext::new(true, HashMap::new(), add_path_map, true, true, true, true);
+    let ctx = BgpParsingContext::new(
+        true,
+        MultipleLabelsMap::default(),
+        add_path_map,
+        true,
+        true,
+        true,
+        true,
+    );
 
     test_parsed_completely_with_two_inputs(&good_wire, false, &ctx, &good);
     test_write_with_one_input(&good, false, &good_wire)?;

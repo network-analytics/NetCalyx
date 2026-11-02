@@ -18,6 +18,7 @@ use crate::BgpMessage;
 use crate::capabilities::BgpCapability;
 use crate::wire::deserializer::{
     AddPathMap, BgpMessageParsingError, BgpParsingContext, BgpParsingIgnoredErrors,
+    MultipleLabelsMap,
 };
 use crate::wire::serializer::BgpMessageWritingError;
 use byteorder::{ByteOrder, NetworkEndian};
@@ -25,7 +26,6 @@ use bytes::{Buf, BufMut, BytesMut};
 use netcalyx_parse_utils::{LocatedParsingError, ReadablePduWithOneInput, Span, WritablePdu};
 use nom::Needed;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::{Level, debug, enabled, error, trace};
 
@@ -47,7 +47,7 @@ impl BgpCodec {
             asn4_received: Some(asn4),
             ctx: BgpParsingContext::new(
                 true,
-                HashMap::new(),
+                MultipleLabelsMap::default(),
                 AddPathMap::default(),
                 false,
                 false,

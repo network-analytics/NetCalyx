@@ -14,7 +14,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
 
@@ -30,7 +29,8 @@ use netcalyx_parse_utils::test_helpers::{
 use crate::capabilities::{
     AddPathAddressFamily, AddPathCapability, BgpCapability, BgpRoleCapability,
     ExtendedNextHopEncoding, ExtendedNextHopEncodingCapability, FourOctetAsCapability,
-    GracefulRestartCapability, MultiProtocolExtensionsCapability, UnrecognizedCapability,
+    GracefulRestartCapability, MultiProtocolExtensionsCapability, MultipleLabel,
+    MultipleLabelsCapability, UnrecognizedCapability,
 };
 use crate::community::{
     ExtendedCommunity, TransitiveFourOctetExtendedCommunity, TransitiveTwoOctetExtendedCommunity,
@@ -54,7 +54,7 @@ use crate::wire::deserializer::path_attribute::{
 use crate::wire::deserializer::route_refresh::BgpRouteRefreshMessageParsingError;
 use crate::wire::deserializer::{
     AddPathMap, BgpMessageParsingError, BgpParsingContext, LocatedBgpMessageParsingError,
-    MessageDirection,
+    MessageDirection, MultipleLabelsMap,
 };
 use crate::wire::serializer::BgpMessageWritingError;
 use crate::{BgpMessage, BgpNotificationMessage, BgpOpenMessage, BgpRouteRefreshMessage};
@@ -126,7 +126,7 @@ fn test_directional_add_path_storage() {
     let ipv6 = AddressType::Ipv6Unicast;
     let mut ctx = BgpParsingContext::new(
         true,
-        HashMap::new(),
+        MultipleLabelsMap::default(),
         AddPathMap::from_iter([AddPathAddressFamily::new(ipv4, false, true)]),
         true,
         true,
@@ -274,6 +274,90 @@ fn test_add_path_capability_merges_duplicates_but_replaces_previous_settings() {
         ctx.add_path().get(&ipv6),
         Some(AddPathAddressFamily::new(ipv6, true, true))
     );
+}
+
+#[test]
+fn test_multiple_labels_map_pairs() {
+    let ipv4 = AddressType::Ipv4NlriMplsLabels;
+    let ipv6 = AddressType::Ipv6NlriMplsLabels;
+    let mut map = MultipleLabelsMap::default();
+    assert_eq!(map.get(&ipv4, MessageDirection::Inbound), None);
+    assert_eq!(
+        map.multiple_labels_limit(ipv4, MessageDirection::Outbound),
+        1
+    );
+    assert_eq!(map.insert(ipv4, 2, 5), None);
+    assert_eq!(map.insert(ipv4, 3, 6), Some((2, 5)));
+    assert_eq!(map.get(&ipv4, MessageDirection::Inbound), Some(3));
+    assert_eq!(map.get(&ipv4, MessageDirection::Outbound), Some(6));
+    map.entry(ipv4).or_insert((8, 9));
+    assert_eq!(map.get(&ipv4, MessageDirection::Inbound), Some(3));
+    assert_eq!(map.get(&ipv4, MessageDirection::Outbound), Some(6));
+    map.entry(ipv6).or_insert((2, 5));
+    assert_eq!(map.get(&ipv6, MessageDirection::Inbound), Some(2));
+    assert_eq!(map.get(&ipv6, MessageDirection::Outbound), Some(5));
+
+    let mut ctx = BgpParsingContext::new(
+        true,
+        map.clone(),
+        AddPathMap::default(),
+        true,
+        true,
+        true,
+        true,
+    );
+    assert_eq!(ctx.multiple_labels_limit(ipv4), 3);
+    ctx.set_message_direction(MessageDirection::Outbound);
+    assert_eq!(ctx.multiple_labels_limit(ipv4), 6);
+
+    let mut other = MultipleLabelsMap::from_iter([(ipv4, (7, 7)), (ipv6, (4, 4))]);
+    map.extend(&other);
+    for direction in [MessageDirection::Inbound, MessageDirection::Outbound] {
+        assert_eq!(map.get(&ipv4, direction), Some(7));
+        assert_eq!(map.get(&ipv6, direction), Some(4));
+    }
+    other.clear();
+    assert!(other.is_empty());
+    assert!(!map.is_empty());
+}
+
+#[test]
+fn test_directional_multiple_labels_storage() {
+    let ipv4 = AddressType::Ipv4NlriMplsLabels;
+    let mut ctx = BgpParsingContext::default();
+    assert_eq!(
+        ctx.multiple_labels()
+            .multiple_labels_limit(ipv4, MessageDirection::Inbound),
+        1
+    );
+    for direction in [MessageDirection::Inbound, MessageDirection::Outbound] {
+        let limit = if direction == MessageDirection::Inbound {
+            2
+        } else {
+            5
+        };
+        ctx.set_message_direction(direction);
+        ctx.update_capabilities(&BgpCapability::MultipleLabels(
+            MultipleLabelsCapability::new(vec![MultipleLabel::new(ipv4, limit)]).unwrap(),
+        ));
+        if direction == MessageDirection::Inbound {
+            assert_eq!(
+                ctx.multiple_labels().get(&ipv4, MessageDirection::Outbound),
+                Some(1)
+            );
+        }
+    }
+    for (direction, limit) in [
+        (MessageDirection::Inbound, 2),
+        (MessageDirection::Outbound, 5),
+    ] {
+        assert_eq!(
+            ctx.multiple_labels().multiple_labels_limit(ipv4, direction),
+            limit
+        );
+    }
+    ctx.multiple_labels_mut().clear();
+    assert!(ctx.multiple_labels().is_empty());
 }
 
 #[test]
@@ -934,7 +1018,7 @@ fn test_bgp_add_path() -> Result<(), BgpMessageWritingError> {
         &good_wire,
         &mut BgpParsingContext::new(
             true,
-            HashMap::new(),
+            MultipleLabelsMap::default(),
             AddPathMap::from_iter([AddPathAddressFamily::new(
                 AddressType::Ipv4Unicast,
                 true,
@@ -972,7 +1056,7 @@ fn test_bgp_add_path_withdraw() -> Result<(), BgpMessageWritingError> {
         &good_wire,
         &mut BgpParsingContext::new(
             true,
-            HashMap::new(),
+            MultipleLabelsMap::default(),
             AddPathMap::from_iter([AddPathAddressFamily::new(
                 AddressType::Ipv4Unicast,
                 true,
@@ -1047,7 +1131,7 @@ fn test_bgp_add_path_mp_ipv6_unicast() -> Result<(), BgpMessageWritingError> {
         &good_wire,
         &mut BgpParsingContext::new(
             true,
-            HashMap::new(),
+            MultipleLabelsMap::default(),
             AddPathMap::from_iter([AddPathAddressFamily::new(
                 AddressType::Ipv6Unicast,
                 true,
@@ -1186,7 +1270,7 @@ fn test_evpn_mp_reach() -> Result<(), BgpMessageWritingError> {
         &good_wire,
         &mut BgpParsingContext::new(
             true,
-            HashMap::new(),
+            MultipleLabelsMap::default(),
             AddPathMap::from_iter([AddPathAddressFamily::new(
                 AddressType::Ipv6Unicast,
                 true,
@@ -1304,7 +1388,7 @@ fn test_evpn_withdraw() -> Result<(), BgpMessageWritingError> {
         &good_wire,
         &mut BgpParsingContext::new(
             true,
-            HashMap::new(),
+            MultipleLabelsMap::default(),
             AddPathMap::from_iter([AddPathAddressFamily::new(
                 AddressType::Ipv6Unicast,
                 true,
@@ -1366,7 +1450,7 @@ fn test_bgp_role_otc_open() -> Result<(), BgpMessageWritingError> {
         &good_wire,
         &mut BgpParsingContext::new(
             true,
-            HashMap::new(),
+            MultipleLabelsMap::default(),
             AddPathMap::from_iter([AddPathAddressFamily::new(
                 AddressType::Ipv6Unicast,
                 true,
@@ -1437,7 +1521,7 @@ fn test_bgp_rfc7606_attr() -> Result<(), BgpMessageWritingError> {
 
     let mut ctx = BgpParsingContext::new(
         true,
-        HashMap::new(),
+        MultipleLabelsMap::default(),
         AddPathMap::from_iter([AddPathAddressFamily::new(
             AddressType::Ipv4Unicast,
             true,

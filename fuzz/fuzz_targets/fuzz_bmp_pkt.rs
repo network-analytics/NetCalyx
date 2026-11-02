@@ -21,28 +21,16 @@ use std::collections::HashMap;
 
 use libfuzzer_sys::fuzz_target;
 
-use netcalyx_bgp_pkt::wire::deserializer::{AddPathMap, BgpParsingContext};
+use netcalyx_bgp_pkt::wire::deserializer::{AddPathMap, BgpParsingContext, MultipleLabelsMap};
 use netcalyx_bmp_pkt::wire::deserializer::BmpParsingContext;
 use netcalyx_bmp_pkt::{BmpMessage, PeerKey};
-use netcalyx_iana::address_family::AddressType;
 use netcalyx_parse_utils::{ReadablePduWithOneInput, Span};
 
 // We don't pass BgpParsingContext as fuzzed input since we don't want to
 // generate BgpParsingContext::parsing_errors.
 fuzz_target!(|data: (
     &[u8],
-    HashMap<
-        PeerKey,
-        (
-            bool,
-            HashMap<AddressType, u8>,
-            AddPathMap,
-            bool,
-            bool,
-            bool,
-            bool
-        ),
-    >,
+    HashMap<PeerKey, (bool, MultipleLabelsMap, AddPathMap, bool, bool, bool, bool)>,
 )| {
     let (mut buf, ctx_params) = data;
     let ctx = ctx_params

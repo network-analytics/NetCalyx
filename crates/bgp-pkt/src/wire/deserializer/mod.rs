@@ -171,6 +171,71 @@ impl FromIterator<AddPathAddressFamily> for AddPathMap {
     }
 }
 
+/// Receiver label limits from the local OPEN's perspective, stored per
+/// message direction. Families without an entry default to a single label
+/// ([RFC 8277](https://datatracker.ietf.org/doc/html/rfc8277)).
+/// Receiver limits are ordered as (inbound, outbound).
+#[derive(Debug, Default, Clone, PartialEq, Eq, derive_more::From)]
+#[cfg_attr(feature = "fuzz", derive(arbitrary::Arbitrary))]
+pub struct MultipleLabelsMap(HashMap<AddressType, (u8, u8)>);
+
+impl FromIterator<(AddressType, (u8, u8))> for MultipleLabelsMap {
+    fn from_iter<T: IntoIterator<Item = (AddressType, (u8, u8))>>(iter: T) -> Self {
+        Self(iter.into_iter().collect())
+    }
+}
+
+impl MultipleLabelsMap {
+    const DEFAULT_LIMIT: u8 = 1;
+
+    pub fn insert(
+        &mut self,
+        address_type: AddressType,
+        inbound: u8,
+        outbound: u8,
+    ) -> Option<(u8, u8)> {
+        self.0.insert(address_type, (inbound, outbound))
+    }
+
+    pub fn entry(
+        &mut self,
+        address_type: AddressType,
+    ) -> std::collections::hash_map::Entry<'_, AddressType, (u8, u8)> {
+        self.0.entry(address_type)
+    }
+
+    pub fn get(&self, address_type: &AddressType, direction: MessageDirection) -> Option<u8> {
+        self.0
+            .get(address_type)
+            .map(|&(inbound, outbound)| match direction {
+                MessageDirection::Inbound => inbound,
+                MessageDirection::Outbound => outbound,
+            })
+    }
+
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Combine limits from another map, overriding existing entries.
+    pub fn extend(&mut self, other: &Self) {
+        self.0.extend(&other.0);
+    }
+
+    pub fn multiple_labels_limit(
+        &self,
+        address_type: AddressType,
+        direction: MessageDirection,
+    ) -> u8 {
+        self.get(&address_type, direction)
+            .unwrap_or(Self::DEFAULT_LIMIT)
+    }
+}
+
 /// Direction of a complete BGP message, from the local OPEN's perspective.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "fuzz", derive(arbitrary::Arbitrary))]
@@ -183,7 +248,7 @@ pub enum MessageDirection {
 pub struct BgpParsingContext {
     asn4: bool,
     message_direction: MessageDirection,
-    multiple_labels: HashMap<AddressType, u8>,
+    multiple_labels: MultipleLabelsMap,
     add_path: AddPathMap,
     fail_on_non_unicast_withdraw_nlri: bool,
     fail_on_non_unicast_update_nlri: bool,
@@ -193,10 +258,11 @@ pub struct BgpParsingContext {
 }
 
 impl BgpParsingContext {
-    /// Initialize ADD-PATH settings for both inbound and outbound messages.
+    /// Initialize ADD-PATH and receiver label limits for both message
+    /// directions.
     pub fn new(
         asn4: bool,
-        multiple_labels: HashMap<AddressType, u8>,
+        multiple_labels: MultipleLabelsMap,
         add_path: AddPathMap,
         fail_on_non_unicast_withdraw_nlri: bool,
         fail_on_non_unicast_update_nlri: bool,
@@ -219,7 +285,7 @@ impl BgpParsingContext {
     pub fn asn2_default() -> Self {
         Self::new(
             false,
-            HashMap::new(),
+            MultipleLabelsMap::default(),
             AddPathMap::default(),
             true,
             true,
@@ -246,11 +312,11 @@ impl BgpParsingContext {
         self.message_direction = direction;
     }
 
-    pub const fn multiple_labels(&self) -> &HashMap<AddressType, u8> {
+    pub const fn multiple_labels(&self) -> &MultipleLabelsMap {
         &self.multiple_labels
     }
 
-    pub fn multiple_labels_mut(&mut self) -> &mut HashMap<AddressType, u8> {
+    pub fn multiple_labels_mut(&mut self) -> &mut MultipleLabelsMap {
         &mut self.multiple_labels
     }
 
@@ -275,10 +341,21 @@ impl BgpParsingContext {
         }
     }
 
+    /// Store a Multiple Labels capability limit for messages in `direction`.
     #[inline]
     pub fn update_multiple_label_capability(&mut self, multiple_label: &MultipleLabel) {
-        self.multiple_labels_mut()
-            .insert(multiple_label.address_type(), multiple_label.count());
+        let limits = self
+            .multiple_labels
+            .0
+            .entry(multiple_label.address_type())
+            .or_insert((
+                MultipleLabelsMap::DEFAULT_LIMIT,
+                MultipleLabelsMap::DEFAULT_LIMIT,
+            ));
+        match self.message_direction {
+            MessageDirection::Inbound => limits.0 = multiple_label.count(),
+            MessageDirection::Outbound => limits.1 = multiple_label.count(),
+        };
     }
 
     /// Whether ADD-PATH applies to `address_type` for the current message
@@ -290,7 +367,8 @@ impl BgpParsingContext {
     }
 
     /// Store capability settings, including both ADD-PATH directions from
-    /// the local OPEN's perspective.
+    /// the local OPEN's perspective. Multiple Labels limits are stored for
+    /// the current message direction.
     #[inline]
     pub fn update_capabilities(&mut self, capability: &BgpCapability) {
         match capability {
@@ -334,7 +412,7 @@ impl Default for BgpParsingContext {
     fn default() -> Self {
         Self::new(
             true,
-            HashMap::new(),
+            MultipleLabelsMap::default(),
             AddPathMap::default(),
             true,
             true,

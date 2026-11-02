@@ -20,7 +20,7 @@ use bytes::BytesMut;
 use netcalyx_bgp_pkt::BgpMessage;
 use netcalyx_bgp_pkt::codec::{BgpCodec, BgpCodecDecoderError};
 use netcalyx_bgp_pkt::wire::deserializer::{
-    AddPathMap, BgpParsingContext, BgpParsingIgnoredErrors,
+    AddPathMap, BgpParsingContext, BgpParsingIgnoredErrors, MultipleLabelsMap,
 };
 use netcalyx_pcap_reader::TransportProtocol;
 use std::collections::HashMap;
@@ -56,7 +56,7 @@ impl ProtocolHandler<(BgpMessage, BgpParsingIgnoredErrors), BgpCodec, BgpCodecDe
                     true,
                     BgpParsingContext::new(
                         true,
-                        HashMap::new(),
+                        MultipleLabelsMap::default(),
                         AddPathMap::default(),
                         true,
                         true,

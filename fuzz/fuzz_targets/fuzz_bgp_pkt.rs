@@ -18,11 +18,11 @@
 #![allow(clippy::type_complexity)]
 
 use libfuzzer_sys::fuzz_target;
-use std::collections::HashMap;
 
 use netcalyx_bgp_pkt::BgpMessage;
-use netcalyx_bgp_pkt::wire::deserializer::{AddPathMap, BgpParsingContext, MessageDirection};
-use netcalyx_iana::address_family::AddressType;
+use netcalyx_bgp_pkt::wire::deserializer::{
+    AddPathMap, BgpParsingContext, MessageDirection, MultipleLabelsMap,
+};
 use netcalyx_parse_utils::{ReadablePduWithTwoInputs, Span};
 
 // We don't pass BgpParsingContext as fuzzed input since we don't want to
@@ -30,7 +30,7 @@ use netcalyx_parse_utils::{ReadablePduWithTwoInputs, Span};
 fuzz_target!(|data: (
     &[u8],
     bool,
-    HashMap<AddressType, u8>,
+    MultipleLabelsMap,
     AddPathMap,
     MessageDirection,
     bool,
