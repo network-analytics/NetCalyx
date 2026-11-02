@@ -25,7 +25,7 @@ use crate::wire::deserializer::nlri::{
 use crate::wire::deserializer::update::BgpUpdateMessageParsingError;
 use crate::wire::deserializer::{
     AddPathMap, BgpMessageParsingError, BgpParsingContext, Ipv4PrefixParsingError,
-    LocatedBgpMessageParsingError,
+    LocatedBgpMessageParsingError, MultipleLabelsMap,
 };
 use crate::wire::serializer::BgpMessageWritingError;
 use crate::wire::serializer::nlri::Ipv4UnicastAddressWritingError;
@@ -37,7 +37,6 @@ use netcalyx_parse_utils::test_helpers::{
 };
 use netcalyx_parse_utils::{ReadablePduWithOneInput, Span};
 use nom::error::ErrorKind;
-use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 
@@ -270,7 +269,7 @@ fn test_update_non_unicast_nlri() -> Result<(), BgpMessageWritingError> {
         &bad_multicast_nlri_wire,
         &mut BgpParsingContext::new(
             true,
-            HashMap::new(),
+            MultipleLabelsMap::default(),
             AddPathMap::default(),
             true,
             false,
@@ -284,7 +283,7 @@ fn test_update_non_unicast_nlri() -> Result<(), BgpMessageWritingError> {
         &bad_multicast_nlri_wire,
         &mut BgpParsingContext::new(
             true,
-            HashMap::new(),
+            MultipleLabelsMap::default(),
             AddPathMap::default(),
             false,
             false,

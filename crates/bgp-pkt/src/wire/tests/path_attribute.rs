@@ -24,7 +24,7 @@ use crate::wire::deserializer::nlri::{
     Ipv4MulticastParsingError, Ipv4UnicastParsingError, Ipv6MulticastParsingError,
     Ipv6UnicastParsingError,
 };
-use crate::wire::deserializer::{AddPathMap, Ipv4PrefixParsingError};
+use crate::wire::deserializer::{AddPathMap, Ipv4PrefixParsingError, MultipleLabelsMap};
 use ipnet::{Ipv4Net, Ipv6Net};
 use netcalyx_iana::address_family::{
     AddressFamily, AddressType, SubsequentAddressFamily, UndefinedAddressFamily,
@@ -44,7 +44,6 @@ use crate::wire::deserializer::nlri::{
 };
 use crate::wire::serializer::BgpMessageWritingError;
 use nom::error::ErrorKind;
-use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
 
@@ -1959,7 +1958,7 @@ fn test_mp_reach_multi_labels_vp_ipv4() -> Result<(), PathAttributeWritingError>
         &good_wire,
         &mut BgpParsingContext::new(
             false,
-            HashMap::from([(AddressType::Ipv4MplsLabeledVpn, 2)]),
+            MultipleLabelsMap::from_iter([(AddressType::Ipv4MplsLabeledVpn, (2, 2))]),
             AddPathMap::default(),
             true,
             true,
@@ -1974,7 +1973,7 @@ fn test_mp_reach_multi_labels_vp_ipv4() -> Result<(), PathAttributeWritingError>
         &good_wire,
         &mut BgpParsingContext::new(
             false,
-            HashMap::from([(AddressType::Ipv4MplsLabeledVpn, u8::MAX)]),
+            MultipleLabelsMap::from_iter([(AddressType::Ipv4MplsLabeledVpn, (u8::MAX, u8::MAX))]),
             AddPathMap::default(),
             true,
             true,
@@ -2005,7 +2004,7 @@ fn test_mp_reach_multi_labels_vp_ipv4() -> Result<(), PathAttributeWritingError>
         &good_wire,
         &mut BgpParsingContext::new(
             false,
-            HashMap::from([(AddressType::Ipv4MplsLabeledVpn, 1)]),
+            MultipleLabelsMap::from_iter([(AddressType::Ipv4MplsLabeledVpn, (1, 1))]),
             AddPathMap::default(),
             true,
             true,

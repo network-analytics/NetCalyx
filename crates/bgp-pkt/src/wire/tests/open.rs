@@ -18,7 +18,6 @@ use netcalyx_parse_utils::Span;
 use netcalyx_parse_utils::test_helpers::{
     combine, test_parse_error_with_one_input, test_parsed_completely_with_one_input, test_write,
 };
-use std::collections::HashMap;
 use std::net::Ipv4Addr;
 
 use crate::BgpOpenMessage;
@@ -28,7 +27,7 @@ use crate::wire::deserializer::capabilities::BgpCapabilityParsingError;
 use crate::wire::deserializer::open::{
     BgpOpenMessageParsingError, BgpParameterParsingError, LocatedBgpOpenMessageParsingError,
 };
-use crate::wire::deserializer::{AddPathMap, BgpParsingContext};
+use crate::wire::deserializer::{AddPathMap, BgpParsingContext, MultipleLabelsMap};
 use crate::wire::serializer::open::BgpOpenMessageWritingError;
 use crate::wire::tests::{BGP_ID, HOLD_TIME, MY_AS};
 
@@ -111,7 +110,7 @@ fn test_open_bad_capability_params() -> Result<(), BgpOpenMessageWritingError> {
         &bad_wire,
         &mut BgpParsingContext::new(
             true,
-            HashMap::new(),
+            MultipleLabelsMap::default(),
             AddPathMap::default(),
             true,
             true,
@@ -125,7 +124,7 @@ fn test_open_bad_capability_params() -> Result<(), BgpOpenMessageWritingError> {
         &cap_ignored_wire,
         &mut BgpParsingContext::new(
             true,
-            HashMap::new(),
+            MultipleLabelsMap::default(),
             AddPathMap::default(),
             true,
             true,

@@ -28,7 +28,7 @@ use std::collections::HashSet;
 
 use crate::wire::deserializer::{BmpParsingContext, loc_rib_add_path};
 use netcalyx_bgp_pkt::capabilities::{AddPathCapability, MultipleLabel, MultipleLabelsCapability};
-use netcalyx_bgp_pkt::wire::deserializer::AddPathMap;
+use netcalyx_bgp_pkt::wire::deserializer::{AddPathMap, MessageDirection};
 use netcalyx_parse_utils::{LocatedParsingError, ReadablePduWithOneInput, Span, WritablePdu};
 use nom::Needed;
 use serde::{Deserialize, Serialize};
@@ -177,7 +177,9 @@ impl BmpParsingContext {
             }
             bgp_ctx.add_path_mut().extend(&negotiated_add_path);
             for multiple_label in &common_multiple_labels_caps {
-                bgp_ctx.update_multiple_label_capability(multiple_label);
+                for direction in [MessageDirection::Inbound, MessageDirection::Outbound] {
+                    bgp_ctx.update_multiple_label_capability(multiple_label, direction);
+                }
             }
 
             // Add a key for the BGP Peer of the first router
@@ -196,7 +198,9 @@ impl BmpParsingContext {
                 bgp_ctx.multiple_labels_mut().clear();
                 bgp_ctx.add_path_mut().extend(&negotiated_add_path);
                 for multiple_label in &common_multiple_labels_caps {
-                    bgp_ctx.update_multiple_label_capability(multiple_label);
+                    for direction in [MessageDirection::Inbound, MessageDirection::Outbound] {
+                        bgp_ctx.update_multiple_label_capability(multiple_label, direction);
+                    }
                 }
             }
         }

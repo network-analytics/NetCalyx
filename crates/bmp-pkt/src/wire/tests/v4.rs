@@ -36,6 +36,7 @@ use netcalyx_bgp_pkt::update::BgpUpdateMessage;
 use netcalyx_bgp_pkt::wire::deserializer::update::BgpUpdateMessageParsingError;
 use netcalyx_bgp_pkt::wire::deserializer::{
     AddPathMap, BgpMessageParsingError, BgpParsingContext, Ipv4PrefixParsingError,
+    MultipleLabelsMap,
 };
 use netcalyx_iana::address_family::AddressType;
 use netcalyx_parse_utils::Span;
@@ -398,7 +399,7 @@ fn test_bmp_v4_route_monitoring_without_stateless_parsing() -> Result<(), BmpMes
         PeerKey::from_peer_header(per_peer_header),
         BgpParsingContext::new(
             true,
-            Default::default(),
+            MultipleLabelsMap::default(),
             AddPathMap::from_iter([AddPathAddressFamily::new(
                 AddressType::Ipv4Unicast,
                 true,
