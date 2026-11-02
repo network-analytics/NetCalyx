@@ -4,10 +4,16 @@ updates:
     directory: /
     schedule:
       interval: daily
+    labels:
+      - automated
+      - dependencies
   - package-ecosystem: cargo
     directory: /
     schedule:
       interval: daily
+    labels:
+      - automated
+      - dependencies
     open-pull-requests-limit: 10
     ignore:
       - dependency-name: "*"
