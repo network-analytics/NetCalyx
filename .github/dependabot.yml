@@ -14,7 +14,7 @@ updates:
     labels:
       - automated
       - dependencies
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     ignore:
       - dependency-name: "*"
         # Dependency management workflow:
