@@ -504,7 +504,7 @@ jobs:
       - name: Build pcap-decoder
         run: cargo build --locked --release --target ${{ matrix.target }} -p netcalyx-pcap-decoder
       - name: Strip binary (Unix only)
-        if: matrix.strip_command == 'true'
+        if: matrix.strip_command
         run: strip target/${{ matrix.target }}/release/${{ matrix.binary_name }}
       - name: Create complete binary file name
         id: binary_filename
@@ -581,10 +581,10 @@ jobs:
       - name: Build pcap-tools
         run: cargo build --locked --release --target ${{ matrix.target }} -p netcalyx-pcap-tools
       - name: Smoke test (run --help)
-        if: matrix.smoke_test == 'true'
+        if: matrix.smoke_test
         run: ./target/${{ matrix.target }}/release/${{ matrix.binary_name }} --help
       - name: Strip binary (Unix only)
-        if: matrix.strip_command == 'true'
+        if: matrix.strip_command
         run: strip target/${{ matrix.target }}/release/${{ matrix.binary_name }}
       - name: Create complete binary file name
         id: binary_filename
@@ -659,10 +659,10 @@ jobs:
           fi
           cargo build --locked --release --target ${{ matrix.target }} -p netcalyx-yang-consumer
       - name: Smoke test (run --help)
-        if: matrix.smoke_test == 'true'
+        if: matrix.smoke_test
         run: ./target/${{ matrix.target }}/release/${{ matrix.binary_name }} --help
       - name: Strip binary
-        if: matrix.strip_command == 'true'
+        if: matrix.strip_command
         run: strip target/${{ matrix.target }}/release/${{ matrix.binary_name }}
       - name: Create complete binary file name
         id: binary_filename
