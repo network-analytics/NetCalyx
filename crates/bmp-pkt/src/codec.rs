@@ -24,11 +24,10 @@ use byteorder::{ByteOrder, NetworkEndian};
 use bytes::{Buf, BufMut, BytesMut};
 use netcalyx_bgp_pkt::BgpMessage;
 use netcalyx_bgp_pkt::capabilities::BgpCapability;
-use std::collections::HashSet;
 
 use crate::wire::deserializer::{BmpParsingContext, loc_rib_add_path};
-use netcalyx_bgp_pkt::capabilities::{AddPathCapability, MultipleLabel, MultipleLabelsCapability};
-use netcalyx_bgp_pkt::wire::deserializer::{AddPathMap, MessageDirection};
+use netcalyx_bgp_pkt::capabilities::{AddPathCapability, MultipleLabelsCapability};
+use netcalyx_bgp_pkt::wire::deserializer::{AddPathMap, MultipleLabelsMap};
 use netcalyx_parse_utils::{LocatedParsingError, ReadablePduWithOneInput, Span, WritablePdu};
 use nom::Needed;
 use serde::{Deserialize, Serialize};
@@ -61,7 +60,7 @@ pub struct BmpCodec {
 #[inline]
 fn get_caps(
     capabilities: Vec<&BgpCapability>,
-) -> (Vec<&AddPathCapability>, Vec<&MultipleLabelsCapability>) {
+) -> (Vec<&AddPathCapability>, Option<&MultipleLabelsCapability>) {
     let add_path_caps = capabilities
         .iter()
         .flat_map(|cap| {
@@ -72,17 +71,14 @@ fn get_caps(
             }
         })
         .collect();
-    let multiple_labels_caps = capabilities
-        .iter()
-        .flat_map(|cap| {
-            if let BgpCapability::MultipleLabels(value) = cap {
-                Some(value)
-            } else {
-                None
-            }
-        })
-        .collect();
-    (add_path_caps, multiple_labels_caps)
+    let multiple_labels_cap = capabilities.iter().find_map(|cap| {
+        if let BgpCapability::MultipleLabels(value) = cap {
+            Some(value)
+        } else {
+            None
+        }
+    });
+    (add_path_caps, multiple_labels_cap)
 }
 
 /// Negotiate ADD-PATH per address family from the local (sent OPEN)
@@ -113,6 +109,35 @@ fn negotiate_add_path(
     support(sent_caps).negotiate(&support(received_caps))
 }
 
+/// Negotiate receiver label limits per address family for both directions.
+/// Inbound messages follow the limit of the local (sent) OPEN, outbound
+/// messages the limit of the remote (received) OPEN. Only families present in
+/// both OPENs are kept. Per RFC 8277 section 2.1, only the first capability
+/// in each OPEN and the first entry of a duplicated family are used.
+fn negotiate_multiple_labels(
+    sent_cap: Option<&MultipleLabelsCapability>,
+    received_cap: Option<&MultipleLabelsCapability>,
+) -> MultipleLabelsMap {
+    let mut negotiated = MultipleLabelsMap::default();
+    let (Some(sent), Some(received)) = (sent_cap, received_cap) else {
+        return negotiated;
+    };
+
+    for local in sent.labels() {
+        let address_type = local.address_type();
+        if let Some(remote) = received
+            .labels()
+            .iter()
+            .find(|remote| remote.address_type() == address_type)
+        {
+            negotiated
+                .entry(address_type)
+                .or_insert((local.count(), remote.count()));
+        }
+    }
+    negotiated
+}
+
 impl BmpCodec {
     pub fn update_parsing_ctx(&mut self, msg: &BmpMessage) {
         self.ctx.update(msg)
@@ -135,28 +160,14 @@ impl BmpParsingContext {
 
             let send_caps = sent_open.capabilities();
             let received_caps = received_open.capabilities();
-            let (sent_add_path_caps, sent_multiple_labels_caps) = get_caps(send_caps);
-            let (received_add_path_caps, received_multiple_labels_caps) = get_caps(received_caps);
+            let (sent_add_path_caps, sent_multiple_labels_cap) = get_caps(send_caps);
+            let (received_add_path_caps, received_multiple_labels_cap) = get_caps(received_caps);
 
             let is_loc_rib = peer_up.peer_header().peer_type().is_loc_rib();
             let negotiated_add_path =
                 negotiate_add_path(&sent_add_path_caps, &received_add_path_caps, is_loc_rib);
-            let sent_multiple_labels_caps: HashSet<&MultipleLabel> = HashSet::from_iter(
-                sent_multiple_labels_caps
-                    .into_iter()
-                    .flat_map(|x| x.labels()),
-            );
-            let received_multiple_labels_caps: HashSet<&MultipleLabel> = HashSet::from_iter(
-                received_multiple_labels_caps
-                    .into_iter()
-                    .flat_map(|x| x.labels()),
-            );
-
-            let common_multiple_labels_caps: Vec<&MultipleLabel> = Vec::from_iter(
-                sent_multiple_labels_caps
-                    .intersection(&received_multiple_labels_caps)
-                    .copied(),
-            );
+            let negotiated_multiple_labels =
+                negotiate_multiple_labels(sent_multiple_labels_cap, received_multiple_labels_cap);
 
             // Add Key for the router announcing BMP to the collector
             let peer_key = PeerKey::from_peer_header(peer_up.peer_header());
@@ -176,11 +187,9 @@ impl BmpParsingContext {
                 bgp_ctx.multiple_labels_mut().clear();
             }
             bgp_ctx.add_path_mut().extend(&negotiated_add_path);
-            for multiple_label in &common_multiple_labels_caps {
-                for direction in [MessageDirection::Inbound, MessageDirection::Outbound] {
-                    bgp_ctx.update_multiple_label_capability(multiple_label, direction);
-                }
-            }
+            bgp_ctx
+                .multiple_labels_mut()
+                .extend(&negotiated_multiple_labels);
 
             // Add a key for the BGP Peer of the first router
             // In Loc-Rib the bgp open message is duplicated,
@@ -197,11 +206,9 @@ impl BmpParsingContext {
                 bgp_ctx.add_path_mut().clear();
                 bgp_ctx.multiple_labels_mut().clear();
                 bgp_ctx.add_path_mut().extend(&negotiated_add_path);
-                for multiple_label in &common_multiple_labels_caps {
-                    for direction in [MessageDirection::Inbound, MessageDirection::Outbound] {
-                        bgp_ctx.update_multiple_label_capability(multiple_label, direction);
-                    }
-                }
+                bgp_ctx
+                    .multiple_labels_mut()
+                    .extend(&negotiated_multiple_labels);
             }
         }
 
@@ -312,7 +319,7 @@ mod tests {
     use chrono::TimeZone;
     use netcalyx_bgp_pkt::capabilities::{
         AddPathAddressFamily, ExtendedNextHopEncoding, ExtendedNextHopEncodingCapability,
-        FourOctetAsCapability, MultiProtocolExtensionsCapability,
+        FourOctetAsCapability, MultiProtocolExtensionsCapability, MultipleLabel,
     };
     use netcalyx_bgp_pkt::nlri::{
         Ipv4Unicast, Ipv4UnicastAddress, Ipv6Unicast, Ipv6UnicastAddress,
@@ -964,6 +971,58 @@ mod tests {
     #[test]
     fn test_bidirectional_add_path_decoding_v4() {
         assert_bidirectional_add_path_decoding(BmpVersion::Version4);
+    }
+
+    fn multiple_labels_capability(entries: &[(AddressType, u8)]) -> MultipleLabelsCapability {
+        MultipleLabelsCapability::new(
+            entries
+                .iter()
+                .map(|(address_type, count)| MultipleLabel::new(*address_type, *count))
+                .collect(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn test_multiple_labels_negotiation() {
+        let ipv4 = AddressType::Ipv4NlriMplsLabels;
+        let ipv6 = AddressType::Ipv6NlriMplsLabels;
+        // Duplicated families keep their first entry.
+        let local = multiple_labels_capability(&[(ipv4, 2), (ipv4, 7), (ipv6, 4)]);
+        let remote = multiple_labels_capability(&[(ipv4, 5), (ipv4, 8)]);
+        let empty = multiple_labels_capability(&[]);
+        let negotiated = negotiate_multiple_labels(Some(&local), Some(&remote));
+        assert_eq!(negotiated.get(&ipv4, MessageDirection::Inbound), Some(2));
+        assert_eq!(negotiated.get(&ipv4, MessageDirection::Outbound), Some(5));
+        assert_eq!(negotiated.get(&ipv6, MessageDirection::Inbound), None);
+        assert_eq!(negotiated.get(&ipv6, MessageDirection::Outbound), None);
+        assert!(negotiate_multiple_labels(Some(&local), Some(&empty)).is_empty());
+        assert!(negotiate_multiple_labels(Some(&empty), Some(&remote)).is_empty());
+        assert!(negotiate_multiple_labels(None, Some(&remote)).is_empty());
+        assert!(negotiate_multiple_labels(Some(&local), None).is_empty());
+    }
+
+    #[test]
+    fn test_get_caps_uses_first_multiple_labels_capability() {
+        let first = BgpCapability::MultipleLabels(multiple_labels_capability(&[(
+            AddressType::Ipv4NlriMplsLabels,
+            2,
+        )]));
+        let later = BgpCapability::MultipleLabels(multiple_labels_capability(&[(
+            AddressType::Ipv6NlriMplsLabels,
+            6,
+        )]));
+        let empty = BgpCapability::MultipleLabels(multiple_labels_capability(&[]));
+        let add_path = BgpCapability::AddPath(AddPathCapability::new(vec![]));
+        for first in [&first, &empty] {
+            let (add_paths, multiple_labels) = get_caps(vec![&add_path, first, &later, &add_path]);
+            assert_eq!(add_paths.len(), 2);
+            let BgpCapability::MultipleLabels(expected) = first else {
+                unreachable!();
+            };
+            assert_eq!(multiple_labels, Some(expected));
+        }
+        assert!(get_caps(vec![&add_path]).1.is_none());
     }
 
     #[test]
