@@ -28,7 +28,7 @@ use crate::wire::deserializer::nlri::*;
 use crate::wire::deserializer::path_attribute::{
     BgpLsAttributeParsingError, SegmentIdentifierParsingError,
 };
-use crate::wire::deserializer::{BgpParsingContext, IpAddrParsingError, MessageDirection};
+use crate::wire::deserializer::{BgpParsingContext, IpAddrParsingError};
 use crate::wire::serializer::nlri::{IPV4_LEN, IPV6_LEN, IPV6_WITH_LINK_LOCAL_LEN};
 use netcalyx_iana::address_family::{
     AddressFamily, AddressType, SubsequentAddressFamily, UndefinedAddressFamily,
@@ -726,8 +726,7 @@ impl<'a> ReadablePduWithTwoInputs<'a, bool, &BgpParsingContext, LocatedMpReachPa
                     mp_buf,
                     add_path,
                     false,
-                    ctx.multiple_labels()
-                        .multiple_labels_limit(addr_type, MessageDirection::Inbound),
+                    ctx.multiple_labels_limit(addr_type),
                 )?;
                 Ok((
                     buf,
@@ -746,8 +745,7 @@ impl<'a> ReadablePduWithTwoInputs<'a, bool, &BgpParsingContext, LocatedMpReachPa
                     mp_buf,
                     add_path,
                     false,
-                    ctx.multiple_labels()
-                        .multiple_labels_limit(addr_type, MessageDirection::Inbound),
+                    ctx.multiple_labels_limit(addr_type),
                 )?;
                 Ok((buf, MpReach::Ipv4MplsVpnUnicast { next_hop, nlri }))
             }
@@ -804,8 +802,7 @@ impl<'a> ReadablePduWithTwoInputs<'a, bool, &BgpParsingContext, LocatedMpReachPa
                     mp_buf,
                     add_path,
                     false,
-                    ctx.multiple_labels()
-                        .multiple_labels_limit(addr_type, MessageDirection::Inbound),
+                    ctx.multiple_labels_limit(addr_type),
                 )?;
                 Ok((
                     buf,
@@ -824,8 +821,7 @@ impl<'a> ReadablePduWithTwoInputs<'a, bool, &BgpParsingContext, LocatedMpReachPa
                     mp_buf,
                     add_path,
                     false,
-                    ctx.multiple_labels()
-                        .multiple_labels_limit(addr_type, MessageDirection::Inbound),
+                    ctx.multiple_labels_limit(addr_type),
                 )?;
                 Ok((buf, MpReach::Ipv6MplsVpnUnicast { next_hop, nlri }))
             }
@@ -1045,8 +1041,7 @@ impl<'a> ReadablePduWithTwoInputs<'a, bool, &BgpParsingContext, LocatedMpUnreach
                     mp_buf,
                     add_path,
                     true,
-                    ctx.multiple_labels()
-                        .multiple_labels_limit(addr_type, MessageDirection::Inbound),
+                    ctx.multiple_labels_limit(addr_type),
                 )?;
                 Ok((buf, MpUnreach::Ipv4NlriMplsLabels { nlri }))
             }
@@ -1056,8 +1051,7 @@ impl<'a> ReadablePduWithTwoInputs<'a, bool, &BgpParsingContext, LocatedMpUnreach
                     mp_buf,
                     add_path,
                     true,
-                    ctx.multiple_labels()
-                        .multiple_labels_limit(addr_type, MessageDirection::Inbound),
+                    ctx.multiple_labels_limit(addr_type),
                 )?;
                 Ok((buf, MpUnreach::Ipv4MplsVpnUnicast { nlri }))
             }
@@ -1077,8 +1071,7 @@ impl<'a> ReadablePduWithTwoInputs<'a, bool, &BgpParsingContext, LocatedMpUnreach
                     mp_buf,
                     add_path,
                     true,
-                    ctx.multiple_labels()
-                        .multiple_labels_limit(addr_type, MessageDirection::Inbound),
+                    ctx.multiple_labels_limit(addr_type),
                 )?;
                 Ok((buf, MpUnreach::Ipv6NlriMplsLabels { nlri }))
             }
@@ -1088,8 +1081,7 @@ impl<'a> ReadablePduWithTwoInputs<'a, bool, &BgpParsingContext, LocatedMpUnreach
                     mp_buf,
                     add_path,
                     true,
-                    ctx.multiple_labels()
-                        .multiple_labels_limit(addr_type, MessageDirection::Inbound),
+                    ctx.multiple_labels_limit(addr_type),
                 )?;
                 Ok((buf, MpUnreach::Ipv6MplsVpnUnicast { nlri }))
             }
