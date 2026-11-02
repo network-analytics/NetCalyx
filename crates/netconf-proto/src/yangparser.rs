@@ -194,8 +194,16 @@ impl<'a> YangParser<'a> {
             {
                 // Once we hit data definition statements, we can stop
                 break;
+            } else if self
+                .peek_char()
+                .is_some_and(|c| c.is_alphabetic() || c == '_')
+            {
+                // Skip the whole statement so nested substatements (e.g.
+                // `argument revision;` inside an `extension`) are not mistaken
+                // for module-level ones.
+                self.read_identifier();
+                self.skip_statement();
             } else {
-                // Skip other statements
                 self.skip_one_token();
             }
         }
@@ -950,6 +958,32 @@ mod tests {
             "cisco-xr-ietf-udp-notif-transport-deviations"
         );
         assert_eq!(metadata.revision, Some("2026-03-17".to_string()));
+    }
+
+    #[test]
+    fn test_extract_metadata_ignores_nested_revision_keyword() {
+        let yang = r#"
+            module vrouter-extensions {
+              namespace "urn:6wind:vrouter/extensions";
+              prefix vrouter-extensions;
+
+              revision 2020-02-10 {
+                description "Add extension nc-cli-sort-by.";
+                reference "";
+              }
+              revision 2018-10-03 {
+                description "Initial version.";
+              }
+
+              extension status-deprecated-revision {
+                argument revision;
+                description "Describes in which module revision a node was deprecated.";
+              }
+            }
+        "#;
+
+        let metadata = extract_yang_metadata(yang).unwrap();
+        assert_eq!(metadata.revision, Some("2020-02-10".to_string()));
     }
 
     #[test]
