@@ -358,6 +358,14 @@ impl BgpParsingContext {
         };
     }
 
+    /// Receiver label limit for `address_type` for the current message
+    /// direction.
+    #[inline]
+    pub fn multiple_labels_limit(&self, address_type: AddressType) -> u8 {
+        self.multiple_labels
+            .multiple_labels_limit(address_type, self.message_direction)
+    }
+
     /// Whether ADD-PATH applies to `address_type` for the current message
     /// direction.
     #[inline]

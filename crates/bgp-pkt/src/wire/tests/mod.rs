@@ -325,11 +325,7 @@ fn test_multiple_labels_map_pairs() {
 fn test_directional_multiple_labels_storage() {
     let ipv4 = AddressType::Ipv4NlriMplsLabels;
     let mut ctx = BgpParsingContext::default();
-    assert_eq!(
-        ctx.multiple_labels()
-            .multiple_labels_limit(ipv4, MessageDirection::Inbound),
-        1
-    );
+    assert_eq!(ctx.multiple_labels_limit(ipv4), 1);
     for direction in [MessageDirection::Inbound, MessageDirection::Outbound] {
         let limit = if direction == MessageDirection::Inbound {
             2
@@ -351,10 +347,8 @@ fn test_directional_multiple_labels_storage() {
         (MessageDirection::Inbound, 2),
         (MessageDirection::Outbound, 5),
     ] {
-        assert_eq!(
-            ctx.multiple_labels().multiple_labels_limit(ipv4, direction),
-            limit
-        );
+        ctx.set_message_direction(direction);
+        assert_eq!(ctx.multiple_labels_limit(ipv4), limit);
     }
     ctx.multiple_labels_mut().clear();
     assert!(ctx.multiple_labels().is_empty());

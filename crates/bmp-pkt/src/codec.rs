@@ -322,7 +322,8 @@ mod tests {
         FourOctetAsCapability, MultiProtocolExtensionsCapability, MultipleLabel,
     };
     use netcalyx_bgp_pkt::nlri::{
-        Ipv4Unicast, Ipv4UnicastAddress, Ipv6Unicast, Ipv6UnicastAddress,
+        Ipv4NlriMplsLabelsAddress, Ipv4Unicast, Ipv4UnicastAddress, Ipv6Unicast,
+        Ipv6UnicastAddress, MplsLabel,
     };
     use netcalyx_bgp_pkt::open::{BgpOpenMessage, BgpOpenMessageParameter};
     use netcalyx_bgp_pkt::path_attribute::{MpReach, MpUnreach, PathAttribute, PathAttributeValue};
@@ -1023,6 +1024,120 @@ mod tests {
             assert_eq!(multiple_labels, Some(expected));
         }
         assert!(get_caps(vec![&add_path]).1.is_none());
+    }
+
+    // Build an UPDATE announcing one IPv4 labeled route with `label_count`
+    // labels.
+    fn multiple_labels_update(label_count: u8) -> BgpMessage {
+        let labels = (1..=label_count)
+            .map(|i| MplsLabel::new([0, i << 4, if i == label_count { 1 } else { 0 }]))
+            .collect();
+        let route =
+            Ipv4NlriMplsLabelsAddress::from(None, labels, "198.51.100.0/24".parse().unwrap())
+                .unwrap();
+        let attribute = PathAttribute::from(
+            true,
+            false,
+            false,
+            false,
+            PathAttributeValue::MpReach(MpReach::Ipv4NlriMplsLabels {
+                next_hop: IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)),
+                next_hop_local: None,
+                nlri: vec![route],
+            }),
+        )
+        .unwrap();
+        BgpMessage::Update(BgpUpdateMessage::new(vec![], vec![attribute], vec![]))
+    }
+
+    // Exercise asymmetric label limits for both directions and BGP-ID
+    // aliases after a single Peer Up, including a session reset.
+    fn assert_bidirectional_multiple_labels_decoding(version: BmpVersion) {
+        let local_id = Ipv4Addr::new(192, 0, 2, 1);
+        let remote_id = Ipv4Addr::new(192, 0, 2, 2);
+        let header = |adj_rib_out, bgp_id| {
+            PeerHeader::new(
+                BmpPeerType::GlobalInstancePeer {
+                    ipv6: false,
+                    post_policy: false,
+                    asn2: false,
+                    adj_rib_out,
+                },
+                None,
+                Some(IpAddr::V4(remote_id)),
+                64512,
+                bgp_id,
+                None,
+            )
+        };
+        let open = |bgp_id, count| {
+            BgpMessage::Open(BgpOpenMessage::new(
+                64512,
+                180,
+                bgp_id,
+                vec![BgpOpenMessageParameter::Capabilities(vec![
+                    BgpCapability::MultipleLabels(multiple_labels_capability(&[(
+                        AddressType::Ipv4NlriMplsLabels,
+                        count,
+                    )])),
+                ])],
+            ))
+        };
+
+        for peer_up_out in [false, true] {
+            let mut codec = BmpCodec::default();
+            let peer_up = peer_up_message(
+                version,
+                header(peer_up_out, local_id),
+                open(local_id, 2),
+                open(remote_id, 5),
+            );
+            assert_codec_roundtrip(&mut codec, peer_up);
+            for bgp_id in [local_id, remote_id] {
+                for adj_rib_out in [false, true, false, true] {
+                    // Inbound follows the local limit (2), outbound the remote
+                    // one (5).
+                    let label_count = if adj_rib_out { 5 } else { 2 };
+                    let message = route_monitoring_message(
+                        version,
+                        header(adj_rib_out, bgp_id),
+                        multiple_labels_update(label_count),
+                        None,
+                    );
+                    assert_codec_roundtrip(&mut codec, message);
+                }
+            }
+            let empty_open =
+                |bgp_id| BgpMessage::Open(BgpOpenMessage::new(64512, 180, bgp_id, vec![]));
+            let reset = peer_up_message(
+                version,
+                header(peer_up_out, local_id),
+                empty_open(local_id),
+                empty_open(remote_id),
+            );
+            assert_codec_roundtrip(&mut codec, reset);
+            for bgp_id in [local_id, remote_id] {
+                let key = PeerKey::from_peer_header(&header(false, bgp_id));
+                assert!(
+                    codec
+                        .ctx
+                        .get_peer(&key)
+                        .unwrap()
+                        .multiple_labels()
+                        .is_empty()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_bidirectional_multiple_labels_decoding_v3() {
+        assert_bidirectional_multiple_labels_decoding(BmpVersion::Version3);
+    }
+
+    #[test]
+    fn test_bidirectional_multiple_labels_decoding_v4() {
+        assert_bidirectional_multiple_labels_decoding(BmpVersion::Version4);
     }
 
     #[test]
