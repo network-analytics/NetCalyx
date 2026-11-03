@@ -748,6 +748,14 @@ impl<T: AsyncRead + AsyncWrite + Unpin> NetConfSshClient<T> {
                             to_process.push_back(ModuleType::ImportOnly(dep_module.clone()));
                         }
                     }
+                } else {
+                    warn!(
+                        peer = %self.peer,
+                        module = module.name(),
+                        import = import.module_name,
+                        import_revision = ?import.revision_date,
+                        "imported module not found in YANG Library, skipping it"
+                    );
                 }
             }
 
@@ -757,9 +765,10 @@ impl<T: AsyncRead + AsyncWrite + Unpin> NetConfSshClient<T> {
                     if !visited.contains(dep_module.name()) {
                         to_process.push_back(ModuleType::Full(dep_module.clone()));
                     }
-                } else if let Some(dep_module) = yang_lib.find_submodule(&include.submodule_name)
-                    && !visited.contains(dep_module.name())
-                {
+                } else if let Some(dep_module) = yang_lib.find_submodule(&include.submodule_name) {
+                    if visited.contains(dep_module.name()) {
+                        continue;
+                    }
                     if matches!(module, ModuleType::Full(_))
                         || matches!(module, ModuleType::FullSubmodule(_, _))
                     {
@@ -773,6 +782,14 @@ impl<T: AsyncRead + AsyncWrite + Unpin> NetConfSshClient<T> {
                             dep_module.clone(),
                         ));
                     }
+                } else {
+                    warn!(
+                        peer = %self.peer,
+                        module = module.name(),
+                        include = include.submodule_name,
+                        include_revision = ?include.revision_date,
+                        "included submodule not found in YANG Library, skipping it"
+                    );
                 }
             }
 
