@@ -188,6 +188,7 @@ impl<'a>
         // We do not want to alter it permanently based on TLVs
         // that are punctual in the messages
         let mut ctx_clone = bgp_ctx.clone();
+        ctx_clone.set_message_direction(direction);
 
         // Can't use parse_till_empty_into_with_one_input_located because
         //  - &mut BgpParsingContext is not Clone

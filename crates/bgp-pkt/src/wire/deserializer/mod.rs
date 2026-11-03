@@ -329,6 +329,8 @@ impl BgpParsingContext {
         &mut self.add_path
     }
 
+    /// Set ADD-PATH values for each address family, merging duplicate entries
+    /// so a direction is enabled if any duplicate enables it.
     pub fn update_add_path(&mut self, add_path: &AddPathCapability) {
         let support = AddPathMap::from_iter(add_path.address_families().iter().copied());
         for address_family in add_path.address_families() {

@@ -14,6 +14,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#[cfg(feature = "codec")]
+use crate::codec::BmpCodec;
 use crate::v4::*;
 use crate::wire::deserializer::v4::*;
 use crate::wire::deserializer::{
@@ -22,14 +24,20 @@ use crate::wire::deserializer::{
 use crate::wire::serializer::BmpMessageWritingError;
 use crate::wire::serializer::v4::BmpMessageValueWritingError;
 use crate::*;
+#[cfg(feature = "codec")]
+use bytes::BytesMut;
 #[cfg(not(feature = "fuzz"))]
 use chrono::TimeZone;
 use ipnet::Ipv4Net;
 use netcalyx_bgp_pkt::BgpMessage;
-use netcalyx_bgp_pkt::capabilities::{AddPathAddressFamily, AddPathCapability, BgpCapability};
-use netcalyx_bgp_pkt::nlri::{Ipv4Unicast, Ipv4UnicastAddress};
+use netcalyx_bgp_pkt::capabilities::{
+    AddPathAddressFamily, AddPathCapability, BgpCapability, MultipleLabel, MultipleLabelsCapability,
+};
+use netcalyx_bgp_pkt::nlri::{
+    Ipv4NlriMplsLabelsAddress, Ipv4Unicast, Ipv4UnicastAddress, MplsLabel,
+};
 use netcalyx_bgp_pkt::path_attribute::{
-    As4PathSegment, AsPath, AsPathSegmentType, MultiExitDiscriminator, NextHop, Origin,
+    As4PathSegment, AsPath, AsPathSegmentType, MpReach, MultiExitDiscriminator, NextHop, Origin,
     PathAttribute, PathAttributeValue,
 };
 use netcalyx_bgp_pkt::update::BgpUpdateMessage;
@@ -44,8 +52,10 @@ use netcalyx_parse_utils::test_helpers::{
     test_parse_error_with_one_input, test_parsed_completely_with_one_input, test_write,
 };
 use nom::error::ErrorKind;
-use std::net::Ipv6Addr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
+#[cfg(feature = "codec")]
+use tokio_util::codec::{Decoder, Encoder};
 
 #[test]
 fn test_bmp_v4_route_monitoring() -> Result<(), BmpMessageWritingError> {
@@ -302,6 +312,61 @@ fn test_bmp_v4_route_monitoring_with_stateless_parsing() -> Result<(), BmpMessag
     test_parsed_completely_with_one_input(&good_wire, &mut Default::default(), &good);
     test_write(&good, &good_wire)?;
     Ok(())
+}
+
+#[test]
+#[cfg(feature = "codec")]
+fn test_bmp_v4_stateless_multiple_labels_uses_current_direction() {
+    let peer_header = PeerHeader::new(
+        BmpPeerType::GlobalInstancePeer {
+            ipv6: false,
+            post_policy: false,
+            asn2: false,
+            adj_rib_out: true,
+        },
+        None,
+        Some(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 2))),
+        64512,
+        Ipv4Addr::new(192, 0, 2, 1),
+        None,
+    );
+    let labels = vec![MplsLabel::new([0, 0x10, 0]), MplsLabel::new([0, 0x20, 1])];
+    let nlri =
+        Ipv4NlriMplsLabelsAddress::from(None, labels, "198.51.100.0/24".parse().unwrap()).unwrap();
+    let update = BgpMessage::Update(BgpUpdateMessage::new(
+        vec![],
+        vec![
+            PathAttribute::from(
+                true,
+                false,
+                false,
+                false,
+                PathAttributeValue::MpReach(MpReach::Ipv4NlriMplsLabels {
+                    next_hop: IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)),
+                    next_hop_local: None,
+                    nlri: vec![nlri],
+                }),
+            )
+            .unwrap(),
+        ],
+        vec![],
+    ));
+    let capability = BgpCapability::MultipleLabels(
+        MultipleLabelsCapability::new(vec![MultipleLabel::new(AddressType::Ipv4NlriMplsLabels, 2)])
+            .unwrap(),
+    );
+    let stateless_parsing =
+        RouteMonitoringTlv::build(0, RouteMonitoringTlvValue::StatelessParsing(capability))
+            .unwrap();
+    let message = BmpMessage::V4(BmpMessageValue::RouteMonitoring(
+        RouteMonitoringMessage::build(peer_header, update, vec![stateless_parsing]).unwrap(),
+    ));
+
+    let mut codec = BmpCodec::default();
+    let mut buffer = BytesMut::new();
+    codec.encode(message.clone(), &mut buffer).unwrap();
+    assert_eq!(codec.decode(&mut buffer).unwrap(), Some(message));
+    assert!(buffer.is_empty());
 }
 
 #[test]
