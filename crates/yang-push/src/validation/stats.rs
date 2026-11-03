@@ -19,14 +19,14 @@
 use strum::VariantNames;
 
 // Attribute key shared by the `dropped` and `skipped` counters.
-pub(crate) const REASON_KEY: &str = "reason";
+pub(super) const REASON_KEY: &str = "reason";
 
 /// Attribute values for the `reason` key on the `dropped` counter.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, strum_macros::VariantNames, strum_macros::IntoStaticStr,
 )]
 #[strum(serialize_all = "snake_case")]
-pub(crate) enum DropReason {
+pub(super) enum DropReason {
     DecodeError,
     BufferFullSubscription,
     BufferFullPeer,
@@ -41,21 +41,21 @@ pub(crate) enum DropReason {
     Debug, Clone, Copy, PartialEq, Eq, strum_macros::VariantNames, strum_macros::IntoStaticStr,
 )]
 #[strum(serialize_all = "snake_case")]
-pub(crate) enum SkipReason {
+pub(super) enum SkipReason {
     NoLibrary,
     ContextFailed,
     NoSubscriptionInfo,
 }
 
 // Attribute key for the `cache_lookups` counter.
-pub(crate) const CACHE_LOOKUP_BY_KEY: &str = "by";
+pub(super) const CACHE_LOOKUP_BY_KEY: &str = "by";
 
 /// Attribute values for the `by` key on the `cache_lookups` counter.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, strum_macros::VariantNames, strum_macros::IntoStaticStr,
 )]
 #[strum(serialize_all = "snake_case")]
-pub(crate) enum CacheLookupBy {
+pub(super) enum CacheLookupBy {
     SubscriptionInfo,
     SubscriptionId,
 }

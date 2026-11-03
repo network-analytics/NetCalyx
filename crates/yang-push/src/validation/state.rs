@@ -54,16 +54,16 @@ use std::sync::Arc;
 /// buffered while pending, so a stale response can never clobber a newer
 /// subscription generation.
 #[derive(Debug)]
-pub(crate) struct CachedSubscription {
-    pub(crate) cached_content_id: Option<ContentId>,
-    pub(crate) subscription_info: SubscriptionInfo,
-    pub(crate) yang_ctx: Option<yang5::context::Context>,
-    pub(crate) buffered_packets: Vec<Arc<UdpNotifRequest>>,
-    pub(crate) schema_fetch_pending: bool,
+pub(super) struct CachedSubscription {
+    pub(super) cached_content_id: Option<ContentId>,
+    pub(super) subscription_info: SubscriptionInfo,
+    pub(super) yang_ctx: Option<yang5::context::Context>,
+    pub(super) buffered_packets: Vec<Arc<UdpNotifRequest>>,
+    pub(super) schema_fetch_pending: bool,
 }
 
 impl CachedSubscription {
-    pub(crate) fn new(subscription_info: SubscriptionInfo) -> Self {
+    pub(super) fn new(subscription_info: SubscriptionInfo) -> Self {
         Self {
             cached_content_id: None,
             subscription_info,
@@ -80,7 +80,7 @@ impl CachedSubscription {
 // grow this map unboundedly; consider a purge mechanism similar to
 // `UdpNotifSupervisorHandle::purge_unused_peers`.
 #[derive(Debug, Default)]
-pub(crate) struct CachedPeerSubscriptions {
-    pub(crate) subscriptions: FxHashMap<SubscriptionId, CachedSubscription>,
-    pub(crate) total_buffered: usize,
+pub(super) struct CachedPeerSubscriptions {
+    pub(super) subscriptions: FxHashMap<SubscriptionId, CachedSubscription>,
+    pub(super) total_buffered: usize,
 }
