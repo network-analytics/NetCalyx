@@ -533,7 +533,7 @@ impl YangLibraryReference {
             let filename = if let Some(revision) = revision {
                 format!("{name}@{revision}.yang")
             } else {
-                name.to_string()
+                format!("{name}.yang")
             };
             let yang_module_path = modules_path.join(&filename);
             std::fs::write(&yang_module_path, schema.as_ref())?;
