@@ -23,7 +23,8 @@ use crate::wire::deserializer::path_attribute::{
 use ipnet::Ipv4Net;
 use netcalyx_iana::address_family::AddressType;
 use netcalyx_parse_utils::{
-    LocatedParsingError, ReadablePduWithOneInput, Span, parse_into_located,
+    LocatedParsingError, ReadablePduWithOneInput, ReadablePduWithTwoInputs, Span,
+    parse_into_located,
 };
 use nom::IResult;
 use nom::number::complete::{be_u8, be_u16, be_u32};
@@ -35,7 +36,7 @@ use crate::path_attribute::PathAttribute;
 use crate::wire::deserializer::path_attribute::{
     EXTENDED_LENGTH_PATH_ATTRIBUTE_MASK, OriginParsingError,
 };
-use crate::wire::deserializer::{BgpParsingContext, Ipv4PrefixParsingError};
+use crate::wire::deserializer::{BgpParsingContext, Ipv4PrefixParsingError, MessageDirection};
 use netcalyx_parse_utils::ErrorKindSerdeDeref;
 use netcalyx_serde_macros::LocatedError;
 
@@ -141,6 +142,7 @@ fn advance_attr_buffer_fixed(
     }
 }
 
+/// The context-only parser defaults to inbound direction.
 impl<'a>
     ReadablePduWithOneInput<'a, &mut BgpParsingContext, LocatedBgpUpdateMessageParsingError<'a>>
     for BgpUpdateMessage
@@ -149,13 +151,34 @@ impl<'a>
         buf: Span<'a>,
         ctx: &mut BgpParsingContext,
     ) -> IResult<Span<'a>, Self, LocatedBgpUpdateMessageParsingError<'a>> {
-        let add_path = ctx.add_path_enabled(AddressType::Ipv4Unicast);
+        <Self as ReadablePduWithTwoInputs<_, _, _>>::from_wire(buf, ctx, MessageDirection::Inbound)
+    }
+}
+
+impl<'a>
+    ReadablePduWithTwoInputs<
+        'a,
+        &mut BgpParsingContext,
+        MessageDirection,
+        LocatedBgpUpdateMessageParsingError<'a>,
+    > for BgpUpdateMessage
+{
+    fn from_wire(
+        buf: Span<'a>,
+        ctx: &mut BgpParsingContext,
+        direction: MessageDirection,
+    ) -> IResult<Span<'a>, Self, LocatedBgpUpdateMessageParsingError<'a>> {
+        let add_path = ctx.add_path_enabled(AddressType::Ipv4Unicast, direction);
         let (buf, withdrawn_buf) = nom::multi::length_data(be_u16)(buf)?;
         let (_, withdrawn_routes) = parse_nlri(withdrawn_buf, add_path, false, ctx)?;
         let (buf, mut path_attributes_buf) = nom::multi::length_data(be_u16)(buf)?;
         let mut path_attributes = Vec::new();
         while !path_attributes_buf.is_empty() {
-            match PathAttribute::from_wire(path_attributes_buf, &mut *ctx) {
+            match <PathAttribute as ReadablePduWithTwoInputs<_, _, _>>::from_wire(
+                path_attributes_buf,
+                &mut *ctx,
+                direction,
+            ) {
                 Ok((tmp, element)) => {
                     path_attributes.push(element);
                     path_attributes_buf = tmp;

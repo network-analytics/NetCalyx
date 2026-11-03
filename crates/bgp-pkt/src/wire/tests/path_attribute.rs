@@ -16,6 +16,7 @@
 
 use crate::BgpMessage;
 use crate::path_attribute::*;
+use crate::wire::deserializer::MultipleLabelsLimits;
 use crate::wire::deserializer::path_attribute::*;
 use crate::wire::serializer::path_attribute::*;
 
@@ -1958,7 +1959,10 @@ fn test_mp_reach_multi_labels_vp_ipv4() -> Result<(), PathAttributeWritingError>
         &good_wire,
         &mut BgpParsingContext::new(
             false,
-            MultipleLabelsMap::from_iter([(AddressType::Ipv4MplsLabeledVpn, (2, 2))]),
+            MultipleLabelsMap::from_iter([(
+                AddressType::Ipv4MplsLabeledVpn,
+                MultipleLabelsLimits::new(2, 2),
+            )]),
             AddPathMap::default(),
             true,
             true,
@@ -1973,7 +1977,10 @@ fn test_mp_reach_multi_labels_vp_ipv4() -> Result<(), PathAttributeWritingError>
         &good_wire,
         &mut BgpParsingContext::new(
             false,
-            MultipleLabelsMap::from_iter([(AddressType::Ipv4MplsLabeledVpn, (u8::MAX, u8::MAX))]),
+            MultipleLabelsMap::from_iter([(
+                AddressType::Ipv4MplsLabeledVpn,
+                MultipleLabelsLimits::new(u8::MAX, u8::MAX),
+            )]),
             AddPathMap::default(),
             true,
             true,
@@ -2004,7 +2011,10 @@ fn test_mp_reach_multi_labels_vp_ipv4() -> Result<(), PathAttributeWritingError>
         &good_wire,
         &mut BgpParsingContext::new(
             false,
-            MultipleLabelsMap::from_iter([(AddressType::Ipv4MplsLabeledVpn, (1, 1))]),
+            MultipleLabelsMap::from_iter([(
+                AddressType::Ipv4MplsLabeledVpn,
+                MultipleLabelsLimits::new(1, 1),
+            )]),
             AddPathMap::default(),
             true,
             true,
