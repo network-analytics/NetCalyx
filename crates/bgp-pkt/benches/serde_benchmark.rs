@@ -44,7 +44,7 @@ use netcalyx_bgp_pkt::capabilities::BgpCapability;
 use netcalyx_bgp_pkt::codec::BgpCodec;
 use netcalyx_bgp_pkt::iana::BgpMessageType;
 use netcalyx_bgp_pkt::path_attribute::PathAttributeValue;
-use netcalyx_bgp_pkt::wire::deserializer::BgpParsingContext;
+use netcalyx_bgp_pkt::wire::deserializer::{BgpParsingContext, MessageDirection};
 use netcalyx_iana::address_family::AddressType;
 use netcalyx_parse_utils::{ReadablePduWithOneInput, Span, WritablePdu};
 use netcalyx_pcap_reader::{PcapIter, TransportProtocol};
@@ -254,7 +254,7 @@ fn apply_open_caps(ctx: &mut BgpParsingContext, msg: &BgpMessage) {
         if let BgpCapability::FourOctetAs(_) = cap {
             has_asn4 = true;
         }
-        ctx.update_capabilities(cap);
+        ctx.update_capabilities(cap, MessageDirection::Inbound);
     }
     ctx.set_asn4(has_asn4);
 }

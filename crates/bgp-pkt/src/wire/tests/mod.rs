@@ -54,7 +54,7 @@ use crate::wire::deserializer::path_attribute::{
 use crate::wire::deserializer::route_refresh::BgpRouteRefreshMessageParsingError;
 use crate::wire::deserializer::{
     AddPathMap, BgpMessageParsingError, BgpParsingContext, LocatedBgpMessageParsingError,
-    MessageDirection, MultipleLabelsMap,
+    MessageDirection, MultipleLabelsLimits, MultipleLabelsMap,
 };
 use crate::wire::serializer::BgpMessageWritingError;
 use crate::{BgpMessage, BgpNotificationMessage, BgpOpenMessage, BgpRouteRefreshMessage};
@@ -182,7 +182,10 @@ fn test_add_path_capability_preserves_both_directions() {
         AddPathAddressFamily::new(ipv6, true, false),
     ]);
     let mut ctx = BgpParsingContext::default();
-    ctx.update_capabilities(&BgpCapability::AddPath(capability.clone()));
+    ctx.update_capabilities(
+        &BgpCapability::AddPath(capability.clone()),
+        MessageDirection::Inbound,
+    );
     assert_eq!(ctx.add_path().len(), 2);
     for family in capability.address_families() {
         assert_eq!(ctx.add_path().get(&family.address_type()), Some(*family));
@@ -193,21 +196,22 @@ fn test_add_path_capability_preserves_both_directions() {
 fn test_add_path_direction_selection_and_capability_updates() {
     let ipv4 = AddressType::Ipv4Unicast;
     let mut ctx = BgpParsingContext::default();
-    ctx.update_capabilities(&BgpCapability::AddPath(AddPathCapability::new(vec![
-        AddPathAddressFamily::new(ipv4, false, true),
-    ])));
+    ctx.update_capabilities(
+        &BgpCapability::AddPath(AddPathCapability::new(vec![AddPathAddressFamily::new(
+            ipv4, false, true,
+        )])),
+        MessageDirection::Inbound,
+    );
     for direction in [
         MessageDirection::Inbound,
         MessageDirection::Outbound,
         MessageDirection::Inbound,
     ] {
-        ctx.set_message_direction(direction);
         assert_eq!(
-            ctx.add_path_enabled(ipv4),
+            ctx.add_path_enabled(ipv4, direction),
             direction == MessageDirection::Inbound
         );
     }
-    ctx.set_message_direction(MessageDirection::Outbound);
     ctx.add_path_mut()
         .insert(AddPathAddressFamily::new(ipv4, true, true));
     assert!(
@@ -218,7 +222,7 @@ fn test_add_path_direction_selection_and_capability_updates() {
         BgpCapability::AddPath(AddPathCapability::new(vec![AddPathAddressFamily::new(
             ipv4, false, false,
         )]));
-    ctx.update_capabilities(&capability);
+    ctx.update_capabilities(&capability, MessageDirection::Outbound);
     assert!(
         !ctx.add_path()
             .add_path_enabled(ipv4, MessageDirection::Inbound)
@@ -287,17 +291,20 @@ fn test_multiple_labels_map_pairs() {
         1
     );
     assert_eq!(map.insert(ipv4, 2, 5), None);
-    assert_eq!(map.insert(ipv4, 3, 6), Some((2, 5)));
+    assert_eq!(
+        map.insert(ipv4, 3, 6),
+        Some(MultipleLabelsLimits::new(2, 5))
+    );
     assert_eq!(map.get(&ipv4, MessageDirection::Inbound), Some(3));
     assert_eq!(map.get(&ipv4, MessageDirection::Outbound), Some(6));
-    map.entry(ipv4).or_insert((8, 9));
+    map.entry(ipv4).or_insert(MultipleLabelsLimits::new(8, 9));
     assert_eq!(map.get(&ipv4, MessageDirection::Inbound), Some(3));
     assert_eq!(map.get(&ipv4, MessageDirection::Outbound), Some(6));
-    map.entry(ipv6).or_insert((2, 5));
+    map.entry(ipv6).or_insert(MultipleLabelsLimits::new(2, 5));
     assert_eq!(map.get(&ipv6, MessageDirection::Inbound), Some(2));
     assert_eq!(map.get(&ipv6, MessageDirection::Outbound), Some(5));
 
-    let mut ctx = BgpParsingContext::new(
+    let ctx = BgpParsingContext::new(
         true,
         map.clone(),
         AddPathMap::default(),
@@ -306,11 +313,19 @@ fn test_multiple_labels_map_pairs() {
         true,
         true,
     );
-    assert_eq!(ctx.multiple_labels_limit(ipv4), 3);
-    ctx.set_message_direction(MessageDirection::Outbound);
-    assert_eq!(ctx.multiple_labels_limit(ipv4), 6);
+    assert_eq!(
+        ctx.multiple_labels_limit(ipv4, MessageDirection::Inbound),
+        3
+    );
+    assert_eq!(
+        ctx.multiple_labels_limit(ipv4, MessageDirection::Outbound),
+        6
+    );
 
-    let mut other = MultipleLabelsMap::from_iter([(ipv4, (7, 7)), (ipv6, (4, 4))]);
+    let mut other = MultipleLabelsMap::from_iter([
+        (ipv4, MultipleLabelsLimits::new(7, 7)),
+        (ipv6, MultipleLabelsLimits::new(4, 4)),
+    ]);
     map.extend(&other);
     for direction in [MessageDirection::Inbound, MessageDirection::Outbound] {
         assert_eq!(map.get(&ipv4, direction), Some(7));
@@ -325,17 +340,22 @@ fn test_multiple_labels_map_pairs() {
 fn test_directional_multiple_labels_storage() {
     let ipv4 = AddressType::Ipv4NlriMplsLabels;
     let mut ctx = BgpParsingContext::default();
-    assert_eq!(ctx.multiple_labels_limit(ipv4), 1);
+    assert_eq!(
+        ctx.multiple_labels_limit(ipv4, MessageDirection::Inbound),
+        1
+    );
     for direction in [MessageDirection::Inbound, MessageDirection::Outbound] {
         let limit = if direction == MessageDirection::Inbound {
             2
         } else {
             5
         };
-        ctx.set_message_direction(direction);
-        ctx.update_capabilities(&BgpCapability::MultipleLabels(
-            MultipleLabelsCapability::new(vec![MultipleLabel::new(ipv4, limit)]).unwrap(),
-        ));
+        ctx.update_capabilities(
+            &BgpCapability::MultipleLabels(
+                MultipleLabelsCapability::new(vec![MultipleLabel::new(ipv4, limit)]).unwrap(),
+            ),
+            direction,
+        );
         if direction == MessageDirection::Inbound {
             assert_eq!(
                 ctx.multiple_labels().get(&ipv4, MessageDirection::Outbound),
@@ -347,11 +367,39 @@ fn test_directional_multiple_labels_storage() {
         (MessageDirection::Inbound, 2),
         (MessageDirection::Outbound, 5),
     ] {
-        ctx.set_message_direction(direction);
-        assert_eq!(ctx.multiple_labels_limit(ipv4), limit);
+        assert_eq!(ctx.multiple_labels_limit(ipv4, direction), limit);
     }
     ctx.multiple_labels_mut().clear();
     assert!(ctx.multiple_labels().is_empty());
+}
+
+#[test]
+fn test_multiple_labels_capability_keeps_first_duplicate_per_direction() {
+    let ipv4 = AddressType::Ipv4NlriMplsLabels;
+    let mut ctx = BgpParsingContext::default();
+    let capability = |counts: [u8; 2]| {
+        BgpCapability::MultipleLabels(
+            MultipleLabelsCapability::new(
+                counts
+                    .into_iter()
+                    .map(|count| MultipleLabel::new(ipv4, count))
+                    .collect(),
+            )
+            .unwrap(),
+        )
+    };
+
+    ctx.update_capabilities(&capability([2, 5]), MessageDirection::Inbound);
+    ctx.update_capabilities(&capability([5, 2]), MessageDirection::Outbound);
+
+    assert_eq!(
+        ctx.multiple_labels_limit(ipv4, MessageDirection::Inbound),
+        2
+    );
+    assert_eq!(
+        ctx.multiple_labels_limit(ipv4, MessageDirection::Outbound),
+        5
+    );
 }
 
 #[test]

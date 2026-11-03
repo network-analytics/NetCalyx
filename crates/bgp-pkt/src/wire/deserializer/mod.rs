@@ -37,7 +37,7 @@ use serde::{Deserialize, Serialize};
 
 use netcalyx_parse_utils::{
     ErrorKindSerdeDeref, ReadablePdu, ReadablePduWithOneInput, ReadablePduWithTwoInputs, Span,
-    parse_into_located, parse_into_located_one_input,
+    parse_into_located, parse_into_located_one_input, parse_into_located_two_inputs,
 };
 
 use crate::BgpMessage;
@@ -171,16 +171,50 @@ impl FromIterator<AddPathAddressFamily> for AddPathMap {
     }
 }
 
-/// Receiver label limits from the local OPEN's perspective, stored per
-/// message direction. Families without an entry default to a single label
+/// Receiver label limits for one address family from the local OPEN's
+/// perspective.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "fuzz", derive(arbitrary::Arbitrary))]
+pub struct MultipleLabelsLimits {
+    inbound: u8,
+    outbound: u8,
+}
+
+impl MultipleLabelsLimits {
+    /// Create limits for inbound and outbound messages, respectively.
+    pub const fn new(inbound: u8, outbound: u8) -> Self {
+        Self { inbound, outbound }
+    }
+
+    /// Return the inbound message limit.
+    pub const fn inbound(&self) -> u8 {
+        self.inbound
+    }
+
+    /// Return the outbound message limit.
+    pub const fn outbound(&self) -> u8 {
+        self.outbound
+    }
+
+    /// Return the limit for `direction`.
+    pub const fn get(&self, direction: MessageDirection) -> u8 {
+        match direction {
+            MessageDirection::Inbound => self.inbound,
+            MessageDirection::Outbound => self.outbound,
+        }
+    }
+}
+
+/// Receiver label limits from the local OPEN's perspective.
+///
+/// Families without an entry default to a single label
 /// ([RFC 8277](https://datatracker.ietf.org/doc/html/rfc8277)).
-/// Receiver limits are ordered as (inbound, outbound).
 #[derive(Debug, Default, Clone, PartialEq, Eq, derive_more::From)]
 #[cfg_attr(feature = "fuzz", derive(arbitrary::Arbitrary))]
-pub struct MultipleLabelsMap(HashMap<AddressType, (u8, u8)>);
+pub struct MultipleLabelsMap(HashMap<AddressType, MultipleLabelsLimits>);
 
-impl FromIterator<(AddressType, (u8, u8))> for MultipleLabelsMap {
-    fn from_iter<T: IntoIterator<Item = (AddressType, (u8, u8))>>(iter: T) -> Self {
+impl FromIterator<(AddressType, MultipleLabelsLimits)> for MultipleLabelsMap {
+    fn from_iter<T: IntoIterator<Item = (AddressType, MultipleLabelsLimits)>>(iter: T) -> Self {
         Self(iter.into_iter().collect())
     }
 }
@@ -193,24 +227,20 @@ impl MultipleLabelsMap {
         address_type: AddressType,
         inbound: u8,
         outbound: u8,
-    ) -> Option<(u8, u8)> {
-        self.0.insert(address_type, (inbound, outbound))
+    ) -> Option<MultipleLabelsLimits> {
+        self.0
+            .insert(address_type, MultipleLabelsLimits::new(inbound, outbound))
     }
 
     pub fn entry(
         &mut self,
         address_type: AddressType,
-    ) -> std::collections::hash_map::Entry<'_, AddressType, (u8, u8)> {
+    ) -> std::collections::hash_map::Entry<'_, AddressType, MultipleLabelsLimits> {
         self.0.entry(address_type)
     }
 
     pub fn get(&self, address_type: &AddressType, direction: MessageDirection) -> Option<u8> {
-        self.0
-            .get(address_type)
-            .map(|&(inbound, outbound)| match direction {
-                MessageDirection::Inbound => inbound,
-                MessageDirection::Outbound => outbound,
-            })
+        self.0.get(address_type).map(|limits| limits.get(direction))
     }
 
     pub fn clear(&mut self) {
@@ -247,7 +277,6 @@ pub enum MessageDirection {
 #[derive(Debug, Clone)]
 pub struct BgpParsingContext {
     asn4: bool,
-    message_direction: MessageDirection,
     multiple_labels: MultipleLabelsMap,
     add_path: AddPathMap,
     fail_on_non_unicast_withdraw_nlri: bool,
@@ -271,7 +300,6 @@ impl BgpParsingContext {
     ) -> Self {
         Self {
             asn4,
-            message_direction: MessageDirection::Inbound,
             multiple_labels,
             add_path,
             fail_on_non_unicast_withdraw_nlri,
@@ -300,16 +328,6 @@ impl BgpParsingContext {
 
     pub fn set_asn4(&mut self, value: bool) {
         self.asn4 = value
-    }
-
-    /// Select inbound (default) or outbound BGP message parsing.
-    ///
-    /// This setting persists in the context. Call this before parsing each
-    /// UPDATE body or path attribute when reusing a context for both
-    /// directions. Complete BGP message parsing sets this from its explicit
-    /// direction input, or to inbound when using the context-only wrapper.
-    pub fn set_message_direction(&mut self, direction: MessageDirection) {
-        self.message_direction = direction;
     }
 
     pub const fn multiple_labels(&self) -> &MultipleLabelsMap {
@@ -345,47 +363,55 @@ impl BgpParsingContext {
 
     /// Store a Multiple Labels capability limit for messages in `direction`.
     #[inline]
-    pub fn update_multiple_label_capability(&mut self, multiple_label: &MultipleLabel) {
+    pub fn update_multiple_label_capability(
+        &mut self,
+        multiple_label: &MultipleLabel,
+        direction: MessageDirection,
+    ) {
         let limits = self
             .multiple_labels
             .0
             .entry(multiple_label.address_type())
-            .or_insert((
+            .or_insert(MultipleLabelsLimits::new(
                 MultipleLabelsMap::DEFAULT_LIMIT,
                 MultipleLabelsMap::DEFAULT_LIMIT,
             ));
-        match self.message_direction {
-            MessageDirection::Inbound => limits.0 = multiple_label.count(),
-            MessageDirection::Outbound => limits.1 = multiple_label.count(),
+        match direction {
+            MessageDirection::Inbound => limits.inbound = multiple_label.count(),
+            MessageDirection::Outbound => limits.outbound = multiple_label.count(),
         };
     }
 
-    /// Receiver label limit for `address_type` for the current message
-    /// direction.
+    /// Receiver label limit for `address_type` for `direction`.
     #[inline]
-    pub fn multiple_labels_limit(&self, address_type: AddressType) -> u8 {
+    pub fn multiple_labels_limit(
+        &self,
+        address_type: AddressType,
+        direction: MessageDirection,
+    ) -> u8 {
         self.multiple_labels
-            .multiple_labels_limit(address_type, self.message_direction)
+            .multiple_labels_limit(address_type, direction)
     }
 
-    /// Whether ADD-PATH applies to `address_type` for the current message
-    /// direction.
+    /// Whether ADD-PATH applies to `address_type` for `direction`.
     #[inline]
-    pub fn add_path_enabled(&self, address_type: AddressType) -> bool {
-        self.add_path
-            .add_path_enabled(address_type, self.message_direction)
+    pub fn add_path_enabled(&self, address_type: AddressType, direction: MessageDirection) -> bool {
+        self.add_path.add_path_enabled(address_type, direction)
     }
 
     /// Store capability settings, including both ADD-PATH directions from
     /// the local OPEN's perspective. Multiple Labels limits are stored for
-    /// the current message direction.
+    /// `direction`.
     #[inline]
-    pub fn update_capabilities(&mut self, capability: &BgpCapability) {
+    pub fn update_capabilities(&mut self, capability: &BgpCapability, direction: MessageDirection) {
         match capability {
             BgpCapability::AddPath(add_path) => self.update_add_path(add_path),
             BgpCapability::MultipleLabels(multiple_labels) => {
+                let mut seen = HashSet::new();
                 for multiple_label in multiple_labels.labels() {
-                    self.update_multiple_label_capability(multiple_label);
+                    if seen.insert(multiple_label.address_type()) {
+                        self.update_multiple_label_capability(multiple_label, direction);
+                    }
                 }
             }
             _ => {}
@@ -713,7 +739,7 @@ fn parse_bgp_message_length_and_type(
     Ok((buf, (length, message_type, remainder_buf)))
 }
 
-/// Parse a received BGP message, resetting the context direction to inbound.
+/// Parse a BGP message without an explicit direction, defaulting to inbound.
 impl<'a> ReadablePduWithOneInput<'a, &mut BgpParsingContext, LocatedBgpMessageParsingError<'a>>
     for BgpMessage
 {
@@ -738,7 +764,6 @@ impl<'a>
         ctx: &mut BgpParsingContext,
         direction: MessageDirection,
     ) -> IResult<Span<'a>, Self, LocatedBgpMessageParsingError<'a>> {
-        ctx.set_message_direction(direction);
         let (buf, _) = nom::combinator::map_res(be_u128, |x| {
             if x == u128::MAX {
                 Ok(x)
@@ -759,7 +784,7 @@ impl<'a>
                 (buf, BgpMessage::Open(open))
             }
             BgpMessageType::Update => {
-                let (buf, update) = parse_into_located_one_input(buf, ctx)?;
+                let (buf, update) = parse_into_located_two_inputs(buf, ctx, direction)?;
                 (buf, BgpMessage::Update(update))
             }
             BgpMessageType::Notification => {

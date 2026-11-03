@@ -188,7 +188,6 @@ impl<'a>
         // We do not want to alter it permanently based on TLVs
         // that are punctual in the messages
         let mut ctx_clone = bgp_ctx.clone();
-        ctx_clone.set_message_direction(direction);
 
         // Can't use parse_till_empty_into_with_one_input_located because
         //  - &mut BgpParsingContext is not Clone
@@ -350,7 +349,7 @@ impl<'a>
                                     .collect(),
                             ));
                         }
-                        _ => ctx.update_capabilities(&bgp_capability),
+                        _ => ctx.update_capabilities(&bgp_capability, direction),
                     }
                     v4::RouteMonitoringTlvValue::StatelessParsing(bgp_capability)
                 }

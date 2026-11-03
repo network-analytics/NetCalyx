@@ -28,7 +28,7 @@ use crate::wire::deserializer::nlri::*;
 use crate::wire::deserializer::path_attribute::{
     BgpLsAttributeParsingError, SegmentIdentifierParsingError,
 };
-use crate::wire::deserializer::{BgpParsingContext, IpAddrParsingError};
+use crate::wire::deserializer::{BgpParsingContext, IpAddrParsingError, MessageDirection};
 use crate::wire::serializer::nlri::{IPV4_LEN, IPV6_LEN, IPV6_WITH_LINK_LOCAL_LEN};
 use netcalyx_iana::address_family::{
     AddressFamily, AddressType, SubsequentAddressFamily, UndefinedAddressFamily,
@@ -36,8 +36,9 @@ use netcalyx_iana::address_family::{
 };
 use netcalyx_parse_utils::{
     ErrorKindSerdeDeref, LocatedParsingError, ReadablePdu, ReadablePduWithOneInput,
-    ReadablePduWithTwoInputs, Span, parse_into_located_one_input, parse_into_located_two_inputs,
-    parse_till_empty, parse_till_empty_into_located, parse_till_empty_into_with_one_input_located,
+    ReadablePduWithThreeInputs, ReadablePduWithTwoInputs, Span, parse_into_located_one_input,
+    parse_into_located_three_inputs, parse_into_located_two_inputs, parse_till_empty,
+    parse_till_empty_into_located, parse_till_empty_into_with_one_input_located,
     parse_till_empty_into_with_three_inputs_located,
 };
 use netcalyx_serde_macros::LocatedError;
@@ -110,12 +111,30 @@ pub trait IntoLocatedPathAttributeParsingError<'a> {
     fn into_located_attribute_parsing_error(self) -> LocatedPathAttributeParsingError<'a>;
 }
 
+/// The context-only parser defaults to inbound direction.
 impl<'a> ReadablePduWithOneInput<'a, &mut BgpParsingContext, LocatedPathAttributeParsingError<'a>>
     for PathAttribute
 {
     fn from_wire(
         buf: Span<'a>,
         ctx: &mut BgpParsingContext,
+    ) -> IResult<Span<'a>, Self, LocatedPathAttributeParsingError<'a>> {
+        <Self as ReadablePduWithTwoInputs<_, _, _>>::from_wire(buf, ctx, MessageDirection::Inbound)
+    }
+}
+
+impl<'a>
+    ReadablePduWithTwoInputs<
+        'a,
+        &mut BgpParsingContext,
+        MessageDirection,
+        LocatedPathAttributeParsingError<'a>,
+    > for PathAttribute
+{
+    fn from_wire(
+        buf: Span<'a>,
+        ctx: &mut BgpParsingContext,
+        direction: MessageDirection,
     ) -> IResult<Span<'a>, Self, LocatedPathAttributeParsingError<'a>> {
         let asn4 = ctx.asn4;
         let (buf, attributes) = be_u8(buf)?;
@@ -199,12 +218,14 @@ impl<'a> ReadablePduWithOneInput<'a, &mut BgpParsingContext, LocatedPathAttribut
                 (buf, value)
             }
             Ok(PathAttributeType::MpReachNlri) => {
-                let (buf, value) = parse_into_located_two_inputs(buf, extended_length, &*ctx)?;
+                let (buf, value) =
+                    parse_into_located_three_inputs(buf, extended_length, &*ctx, direction)?;
                 let value = PathAttributeValue::MpReach(value);
                 (buf, value)
             }
             Ok(PathAttributeType::MpUnreachNlri) => {
-                let (buf, value) = parse_into_located_two_inputs(buf, extended_length, &*ctx)?;
+                let (buf, value) =
+                    parse_into_located_three_inputs(buf, extended_length, &*ctx, direction)?;
                 let value = PathAttributeValue::MpUnreach(value);
                 (buf, value)
             }
@@ -670,6 +691,7 @@ pub enum MpReachParsingError {
     ),
 }
 
+/// The parser wrapper without an explicit direction defaults to inbound.
 impl<'a> ReadablePduWithTwoInputs<'a, bool, &BgpParsingContext, LocatedMpReachParsingError<'a>>
     for MpReach
 {
@@ -677,6 +699,30 @@ impl<'a> ReadablePduWithTwoInputs<'a, bool, &BgpParsingContext, LocatedMpReachPa
         buf: Span<'a>,
         extended_length: bool,
         ctx: &BgpParsingContext,
+    ) -> IResult<Span<'a>, Self, LocatedMpReachParsingError<'a>> {
+        <Self as ReadablePduWithThreeInputs<_, _, _, _>>::from_wire(
+            buf,
+            extended_length,
+            ctx,
+            MessageDirection::Inbound,
+        )
+    }
+}
+
+impl<'a>
+    ReadablePduWithThreeInputs<
+        'a,
+        bool,
+        &BgpParsingContext,
+        MessageDirection,
+        LocatedMpReachParsingError<'a>,
+    > for MpReach
+{
+    fn from_wire(
+        buf: Span<'a>,
+        extended_length: bool,
+        ctx: &BgpParsingContext,
+        direction: MessageDirection,
     ) -> IResult<Span<'a>, Self, LocatedMpReachParsingError<'a>> {
         let (buf, mp_buf) = if extended_length {
             nom::multi::length_data(be_u16)(buf)?
@@ -691,7 +737,7 @@ impl<'a> ReadablePduWithTwoInputs<'a, bool, &BgpParsingContext, LocatedMpReachPa
                 let (mp_buf, (next_hop, next_hop_local)) =
                     parse_ip4_or_ipv6_next_hop(mp_buf, addr_type)?;
                 let (mp_buf, _) = be_u8(mp_buf)?;
-                let add_path = ctx.add_path_enabled(addr_type);
+                let add_path = ctx.add_path_enabled(addr_type, direction);
                 let (_, nlri) = parse_till_empty_into_with_one_input_located(mp_buf, add_path)?;
                 Ok((
                     buf,
@@ -706,7 +752,7 @@ impl<'a> ReadablePduWithTwoInputs<'a, bool, &BgpParsingContext, LocatedMpReachPa
                 let (mp_buf, (next_hop, next_hop_local)) =
                     parse_ip4_or_ipv6_next_hop(mp_buf, addr_type)?;
                 let (mp_buf, _) = be_u8(mp_buf)?;
-                let add_path = ctx.add_path_enabled(addr_type);
+                let add_path = ctx.add_path_enabled(addr_type, direction);
                 let (_, nlri) = parse_till_empty_into_with_one_input_located(mp_buf, add_path)?;
                 Ok((
                     buf,
@@ -721,12 +767,12 @@ impl<'a> ReadablePduWithTwoInputs<'a, bool, &BgpParsingContext, LocatedMpReachPa
                 let (mp_buf, (next_hop, next_hop_local)) =
                     parse_ip4_or_ipv6_next_hop(mp_buf, addr_type)?;
                 let (mp_buf, _) = be_u8(mp_buf)?;
-                let add_path = ctx.add_path_enabled(addr_type);
+                let add_path = ctx.add_path_enabled(addr_type, direction);
                 let (_, nlri) = parse_till_empty_into_with_three_inputs_located(
                     mp_buf,
                     add_path,
                     false,
-                    ctx.multiple_labels_limit(addr_type),
+                    ctx.multiple_labels_limit(addr_type, direction),
                 )?;
                 Ok((
                     buf,
@@ -740,12 +786,12 @@ impl<'a> ReadablePduWithTwoInputs<'a, bool, &BgpParsingContext, LocatedMpReachPa
             Ok(addr_type @ AddressType::Ipv4MplsLabeledVpn) => {
                 let (mp_buf, next_hop) = parse_labeled_next_hop(mp_buf, addr_type)?;
                 let (mp_buf, _) = be_u8(mp_buf)?;
-                let add_path = ctx.add_path_enabled(addr_type);
+                let add_path = ctx.add_path_enabled(addr_type, direction);
                 let (_, nlri) = parse_till_empty_into_with_three_inputs_located(
                     mp_buf,
                     add_path,
                     false,
-                    ctx.multiple_labels_limit(addr_type),
+                    ctx.multiple_labels_limit(addr_type, direction),
                 )?;
                 Ok((buf, MpReach::Ipv4MplsVpnUnicast { next_hop, nlri }))
             }
@@ -760,7 +806,7 @@ impl<'a> ReadablePduWithTwoInputs<'a, bool, &BgpParsingContext, LocatedMpReachPa
                     (mp_buf, None)
                 };
                 let (mp_buf, _) = be_u8(mp_buf)?;
-                let add_path = ctx.add_path_enabled(addr_type);
+                let add_path = ctx.add_path_enabled(addr_type, direction);
                 let (_, nlri) = parse_till_empty_into_with_one_input_located(mp_buf, add_path)?;
                 Ok((
                     buf,
@@ -782,7 +828,7 @@ impl<'a> ReadablePduWithTwoInputs<'a, bool, &BgpParsingContext, LocatedMpReachPa
                     (mp_buf, None)
                 };
                 let (mp_buf, _) = be_u8(mp_buf)?;
-                let add_path = ctx.add_path_enabled(addr_type);
+                let add_path = ctx.add_path_enabled(addr_type, direction);
                 let (_, nlri) = parse_till_empty_into_with_one_input_located(mp_buf, add_path)?;
                 Ok((
                     buf,
@@ -797,12 +843,12 @@ impl<'a> ReadablePduWithTwoInputs<'a, bool, &BgpParsingContext, LocatedMpReachPa
                 let (mp_buf, (next_hop, next_hop_local)) =
                     parse_ip4_or_ipv6_next_hop(mp_buf, addr_type)?;
                 let (mp_buf, _) = be_u8(mp_buf)?;
-                let add_path = ctx.add_path_enabled(addr_type);
+                let add_path = ctx.add_path_enabled(addr_type, direction);
                 let (_, nlri) = parse_till_empty_into_with_three_inputs_located(
                     mp_buf,
                     add_path,
                     false,
-                    ctx.multiple_labels_limit(addr_type),
+                    ctx.multiple_labels_limit(addr_type, direction),
                 )?;
                 Ok((
                     buf,
@@ -816,40 +862,40 @@ impl<'a> ReadablePduWithTwoInputs<'a, bool, &BgpParsingContext, LocatedMpReachPa
             Ok(addr_type @ AddressType::Ipv6MplsLabeledVpn) => {
                 let (mp_buf, next_hop) = parse_labeled_next_hop(mp_buf, addr_type)?;
                 let (mp_buf, _) = be_u8(mp_buf)?;
-                let add_path = ctx.add_path_enabled(addr_type);
+                let add_path = ctx.add_path_enabled(addr_type, direction);
                 let (_, nlri) = parse_till_empty_into_with_three_inputs_located(
                     mp_buf,
                     add_path,
                     false,
-                    ctx.multiple_labels_limit(addr_type),
+                    ctx.multiple_labels_limit(addr_type, direction),
                 )?;
                 Ok((buf, MpReach::Ipv6MplsVpnUnicast { next_hop, nlri }))
             }
             Ok(addr_type @ AddressType::L2VpnBgpEvpn) => {
                 let (mp_buf, next_hop) = parse_ip_next_hop(mp_buf, addr_type)?;
                 let (mp_buf, _) = be_u8(mp_buf)?;
-                let add_path = ctx.add_path_enabled(addr_type);
+                let add_path = ctx.add_path_enabled(addr_type, direction);
                 let (_, nlri) = parse_till_empty_into_with_one_input_located(mp_buf, add_path)?;
                 Ok((buf, MpReach::L2Evpn { next_hop, nlri }))
             }
             Ok(addr_type @ AddressType::RouteTargetConstrains) => {
                 let (mp_buf, next_hop) = parse_ip_next_hop(mp_buf, addr_type)?;
                 let (mp_buf, _) = be_u8(mp_buf)?;
-                let add_path = ctx.add_path_enabled(addr_type);
+                let add_path = ctx.add_path_enabled(addr_type, direction);
                 let (_, nlri) = parse_till_empty_into_with_one_input_located(mp_buf, add_path)?;
                 Ok((buf, MpReach::RouteTargetMembership { next_hop, nlri }))
             }
             Ok(addr_type @ AddressType::BgpLs) => {
                 let (mp_buf, next_hop) = parse_ip_next_hop(mp_buf, addr_type)?;
                 let (mp_buf, _) = be_u8(mp_buf)?;
-                let add_path = ctx.add_path_enabled(addr_type);
+                let add_path = ctx.add_path_enabled(addr_type, direction);
                 let (_, nlri) = parse_till_empty_into_with_one_input_located(mp_buf, add_path)?;
                 Ok((buf, MpReach::BgpLs { next_hop, nlri }))
             }
             Ok(addr_type @ AddressType::BgpLsVpn) => {
                 let (mp_buf, next_hop) = parse_labeled_next_hop(mp_buf, addr_type)?;
                 let (mp_buf, _) = be_u8(mp_buf)?;
-                let add_path = ctx.add_path_enabled(addr_type);
+                let add_path = ctx.add_path_enabled(addr_type, direction);
                 let (_, nlri) = parse_till_empty_into_with_one_input_located(mp_buf, add_path)?;
                 Ok((buf, MpReach::BgpLsVpn { next_hop, nlri }))
             }
@@ -1008,6 +1054,7 @@ pub enum MpUnreachParsingError {
     BgpLsError(#[from_located(module = "crate::wire::deserializer::nlri")] BgpLsNlriParsingError),
 }
 
+/// The parser wrapper without an explicit direction defaults to inbound.
 impl<'a> ReadablePduWithTwoInputs<'a, bool, &BgpParsingContext, LocatedMpUnreachParsingError<'a>>
     for MpUnreach
 {
@@ -1015,6 +1062,30 @@ impl<'a> ReadablePduWithTwoInputs<'a, bool, &BgpParsingContext, LocatedMpUnreach
         buf: Span<'a>,
         extended_length: bool,
         ctx: &BgpParsingContext,
+    ) -> IResult<Span<'a>, Self, LocatedMpUnreachParsingError<'a>> {
+        <Self as ReadablePduWithThreeInputs<_, _, _, _>>::from_wire(
+            buf,
+            extended_length,
+            ctx,
+            MessageDirection::Inbound,
+        )
+    }
+}
+
+impl<'a>
+    ReadablePduWithThreeInputs<
+        'a,
+        bool,
+        &BgpParsingContext,
+        MessageDirection,
+        LocatedMpUnreachParsingError<'a>,
+    > for MpUnreach
+{
+    fn from_wire(
+        buf: Span<'a>,
+        extended_length: bool,
+        ctx: &BgpParsingContext,
+        direction: MessageDirection,
     ) -> IResult<Span<'a>, Self, LocatedMpUnreachParsingError<'a>> {
         let (buf, mp_buf) = if extended_length {
             nom::multi::length_data(be_u16)(buf)?
@@ -1026,82 +1097,82 @@ impl<'a> ReadablePduWithTwoInputs<'a, bool, &BgpParsingContext, LocatedMpUnreach
             nom::combinator::map_res(be_u8, SubsequentAddressFamily::try_from)(mp_buf)?;
         match AddressType::from_afi_safi(afi, safi) {
             Ok(addr_type @ AddressType::Ipv4Unicast) => {
-                let add_path = ctx.add_path_enabled(addr_type);
+                let add_path = ctx.add_path_enabled(addr_type, direction);
                 let (_, nlri) = parse_till_empty_into_with_one_input_located(mp_buf, add_path)?;
                 Ok((buf, MpUnreach::Ipv4Unicast { nlri }))
             }
             Ok(addr_type @ AddressType::Ipv4Multicast) => {
-                let add_path = ctx.add_path_enabled(addr_type);
+                let add_path = ctx.add_path_enabled(addr_type, direction);
                 let (_, nlri) = parse_till_empty_into_with_one_input_located(mp_buf, add_path)?;
                 Ok((buf, MpUnreach::Ipv4Multicast { nlri }))
             }
             Ok(addr_type @ AddressType::Ipv4NlriMplsLabels) => {
-                let add_path = ctx.add_path_enabled(addr_type);
+                let add_path = ctx.add_path_enabled(addr_type, direction);
                 let (_, nlri) = parse_till_empty_into_with_three_inputs_located(
                     mp_buf,
                     add_path,
                     true,
-                    ctx.multiple_labels_limit(addr_type),
+                    ctx.multiple_labels_limit(addr_type, direction),
                 )?;
                 Ok((buf, MpUnreach::Ipv4NlriMplsLabels { nlri }))
             }
             Ok(addr_type @ AddressType::Ipv4MplsLabeledVpn) => {
-                let add_path = ctx.add_path_enabled(addr_type);
+                let add_path = ctx.add_path_enabled(addr_type, direction);
                 let (_, nlri) = parse_till_empty_into_with_three_inputs_located(
                     mp_buf,
                     add_path,
                     true,
-                    ctx.multiple_labels_limit(addr_type),
+                    ctx.multiple_labels_limit(addr_type, direction),
                 )?;
                 Ok((buf, MpUnreach::Ipv4MplsVpnUnicast { nlri }))
             }
             Ok(addr_type @ AddressType::Ipv6Unicast) => {
-                let add_path = ctx.add_path_enabled(addr_type);
+                let add_path = ctx.add_path_enabled(addr_type, direction);
                 let (_, nlri) = parse_till_empty_into_with_one_input_located(mp_buf, add_path)?;
                 Ok((buf, MpUnreach::Ipv6Unicast { nlri }))
             }
             Ok(addr_type @ AddressType::Ipv6Multicast) => {
-                let add_path = ctx.add_path_enabled(addr_type);
+                let add_path = ctx.add_path_enabled(addr_type, direction);
                 let (_, nlri) = parse_till_empty_into_with_one_input_located(mp_buf, add_path)?;
                 Ok((buf, MpUnreach::Ipv6Multicast { nlri }))
             }
             Ok(addr_type @ AddressType::Ipv6NlriMplsLabels) => {
-                let add_path = ctx.add_path_enabled(addr_type);
+                let add_path = ctx.add_path_enabled(addr_type, direction);
                 let (_, nlri) = parse_till_empty_into_with_three_inputs_located(
                     mp_buf,
                     add_path,
                     true,
-                    ctx.multiple_labels_limit(addr_type),
+                    ctx.multiple_labels_limit(addr_type, direction),
                 )?;
                 Ok((buf, MpUnreach::Ipv6NlriMplsLabels { nlri }))
             }
             Ok(addr_type @ AddressType::Ipv6MplsLabeledVpn) => {
-                let add_path = ctx.add_path_enabled(addr_type);
+                let add_path = ctx.add_path_enabled(addr_type, direction);
                 let (_, nlri) = parse_till_empty_into_with_three_inputs_located(
                     mp_buf,
                     add_path,
                     true,
-                    ctx.multiple_labels_limit(addr_type),
+                    ctx.multiple_labels_limit(addr_type, direction),
                 )?;
                 Ok((buf, MpUnreach::Ipv6MplsVpnUnicast { nlri }))
             }
             Ok(addr_type @ AddressType::L2VpnBgpEvpn) => {
-                let add_path = ctx.add_path_enabled(addr_type);
+                let add_path = ctx.add_path_enabled(addr_type, direction);
                 let (_, nlri) = parse_till_empty_into_with_one_input_located(mp_buf, add_path)?;
                 Ok((buf, MpUnreach::L2Evpn { nlri }))
             }
             Ok(addr_type @ AddressType::RouteTargetConstrains) => {
-                let add_path = ctx.add_path_enabled(addr_type);
+                let add_path = ctx.add_path_enabled(addr_type, direction);
                 let (_, nlri) = parse_till_empty_into_with_one_input_located(mp_buf, add_path)?;
                 Ok((buf, MpUnreach::RouteTargetMembership { nlri }))
             }
             Ok(addr_type @ AddressType::BgpLs) => {
-                let add_path = ctx.add_path_enabled(addr_type);
+                let add_path = ctx.add_path_enabled(addr_type, direction);
                 let (_, nlri) = parse_till_empty_into_with_one_input_located(mp_buf, add_path)?;
                 Ok((buf, MpUnreach::BgpLs { nlri }))
             }
             Ok(addr_type @ AddressType::BgpLsVpn) => {
-                let add_path = ctx.add_path_enabled(addr_type);
+                let add_path = ctx.add_path_enabled(addr_type, direction);
                 let (_, nlri) = parse_till_empty_into_with_one_input_located(mp_buf, add_path)?;
                 Ok((buf, MpUnreach::BgpLsVpn { nlri }))
             }

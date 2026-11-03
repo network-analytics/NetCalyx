@@ -330,7 +330,11 @@ fn test_bmp_v4_stateless_multiple_labels_uses_current_direction() {
         Ipv4Addr::new(192, 0, 2, 1),
         None,
     );
-    let labels = vec![MplsLabel::new([0, 0x10, 0]), MplsLabel::new([0, 0x20, 1])];
+    let labels = vec![
+        MplsLabel::new([0, 0x10, 0]),
+        MplsLabel::new([0, 0x20, 0]),
+        MplsLabel::new([0, 0x30, 1]),
+    ];
     let nlri =
         Ipv4NlriMplsLabelsAddress::from(None, labels, "198.51.100.0/24".parse().unwrap()).unwrap();
     let update = BgpMessage::Update(BgpUpdateMessage::new(
@@ -352,8 +356,11 @@ fn test_bmp_v4_stateless_multiple_labels_uses_current_direction() {
         vec![],
     ));
     let capability = BgpCapability::MultipleLabels(
-        MultipleLabelsCapability::new(vec![MultipleLabel::new(AddressType::Ipv4NlriMplsLabels, 2)])
-            .unwrap(),
+        MultipleLabelsCapability::new(vec![
+            MultipleLabel::new(AddressType::Ipv4NlriMplsLabels, 3),
+            MultipleLabel::new(AddressType::Ipv4NlriMplsLabels, 2),
+        ])
+        .unwrap(),
     );
     let stateless_parsing =
         RouteMonitoringTlv::build(0, RouteMonitoringTlvValue::StatelessParsing(capability))

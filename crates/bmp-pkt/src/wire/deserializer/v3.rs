@@ -248,7 +248,6 @@ impl<'a>
         let bgp_ctx = ctx.entry(peer_key).or_default();
         bgp_ctx.set_asn4(peer_header.is_asn4());
         let direction = peer_header.bgp_message_direction();
-        bgp_ctx.set_message_direction(direction);
         let input = buf;
         let (buf, update_message): (Span<'_>, BgpMessage) =
             parse_into_located_two_inputs(buf, bgp_ctx, direction)?;
@@ -456,12 +455,10 @@ impl<'a>
         };
         let bgp_ctx = ctx.entry(peer_key).or_default();
         bgp_ctx.set_asn4(peer_header.is_asn4());
-        bgp_ctx.set_message_direction(MessageDirection::Outbound);
         let (buf, sent_message) =
             parse_into_located_two_inputs(buf, bgp_ctx, MessageDirection::Outbound)?;
         let bgp_ctx = ctx.entry(peer_key).or_default();
         bgp_ctx.set_asn4(peer_header.is_asn4());
-        bgp_ctx.set_message_direction(MessageDirection::Inbound);
         let (buf, received_message) =
             parse_into_located_two_inputs(buf, bgp_ctx, MessageDirection::Inbound)?;
         let (buf, information) = parse_till_empty_into_located(buf)?;
@@ -551,7 +548,6 @@ impl<'a>
             nom::combinator::map_res(be_u8, PeerDownReasonCode::try_from)(buf)?;
         match reason_code {
             PeerDownReasonCode::LocalSystemClosedNotificationPduFollows => {
-                bgp_ctx.set_message_direction(MessageDirection::Outbound);
                 let (buf, msg) =
                     parse_into_located_two_inputs(buf, bgp_ctx, MessageDirection::Outbound)?;
                 Ok((
@@ -567,7 +563,6 @@ impl<'a>
                 ))
             }
             PeerDownReasonCode::RemoteSystemClosedNotificationPduFollows => {
-                bgp_ctx.set_message_direction(MessageDirection::Inbound);
                 let (buf, msg) =
                     parse_into_located_two_inputs(buf, bgp_ctx, MessageDirection::Inbound)?;
                 Ok((

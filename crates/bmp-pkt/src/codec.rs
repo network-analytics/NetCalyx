@@ -27,7 +27,7 @@ use netcalyx_bgp_pkt::capabilities::BgpCapability;
 
 use crate::wire::deserializer::{BmpParsingContext, loc_rib_add_path};
 use netcalyx_bgp_pkt::capabilities::{AddPathCapability, MultipleLabelsCapability};
-use netcalyx_bgp_pkt::wire::deserializer::{AddPathMap, MultipleLabelsMap};
+use netcalyx_bgp_pkt::wire::deserializer::{AddPathMap, MultipleLabelsLimits, MultipleLabelsMap};
 use netcalyx_parse_utils::{LocatedParsingError, ReadablePduWithOneInput, Span, WritablePdu};
 use nom::Needed;
 use serde::{Deserialize, Serialize};
@@ -132,7 +132,7 @@ fn negotiate_multiple_labels(
         {
             negotiated
                 .entry(address_type)
-                .or_insert((local.count(), remote.count()));
+                .or_insert(MultipleLabelsLimits::new(local.count(), remote.count()));
         }
     }
     negotiated
@@ -328,9 +328,10 @@ mod tests {
     use netcalyx_bgp_pkt::open::{BgpOpenMessage, BgpOpenMessageParameter};
     use netcalyx_bgp_pkt::path_attribute::{MpReach, MpUnreach, PathAttribute, PathAttributeValue};
     use netcalyx_bgp_pkt::update::BgpUpdateMessage;
+    use netcalyx_bgp_pkt::wire::deserializer::update::LocatedBgpUpdateMessageParsingError;
     use netcalyx_bgp_pkt::wire::deserializer::{AddPathMap, BgpParsingContext, MessageDirection};
     use netcalyx_iana::address_family::{AddressFamily, AddressType};
-    use netcalyx_parse_utils::ReadablePduWithTwoInputs;
+    use netcalyx_parse_utils::{ReadablePduWithTwoInputs, parse_into_located_two_inputs};
     use std::net::Ipv6Addr;
     use std::str::FromStr;
 
@@ -718,7 +719,7 @@ mod tests {
     #[test]
     fn test_bgp_parsing_context_direction_selection() {
         let mut ctx = BgpParsingContext::default();
-        ctx.update_capabilities(&add_path_capability(true, false));
+        ctx.update_capabilities(&add_path_capability(true, false), MessageDirection::Inbound);
         for direction in [
             MessageDirection::Outbound,
             MessageDirection::Inbound,
@@ -743,8 +744,12 @@ mod tests {
             };
             let mut wire = Vec::new();
             update.write(&mut wire).unwrap();
-            let (remaining, parsed) =
-                BgpUpdateMessage::from_wire(Span::new(&wire), &mut ctx).unwrap();
+            let parsed_result: nom::IResult<
+                Span<'_>,
+                BgpUpdateMessage,
+                LocatedBgpUpdateMessageParsingError<'_>,
+            > = parse_into_located_two_inputs(Span::new(&wire), &mut ctx, direction);
+            let (remaining, parsed) = parsed_result.unwrap();
             assert!(remaining.is_empty());
             assert_eq!(parsed, update);
         }
@@ -1050,6 +1055,26 @@ mod tests {
         BgpMessage::Update(BgpUpdateMessage::new(vec![], vec![attribute], vec![]))
     }
 
+    // Build an UPDATE withdrawing one IPv4 labeled route with `label_count`
+    // labels.
+    fn multiple_labels_withdrawal(label_count: u8) -> BgpMessage {
+        let labels = (1..=label_count)
+            .map(|i| MplsLabel::new([0, i << 4, if i == label_count { 1 } else { 0 }]))
+            .collect();
+        let route =
+            Ipv4NlriMplsLabelsAddress::from(None, labels, "198.51.100.0/24".parse().unwrap())
+                .unwrap();
+        let attribute = PathAttribute::from(
+            true,
+            false,
+            false,
+            false,
+            PathAttributeValue::MpUnreach(MpUnreach::Ipv4NlriMplsLabels { nlri: vec![route] }),
+        )
+        .unwrap();
+        BgpMessage::Update(BgpUpdateMessage::new(vec![], vec![attribute], vec![]))
+    }
+
     // Exercise asymmetric label limits for both directions and BGP-ID
     // aliases after a single Peer Up, including a session reset.
     fn assert_bidirectional_multiple_labels_decoding(version: BmpVersion) {
@@ -1102,6 +1127,14 @@ mod tests {
                         version,
                         header(adj_rib_out, bgp_id),
                         multiple_labels_update(label_count),
+                        None,
+                    );
+                    assert_codec_roundtrip(&mut codec, message);
+
+                    let message = route_monitoring_message(
+                        version,
+                        header(adj_rib_out, bgp_id),
+                        multiple_labels_withdrawal(label_count),
                         None,
                     );
                     assert_codec_roundtrip(&mut codec, message);
