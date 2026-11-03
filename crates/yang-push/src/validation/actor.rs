@@ -41,28 +41,28 @@ pub enum ValidationActorError {
 impl std::error::Error for ValidationActorError {}
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum ValidationActorCommand {
+pub(super) enum ValidationActorCommand {
     Shutdown,
 }
 
-pub(crate) struct ValidationActor {
-    pub(crate) max_buffered_packets_per_peer: usize,
-    pub(crate) max_buffered_packets_per_subscription: usize,
+pub(super) struct ValidationActor {
+    pub(super) max_buffered_packets_per_peer: usize,
+    pub(super) max_buffered_packets_per_subscription: usize,
     /// Whether `anydata` nodes are validated strictly against their
     /// schema (see `yang5::data::DataParserFlags::ANYDATA_STRICT`).
-    pub(crate) anydata_strict: bool,
-    pub(crate) peer_cache: FxHashMap<IpAddr, CachedPeerSubscriptions>,
-    pub(crate) cmd_rx: mpsc::Receiver<ValidationActorCommand>,
-    pub(crate) rx: async_channel::Receiver<Arc<UdpNotifRequest>>,
-    pub(crate) tx: async_channel::Sender<ValidatedNotification>,
-    pub(crate) cache_cmd_tx: async_channel::Sender<CacheLookupCommand>,
-    pub(crate) cache_tx: async_channel::Sender<CacheResponse>,
-    pub(crate) cache_rx: async_channel::Receiver<CacheResponse>,
+    pub(super) anydata_strict: bool,
+    pub(super) peer_cache: FxHashMap<IpAddr, CachedPeerSubscriptions>,
+    pub(super) cmd_rx: mpsc::Receiver<ValidationActorCommand>,
+    pub(super) rx: async_channel::Receiver<Arc<UdpNotifRequest>>,
+    pub(super) tx: async_channel::Sender<ValidatedNotification>,
+    pub(super) cache_cmd_tx: async_channel::Sender<CacheLookupCommand>,
+    pub(super) cache_tx: async_channel::Sender<CacheResponse>,
+    pub(super) cache_rx: async_channel::Receiver<CacheResponse>,
     /// Packets buffered while their subscription waits for schemas to arrive,
     /// then drained in pending_packets once the cache responds. They are
     /// processed one at a time.
-    pub(crate) pending_packets: VecDeque<Arc<UdpNotifRequest>>,
-    pub(crate) stats: ValidationStats,
+    pub(super) pending_packets: VecDeque<Arc<UdpNotifRequest>>,
+    pub(super) stats: ValidationStats,
 }
 
 impl ValidationActor {

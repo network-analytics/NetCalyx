@@ -261,7 +261,7 @@ impl ValidationActor {
 
     /// Build the base OpenTelemetry tag set (peer address, port, publisher id)
     /// for a given UDPNotif packet.
-    pub(crate) fn peer_tags_from_packet(
+    pub(super) fn peer_tags_from_packet(
         peer: SocketAddr,
         packet: &UdpNotifPacket,
     ) -> Vec<opentelemetry::KeyValue> {
@@ -382,7 +382,7 @@ impl ValidationActor {
     /// Core per-packet handler, called for every incoming UDP-Notif message and
     /// for every packet drained from the per-subscription buffer once schemas
     /// arrive.
-    pub(crate) async fn process_udp_notif_msg(
+    pub(super) async fn process_udp_notif_msg(
         &mut self,
         message: Arc<UdpNotifRequest>,
         is_reprocessed: bool,
@@ -870,7 +870,7 @@ impl ValidationActor {
     /// Handle a cache lookup response: load (or clear) the YANG context for the
     /// subscription, clear `schema_fetch_pending`, and drain the hold buffer
     /// into `pending_packets` for validation.
-    pub(crate) fn process_cache_response(
+    pub(super) fn process_cache_response(
         &mut self,
         response: CacheResponse,
     ) -> Result<(), ValidationActorError> {

@@ -41,7 +41,7 @@ impl ValidationActor {
     /// schema path never carries them, so we compare the structural
     /// location path and still detect real prefix/structure differences
     /// without a spurious mismatch from the predicate itself.
-    pub(crate) fn check_xpath_target_resolves(
+    pub(super) fn check_xpath_target_resolves(
         subscription_info: &SubscriptionInfo,
         yang_ctx: &yang5::context::Context,
     ) {
@@ -173,7 +173,7 @@ impl ValidationActor {
 
     /// Construct a `SubscriptionInfo` from a `SubscriptionStarted/Modified`
     /// notification. Returns `None` if module-version is absent.
-    pub(crate) fn build_subscription_info(
+    pub(super) fn build_subscription_info(
         &self,
         peer: SocketAddr,
         message_id: u32,
