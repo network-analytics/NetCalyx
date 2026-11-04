@@ -1037,23 +1037,20 @@ fn netconf_fetcher(
 /// Fetches local system information into a Manifest object.
 /// (host name, OS version, software version, build info, etc.)
 pub(crate) fn fetch_sysinfo_manifest(name: Option<String>) -> Manifest {
-    let mut sys = System::new_all();
-    sys.refresh_all();
-
     Manifest::new(
         name.filter(|n| !n.is_empty()).or_else(|| {
             Some(format!(
                 "{}@{}",
                 build::PROJECT_NAME,
-                System::host_name().unwrap_or_else(|| "unknown".to_string())
+                System::host_name().unwrap_or_else(|_| "unknown".to_string())
             ))
         }),
         Some("NetCalyx".to_string()),
         Some(3746), // Swisscom AG (temp until NetCalyx has its own PEN number)
         Some(format!("{} ({})", build::PKG_VERSION, build::SHORT_COMMIT)),
         Some(build::BUILD_RUST_CHANNEL.to_string()),
-        System::os_version(),
-        System::name(),
+        System::os_version().ok(),
+        System::name().ok(),
     )
 }
 
