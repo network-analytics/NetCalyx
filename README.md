@@ -1,6 +1,6 @@
 # NetCalyx
 
-[<img alt="github" src="https://img.shields.io/badge/github-network--analytics/netcalyx-8da0cb??style=for-the-badge&labelColor=555555&logo=github" height="20">](https://github.com/network-analytics/NetCalyx)
+[<img alt="github" src="https://img.shields.io/badge/github-network--analytics/netcalyx-8da0cb?style=for-the-badge&labelColor=555555&logo=github" height="20">](https://github.com/network-analytics/NetCalyx)
 [<img alt="CI" src="https://img.shields.io/github/actions/workflow/status/network-analytics/NetCalyx/ci.yml?branch=main&style=for-the-badge&labelColor=555555&logo=githubactions" height="20">](https://github.com/network-analytics/NetCalyx/actions/workflows/ci.yml)
 
 > **NetCalyx** is a fork of [NetGauze](https://github.com/NetGauze/NetGauze),
@@ -19,7 +19,7 @@ represented as rich, immutable data structures where invalid states are unrepres
 ### BGP
 
 - Packet representation and wire format serialization/deserialization: [`netcalyx-bgp-pkt`](crates/bgp-pkt/README.md)
-- BGP Speaker with connection management and fine-state-machine (FSM): [
+- BGP Speaker with connection management and finite-state machine (FSM): [
   `netcalyx-bgp-speaker`](crates/bgp-speaker/README.md)
 
 Supports BGP-4, MP-BGP (IPv4/IPv6 Unicast & Multicast, MPLS VPN, EVPN, BGP-LS), 4-octet ASN, Add-Path, Route Refresh,
@@ -36,8 +36,9 @@ Extended Messages, and communities (standard, extended, large).
 - Packet representation and wire format serialization/deserialization: [`netcalyx-flow-pkt`](crates/flow-pkt/README.md)
 - Service building block for receiving messages: [`netcalyx-flow-service`](crates/flow-service/README.md)
 
-Includes a code generator for IANA IPFIX Information Elements as well as support for enterprise-specific IEs (e.g.,
-VMware, Nokia).
+Information Elements are generated at build time by
+[`netcalyx-ipfix-code-generator`](crates/ipfix-code-generator/README.md) from the IANA registry, together with
+enterprise-specific IEs (VMware, Nokia, NetCalyx).
 
 ### UDP-Notif
 
@@ -58,21 +59,21 @@ VMware, Nokia).
 [`netcalyx-collector`](crates/collector/README.md) is a network telemetry collector that ties the protocol libraries
 together into a deployable service.
 
-**Inputs:** IPFIX/NetFlow V9, UDP-Notif, YANG-Push, and Kafka for enrichment data, while BMP and BGP are currently
-work in progress.
+**Inputs:** IPFIX/NetFlow V9, YANG-Push (UDP-Notif), and BMP. Enrichment data can be fed from Kafka and from files.
 
-**Publishers:** Kafka (Avro, JSON, YANG)
+**Publishers:** Kafka (JSON, Avro, YANG) and HTTP
 
 **Features:**
 
 - Flow aggregation and enrichment
+- YANG-Push message validation and YANG schema registration in a Schema Registry
 - OpenTelemetry metrics export (OTLP)
 - jemalloc memory allocator for production workloads
 - YAML-based configuration with per-module log filtering
-- RPM packaging support
+- RPM and DEB packaging support
 
 ```bash
-cargo run -p netcalyx-collector -- /path/to/config.yaml
+cargo run --package netcalyx-collector -- /path/to/config.yaml
 ```
 
 See example configurations in [`crates/collector/`](crates/collector/).
@@ -85,7 +86,25 @@ See example configurations in [`crates/collector/`](crates/collector/).
 and UDP-Notif from PCAP files into JSON Lines format.
 
 ```bash
-cargo run -p netcalyx-pcap-decoder -- --protocol bmp --ports 11019 input.pcap -o output.jsonl
+cargo run --package netcalyx-pcap-decoder -- --protocol bmp --ports 11019 --input input.pcap --output output.jsonl
+```
+
+### PCAP Tools
+
+[`netcalyx-pcap-tools`](crates/pcap-tools/README.md) — CLI utilities to manipulate PCAP files containing network
+telemetry protocols (e.g. `bmp-split` to rewrite a BMP capture so that each TCP segment carries exactly one BMP message).
+
+```bash
+cargo run --package netcalyx-pcap-tools -- bmp-split --input in.pcap --output out.pcap --ports 1790
+```
+
+### YANG Consumer
+
+[`netcalyx-yang-consumer`](crates/yang-consumer/README.md) — CLI tool that consumes YANG-encoded messages from
+Kafka and validates them against YANG schemas fetched from a Schema Registry.
+
+```bash
+cargo run --package netcalyx-yang-consumer -- --help
 ```
 
 ## Foundational Crates
@@ -99,6 +118,7 @@ These crates provide shared infrastructure used across the protocol libraries:
 | [`netcalyx-serde-macros`](crates/serde-macros/) | Procedural macros for error location tracking in parsers         |
 | [`netcalyx-locate`](crates/locate/)             | Binary span types for tracking byte positions during parsing     |
 | [`netcalyx-analytics`](crates/analytics/)       | Analytics and aggregation primitives                             |
+| [`netcalyx-pcap-reader`](crates/pcap-reader/)   | Simple PCAP reader used by the tests and the PCAP tools          |
 
 ## Quick Start
 
@@ -106,7 +126,7 @@ Add the crate you need to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-netcalyx-bgp-pkt = "0.9"
+netcalyx-bgp-pkt = "0.3"
 ```
 
 Parse a BGP message from bytes:
@@ -116,10 +136,10 @@ use netcalyx_bgp_pkt::BgpMessage;
 use netcalyx_bgp_pkt::wire::deserializer::BgpParsingContext;
 use netcalyx_parse_utils::{ReadablePduWithOneInput, Span};
 
-let raw: & [u8] = & [ /* BGP message bytes */ ];
+let raw: &[u8] = &[ /* BGP message bytes */ ];
 let span = Span::new(raw);
-let mut ctx = BgpParsingContext::default ();
-let (_remaining, message) = BgpMessage::from_wire(span, & mut ctx).unwrap();
+let mut ctx = BgpParsingContext::default();
+let (_remaining, message) = BgpMessage::from_wire(span, &mut ctx).unwrap();
 ```
 
 ## Design Principles
@@ -164,7 +184,7 @@ cargo +nightly clippy --tests -- -Dclippy::all
 ls crates/*/examples
 
 # Run the IPFIX/NetFlow printer
-cargo run -p netcalyx-flow-service --example print-flow
+cargo run --package netcalyx-flow-service --example print-flow
 ```
 
 ## Benchmarks
@@ -177,9 +197,9 @@ To compare a branch against `main`, save a baseline on `main` and compare agains
 
 ```bash
 git checkout main
-cargo bench -p netcalyx-bgp-pkt --features bench --bench serde_benchmark -- --save-baseline main
+cargo bench --package netcalyx-bgp-pkt --features bench --bench serde_benchmark -- --save-baseline main
 git checkout <branch>
-cargo bench -p netcalyx-bgp-pkt --features bench --bench serde_benchmark -- --baseline main
+cargo bench --package netcalyx-bgp-pkt --features bench --bench serde_benchmark -- --baseline main
 ```
 
 Run both on an idle machine back to back; differences of a few percent are usually noise.
@@ -195,18 +215,38 @@ cargo +nightly fuzz run fuzz-bgp-peer
 cargo +nightly fuzz run fuzz-bmp-pkt
 cargo +nightly fuzz run fuzz-bmp-pkt-serialize
 cargo +nightly fuzz run fuzz-ipfix-pkt
+cargo +nightly fuzz run fuzz-ipfix-pkt-serialize
 cargo +nightly fuzz run fuzz-netflow-v9-pkt
+cargo +nightly fuzz run fuzz-netflow-v9-pkt-serialize
+cargo +nightly fuzz run fuzz-flow-codec
+cargo +nightly fuzz run fuzz-udp-notif-pkt
+cargo +nightly fuzz run fuzz-udp-notif-pkt-serialize
+cargo +nightly fuzz run fuzz-netconf
 ```
 
-## Building RPMs
+## Building Packages
+
+RPM:
 
 ```bash
 cargo install cargo-generate-rpm
 cargo build --release -p netcalyx-collector
 strip target/release/netcalyx-collector
-cargo generate-rpm -p crates/collector
+cargo generate-rpm -p crates/collector --auto-req find-requires
 # Package output: target/generate-rpm/
 ```
+
+DEB:
+
+```bash
+cargo install cargo-deb
+cargo build --release -p netcalyx-collector
+cargo deb -p netcalyx-collector --no-build
+# Package output: target/debian/
+```
+
+Pre-built packages and binaries for `netcalyx-collector`, `netcalyx-pcap-decoder`, `netcalyx-pcap-tools` and
+`netcalyx-yang-consumer` are attached to the [GitHub Releases](https://github.com/network-analytics/NetCalyx/releases).
 
 ## License
 
@@ -214,7 +254,7 @@ Copyright (C) 2026-present The NetCalyx Authors. All rights reserved.
 Copyright (C) 2022-present The NetGauze Authors. All rights reserved.
 
 NetCalyx is licensed under the Apache License, Version 2.0
-([LICENSE])(LICENSE) or <http://www.apache.org/licenses/LICENSE-2.0>).
+([LICENSE](LICENSE) or <http://www.apache.org/licenses/LICENSE-2.0>).
 Attribution notices are in [NOTICE](NOTICE).
 The author list is in [AUTHORS](AUTHORS).
 
