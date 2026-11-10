@@ -104,6 +104,16 @@ udp_notif:
   #    - address: '[::1]:2713'
   #      workers: 2
 
+  # Directory where YANG libraries fetched from devices are cached.
+  # It must exist and be writable, the collector does not create it.
+  cache_location: /tmp/netcalyx-udpnotif-cache
+
+  # NETCONF client used to fetch the YANG library from each device.
+  netconf:
+    username: someusername
+    private_key_path: /path/to/private-key
+    port: 830
+
   # Multiple publishers can be defined.
   # A packet is copied for each publisher group, and load-balancing is defined between endpoints in the same group.
   publishers:
