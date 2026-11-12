@@ -15,7 +15,7 @@
 
 //! Attribute interning strategies independent of the RIB's trie layout.
 //!
-//! [`AttrStore`] retains strong references until an explicit sweep.
+//! [`StrongAttrStore`] retains strong references until an explicit sweep.
 //! [`WeakAttrStore`] lets values drop with their last owner. Its pools still
 //! sweep dead weak entries before growing; this can pause the writer.
 //! Dead weak pointers retain backing allocations (including inline slice
@@ -29,7 +29,7 @@ use std::sync::{Arc, Weak};
 use hashbrown::HashTable;
 use rustc_hash::FxBuildHasher;
 
-use crate::attrs::{AsPathSegment, AttrStore, AttrSubPools, RouteAttributes, SlicePool};
+use crate::attrs::{AsPathSegment, AttrSubPools, RouteAttributes, SlicePool, StrongAttrStore};
 
 const MAX_POST_SWEEP_LOAD: (usize, usize) = (3, 4);
 
@@ -44,15 +44,15 @@ pub trait AttrInterner: Default {
     fn gc(&mut self);
 }
 
-impl AttrInterner for AttrStore {
+impl AttrInterner for StrongAttrStore {
     const NEEDS_GC: bool = true;
 
     fn intern(&mut self, attrs: RouteAttributes) -> Arc<RouteAttributes> {
-        AttrStore::intern(self, attrs)
+        StrongAttrStore::intern(self, attrs)
     }
 
     fn gc(&mut self) {
-        AttrStore::gc(self);
+        StrongAttrStore::gc(self);
     }
 }
 

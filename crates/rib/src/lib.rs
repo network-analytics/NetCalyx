@@ -25,7 +25,7 @@ pub mod model;
 pub mod peers;
 pub mod types;
 
-pub use attrs::{AttrStore, RouteAttributes};
+pub use attrs::{RouteAttributes, StrongAttrStore};
 pub use interner::{AttrInterner, WeakAttrStore};
 pub use model::{AfiSafiRib, AfiSafiTable, PeerId, PeerTable, RibStore, RibTable, RouterRib};
 pub use types::{

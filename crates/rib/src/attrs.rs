@@ -17,7 +17,7 @@
 //!
 //! Usage:
 //! ```ignore
-//! let mut store = AttrStore::new();
+//! let mut store = StrongAttrStore::new();
 //! let shared = store.intern(attrs);        // Arc<RouteAttributes>
 //! rib.insert(prefix, Route { attrs: Arc::clone(&shared), .. });
 //! rib.remove(&prefix);                     // refcount drops
@@ -161,7 +161,7 @@ where
 /// Attribute store with interning for common sub-components (AS paths,
 /// communities, etc.) and whole-attribute sets.
 #[derive(Default)]
-pub struct AttrStore {
+pub struct StrongAttrStore {
     sub_pools: AttrSubPools<
         SliceInterner<AsPathSegment>,
         SliceInterner<Ipv4Addr>,
@@ -173,7 +173,7 @@ pub struct AttrStore {
     attrs: FxHashSet<Arc<RouteAttributes>>,
 }
 
-impl AttrStore {
+impl StrongAttrStore {
     pub fn new() -> Self {
         Self::default()
     }
@@ -262,7 +262,7 @@ mod tests {
 
     #[test]
     fn intern_deduplicates_equal_attrs() {
-        let mut store = AttrStore::new();
+        let mut store = StrongAttrStore::new();
         let a = store.intern(RouteAttributes {
             local_pref: Some(100),
             ..Default::default()
@@ -367,7 +367,7 @@ mod tests {
 
     #[test]
     fn intern_keeps_distinct_attrs_separate() {
-        let mut store = AttrStore::new();
+        let mut store = StrongAttrStore::new();
         let a = store.intern(RouteAttributes {
             local_pref: Some(100),
             ..Default::default()
@@ -382,7 +382,7 @@ mod tests {
 
     #[test]
     fn gc_evicts_only_unreferenced_entries() {
-        let mut store = AttrStore::new();
+        let mut store = StrongAttrStore::new();
         let kept = store.intern(RouteAttributes {
             local_pref: Some(1),
             ..Default::default()
@@ -400,7 +400,7 @@ mod tests {
 
     #[test]
     fn intern_dedupes_as_path_and_shares_pool_with_as4_path() {
-        let mut store = AttrStore::new();
+        let mut store = StrongAttrStore::new();
         let as_path: Arc<[AsPathSegment]> = Arc::from(vec![AsPathSegment {
             segment_type: AsPathSegmentType::AsSequence,
             as_numbers: Box::new([65000, 65001]),
@@ -430,7 +430,7 @@ mod tests {
 
     #[test]
     fn intern_dedupes_cluster_list_and_communities_across_attrs() {
-        let mut store = AttrStore::new();
+        let mut store = StrongAttrStore::new();
         let cluster_list: Arc<[Ipv4Addr]> = Arc::from(vec![Ipv4Addr::new(1, 1, 1, 1)]);
         let communities: Arc<[Box<str>]> = Arc::from(vec![Box::from("65000:100")]);
 
@@ -460,7 +460,7 @@ mod tests {
 
     #[test]
     fn gc_evicts_sub_pools_only_after_the_whole_attrs_arc_is_dropped() {
-        let mut store = AttrStore::new();
+        let mut store = StrongAttrStore::new();
         let as_path: Arc<[AsPathSegment]> = Arc::from(vec![AsPathSegment {
             segment_type: AsPathSegmentType::AsSequence,
             as_numbers: Box::new([65000]),

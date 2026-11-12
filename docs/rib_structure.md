@@ -6,8 +6,8 @@ snapshots with per-trie copy-on-write.
 ## Hierarchy
 
 ```text
-RibStore
-├─ attr_store: AttrStore
+RibStore<I: AttrInterner = WeakAttrStore>
+├─ attr_store: I
 └─ ribs: FxHashMap<IpAddr, Arc<RouterRib>>                     [Arc 1]  one entry per router
     └─ RouterRib
         ├─ peers: PeerTable                                    PeerKey <-> router-local PeerId
@@ -19,6 +19,9 @@ RibStore
                     └─ routes: PrefixMap<Ipv4Net, MultiRoute>  [TRIE]
                         └─ MultiRoute::paths: Route { peer: Option<PeerId>, path_id, .. }
 ```
+
+`WeakAttrStore` is the default; select `RibStore<StrongAttrStore>` for strong
+interning with explicit garbage collection.
 
 `Ipv6Unicast`, `Ipv4LabeledUnicast` and `Ipv6LabeledUnicast` repeat the same
 shape with `Ipv6Net` and/or `LabeledRoutes` in place of `Routes`.
