@@ -45,6 +45,7 @@ use netcalyx_bmp_pkt::PeerKey;
 use netcalyx_bmp_pkt::v4::{PathMarking, PathStatus};
 
 use crate::attrs::RouteAttributes;
+use crate::interner::{AttrInterner, WeakAttrStore};
 use crate::peers::PeerIndex;
 use crate::types::{
     AfiSafiType, LabeledRouteExtra, RibContext, RibView, TableId, normalize_peer_key,
@@ -142,7 +143,7 @@ impl PeerTable {
 
 /// Main RIB store: maps router IPs to their RIBs.
 #[derive(Default)]
-pub struct RibStore<I: crate::interner::AttrInterner = crate::attrs::AttrStore> {
+pub struct RibStore<I: AttrInterner = WeakAttrStore> {
     pub attr_store: I,
     pub ribs: FxHashMap<IpAddr, Arc<RouterRib>>,
 }

@@ -13,16 +13,18 @@ lookup and BMP ingestion will be separate, later additions on top of this.
 
 ## Attribute interning
 
-`RibStore<I = AttrStore>` accepts any `AttrInterner`. The default preserves
-the existing strong-reference pools and explicit `gc()` behavior. Select the
-weak-reference implementation explicitly:
+`RibStore<I = WeakAttrStore>` accepts any `AttrInterner`. The default uses
+weak-reference pools:
 
 ```rust
-use netcalyx_rib::{AttrInterner, RibStore, RouteAttributes, WeakAttrStore};
+use netcalyx_rib::{AttrInterner, RibStore, RouteAttributes};
 
-let mut rib = RibStore::<WeakAttrStore>::default();
+let mut rib: RibStore = RibStore::default();
 let attrs = rib.attr_store.intern(RouteAttributes::default());
 ```
+
+Select `RibStore::<AttrStore>::default()` explicitly to retain the original
+strong-reference pools and explicit `gc()` behavior.
 
 Both implementations deduplicate sub-components before whole attribute sets,
 and share one interner across the store's routers and views. Generic callers
