@@ -20,7 +20,7 @@ env:
 
 jobs:
   fmt:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     name: stable / fmt
     steps:
       - uses: actions/checkout@v7
@@ -35,7 +35,7 @@ jobs:
         run: cargo fmt --check
 
   license:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     name: license / check
     if: github.event_name == 'pull_request'
     steps:
@@ -48,7 +48,7 @@ jobs:
             --base-ref ${{ github.event.pull_request.base.sha }}
 
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     name: stable / build
     steps:
       - uses: actions/checkout@v7
@@ -66,7 +66,7 @@ jobs:
 
   test:
     name: Rust ${{matrix.rust}}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -128,7 +128,7 @@ jobs:
   # TODO: enable min version checks once NetCalyx is more stable
   #  minimal:
   #    name: Minimal versions
-  #    runs-on: ubuntu-latest
+  #    runs-on: ubuntu-24.04
   #    timeout-minutes: 45
   #    env:
   #      TRYBUILD: overwrite
@@ -140,7 +140,7 @@ jobs:
 
   doc:
     name: Documentation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
       RUSTDOCFLAGS: -Dwarnings --cfg docsrs
@@ -160,7 +160,7 @@ jobs:
 
   clippy:
     name: Clippy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
       NETCALYX_CUSTOM_XML_PATHS: ""
@@ -180,7 +180,7 @@ jobs:
   coverage:
     # use llvm-cov to build and collect coverage and outputs in a format that is compatible with
     # codecov.io
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     name: ubuntu / stable / coverage
     env:
       TRYBUILD: overwrite
@@ -246,7 +246,7 @@ jobs:
   # - version/release are used by RPM packaging.
   # - deb_version/deb_release are used by DEB packaging.
   version:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     name: Calculate version information
     outputs:
       version: ${{ steps.version_and_release.outputs.VERSION }}
@@ -278,7 +278,7 @@ jobs:
 
   # Build RPM packages for different distributions
   build-collector-rpm:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: version
     strategy:
       matrix: &rpm-matrix
@@ -331,7 +331,7 @@ jobs:
           retention-days: 30
 
   build-collector-deb:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: version
     strategy:
       matrix: &deb-matrix
@@ -389,7 +389,7 @@ jobs:
           retention-days: 30
 
   test-collector-rpm:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: build-collector-rpm
     strategy:
       matrix: *rpm-matrix
@@ -415,7 +415,7 @@ jobs:
         run: netcalyx-collector crates/collector/config_ci_rpm_test.yaml
 
   test-collector-deb:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: build-collector-deb
     strategy:
       matrix: *deb-matrix
@@ -462,12 +462,12 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             binary_name: netcalyx-pcap-decoder
             strip_command: true
             dist_and_arch: x86_64-ubuntu_latest # used just for naming the binary
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             container: rockylinux/rockylinux:8.10
             target: x86_64-unknown-linux-gnu
             binary_name: netcalyx-pcap-decoder
@@ -532,13 +532,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             binary_name: netcalyx-pcap-tools
             strip_command: true
             smoke_test: true
             dist_and_arch: x86_64-ubuntu_latest # used just for naming the binary
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             container: rockylinux/rockylinux:8.10
             target: x86_64-unknown-linux-gnu
             binary_name: netcalyx-pcap-tools
@@ -616,7 +616,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             binary_name: netcalyx-yang-consumer
             strip_command: true
@@ -625,7 +625,7 @@ jobs:
               sudo apt-get update
               sudo apt-get install -y cmake perl gcc g++ libpcre2-dev libcurl4-openssl-dev
             dist_and_arch: x86_64-ubuntu_latest # used just for naming the binary
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             container: rockylinux/rockylinux:8.10
             target: x86_64-unknown-linux-gnu
             binary_name: netcalyx-yang-consumer
@@ -677,7 +677,7 @@ jobs:
           retention-days: 30
 
   commitlint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:
