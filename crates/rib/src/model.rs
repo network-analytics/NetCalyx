@@ -142,8 +142,8 @@ impl PeerTable {
 
 /// Main RIB store: maps router IPs to their RIBs.
 #[derive(Default)]
-pub struct RibStore {
-    pub attr_store: crate::attrs::AttrStore,
+pub struct RibStore<I: crate::interner::AttrInterner = crate::attrs::AttrStore> {
+    pub attr_store: I,
     pub ribs: FxHashMap<IpAddr, Arc<RouterRib>>,
 }
 

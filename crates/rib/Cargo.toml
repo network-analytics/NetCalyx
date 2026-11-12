@@ -22,3 +22,4 @@ rustc-hash = { workspace = true }
 smallvec = { workspace = true, features = ["const_generics"] }
 ipnet = { workspace = true }
 prefix-trie = { workspace = true }
+hashbrown = "0.16"

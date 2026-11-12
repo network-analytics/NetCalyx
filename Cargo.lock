@@ -3044,6 +3044,7 @@ dependencies = [
 name = "netcalyx-rib"
 version = "0.3.0"
 dependencies = [
+ "hashbrown 0.16.1",
  "ipnet",
  "netcalyx-bgp-pkt",
  "netcalyx-bmp-pkt",
