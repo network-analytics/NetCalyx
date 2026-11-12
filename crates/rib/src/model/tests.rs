@@ -515,9 +515,14 @@ fn afi_safi_type_matches_the_table_variant() {
 
 #[test]
 fn rib_store_default_is_empty() {
-    let store: RibStore = RibStore::default();
+    use crate::{AttrInterner, RouteAttributes};
+
+    let mut store: RibStore = RibStore::default();
     assert!(store.ribs.is_empty());
-    assert_eq!(store.attr_store.unique_attrs(), 0);
+    let attrs = store.attr_store.intern(RouteAttributes::default());
+    let weak = Arc::downgrade(&attrs);
+    drop(attrs);
+    assert!(weak.upgrade().is_none());
 }
 
 #[test]
