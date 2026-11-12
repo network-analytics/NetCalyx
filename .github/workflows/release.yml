@@ -18,7 +18,7 @@ jobs:
 
   # Upload release artifacts to already existent GitHub releases
   upload-release-artifacts:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     name: Upload release artifacts
     needs: [ test-and-build ]
     permissions:
@@ -40,7 +40,7 @@ jobs:
 
   # Publish crates to crates.io
   publish-crates:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     name: Publish crates to crates.io
     needs: [ test-and-build ]
     steps:
