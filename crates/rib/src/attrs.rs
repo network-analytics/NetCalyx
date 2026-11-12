@@ -97,18 +97,61 @@ pub struct AsPathSegment {
     pub as_numbers: Box<[u32]>,
 }
 
+pub(crate) trait SlicePool<T> {
+    fn intern_slice(&mut self, slice: &[T]) -> Arc<[T]>;
+}
+
+#[derive(Default)]
+pub(crate) struct AttrSubPools<A, C, S> {
+    as_path: A,
+    cluster_list: C,
+    communities: S,
+    ext_communities: S,
+    ext_communities_ipv6: S,
+    large_communities: S,
+}
+
+impl<A, C, S> AttrSubPools<A, C, S>
+where
+    A: SlicePool<AsPathSegment>,
+    C: SlicePool<Ipv4Addr>,
+    S: SlicePool<Box<str>>,
+{
+    pub(crate) fn intern(&mut self, attrs: &mut RouteAttributes) {
+        attrs.as_path = self.as_path.intern_slice(&attrs.as_path);
+        attrs.as4_path = attrs
+            .as4_path
+            .as_deref()
+            .map(|p| self.as_path.intern_slice(p));
+        attrs.cluster_list = self.cluster_list.intern_slice(&attrs.cluster_list);
+        attrs.communities = attrs
+            .communities
+            .as_deref()
+            .map(|c| self.communities.intern_slice(c));
+        attrs.ext_communities = attrs
+            .ext_communities
+            .as_deref()
+            .map(|c| self.ext_communities.intern_slice(c));
+        attrs.ext_communities_ipv6 = attrs
+            .ext_communities_ipv6
+            .as_deref()
+            .map(|c| self.ext_communities_ipv6.intern_slice(c));
+        attrs.large_communities = attrs
+            .large_communities
+            .as_deref()
+            .map(|c| self.large_communities.intern_slice(c));
+    }
+}
+
 /// Attribute store with interning for common sub-components (AS paths,
 /// communities, etc.) and whole-attribute sets.
 #[derive(Default)]
 pub struct AttrStore {
-    // as_path and as4_path share one pool: same element type, segments are
-    // often identical
-    as_path: SliceInterner<AsPathSegment>,
-    cluster_list: SliceInterner<Ipv4Addr>,
-    communities: SliceInterner<Box<str>>,
-    ext_communities: SliceInterner<Box<str>>,
-    ext_communities_ipv6: SliceInterner<Box<str>>,
-    large_communities: SliceInterner<Box<str>>,
+    sub_pools: AttrSubPools<
+        SliceInterner<AsPathSegment>,
+        SliceInterner<Ipv4Addr>,
+        SliceInterner<Box<str>>,
+    >,
 
     /// Whole-attribute pool. Sub-components are interned first so equal attrs
     /// deduplicate here too.
@@ -122,25 +165,7 @@ impl AttrStore {
 
     /// Intern `attrs`, deduplicating sub-components and the whole struct.
     pub fn intern(&mut self, mut attrs: RouteAttributes) -> Arc<RouteAttributes> {
-        attrs.as_path = self.as_path.intern(&attrs.as_path);
-        attrs.as4_path = attrs.as4_path.as_deref().map(|p| self.as_path.intern(p));
-        attrs.cluster_list = self.cluster_list.intern(&attrs.cluster_list);
-        attrs.communities = attrs
-            .communities
-            .as_deref()
-            .map(|c| self.communities.intern(c));
-        attrs.ext_communities = attrs
-            .ext_communities
-            .as_deref()
-            .map(|e| self.ext_communities.intern(e));
-        attrs.ext_communities_ipv6 = attrs
-            .ext_communities_ipv6
-            .as_deref()
-            .map(|e| self.ext_communities_ipv6.intern(e));
-        attrs.large_communities = attrs
-            .large_communities
-            .as_deref()
-            .map(|l| self.large_communities.intern(l));
+        self.sub_pools.intern(&mut attrs);
 
         if let Some(existing) = self.attrs.get(&attrs) {
             return Arc::clone(existing);
@@ -155,12 +180,12 @@ impl AttrStore {
     /// fall before the sub-pools are scanned.
     pub fn gc(&mut self) {
         self.attrs.retain(|a| Arc::strong_count(a) > 1);
-        self.as_path.gc();
-        self.cluster_list.gc();
-        self.communities.gc();
-        self.ext_communities.gc();
-        self.ext_communities_ipv6.gc();
-        self.large_communities.gc();
+        self.sub_pools.as_path.gc();
+        self.sub_pools.cluster_list.gc();
+        self.sub_pools.communities.gc();
+        self.sub_pools.ext_communities.gc();
+        self.sub_pools.ext_communities_ipv6.gc();
+        self.sub_pools.large_communities.gc();
     }
 
     /// Number of distinct interned attribute sets currently held.
@@ -170,7 +195,7 @@ impl AttrStore {
 
     #[cfg(test)]
     fn as_path_pool_len(&self) -> usize {
-        self.as_path.pool_len()
+        self.sub_pools.as_path.pool_len()
     }
 }
 
@@ -178,6 +203,12 @@ impl AttrStore {
 /// allocation. Eviction is explicit via `gc()`.
 pub struct SliceInterner<T> {
     pool: FxHashSet<Arc<[T]>>,
+}
+
+impl<T: Hash + Eq + Clone> SlicePool<T> for SliceInterner<T> {
+    fn intern_slice(&mut self, slice: &[T]) -> Arc<[T]> {
+        self.intern(slice)
+    }
 }
 
 impl<T: Hash + Eq + Clone> Default for SliceInterner<T> {

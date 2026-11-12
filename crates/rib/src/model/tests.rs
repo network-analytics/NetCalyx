@@ -515,7 +515,7 @@ fn afi_safi_type_matches_the_table_variant() {
 
 #[test]
 fn rib_store_default_is_empty() {
-    let store = RibStore::default();
+    let store: RibStore = RibStore::default();
     assert!(store.ribs.is_empty());
     assert_eq!(store.attr_store.unique_attrs(), 0);
 }
