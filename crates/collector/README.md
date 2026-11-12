@@ -72,6 +72,31 @@ To build from source, you need a Rust toolchain installed. We recommend using [r
    *Note: You might need to install development libraries such as `libcurl-devel` (or `libcurl4-openssl-dev` on
    Debian/Ubuntu) depending on your OS.*
 
+### Container Image
+
+This crate has a [`Dockerfile`](Dockerfile) that builds the collector from source into a
+small Debian based image. It works with Docker and Podman and builds for `linux/amd64` and `linux/arm64`.
+
+1. Build for the architecture of the host. Run this from the repository root, because the build context is the
+   whole workspace:
+   ```bash
+   docker build -f crates/collector/Dockerfile -t netcalyx-collector .
+   ```
+2. Run with a config file mounted from the host:
+   ```bash
+   docker run --rm --network host \
+     -v "/path/to/config.yaml:/etc/netcalyx/config.yaml:ro" \
+     netcalyx-collector /etc/netcalyx/config.yaml
+   ```
+
+The image has no config of its own and opens no ports by itself. The listeners and publishers come from the
+mounted config. The collector runs as the unprivileged user `netcalyx` with `/var/lib/netcalyx` as its working
+directory. That is the only directory the user can write to, so point `cache_location` there or mount a volume
+for it. The collector does not create the directory itself.
+
+To build both architectures at once, use `docker buildx build --platform linux/amd64,linux/arm64`. The foreign
+architecture runs under QEMU and takes much longer than the native one.
+
 ## Running the Collector
 
 Run the collector with a specific config file:

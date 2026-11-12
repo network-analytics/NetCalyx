@@ -245,6 +245,12 @@ cargo deb -p netcalyx-collector --no-build
 # Package output: target/debian/
 ```
 
+Container image (see the [collector README](crates/collector/README.md#container-image)):
+
+```bash
+docker build -f crates/collector/Dockerfile -t netcalyx-collector .
+```
+
 Pre-built packages and binaries for `netcalyx-collector`, `netcalyx-pcap-decoder`, `netcalyx-pcap-tools` and
 `netcalyx-yang-consumer` are attached to the [GitHub Releases](https://github.com/network-analytics/NetCalyx/releases).
 
