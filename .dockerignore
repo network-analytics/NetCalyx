@@ -1,0 +1,21 @@
+# Build context for crates/collector/Dockerfile. Ignore everything, then
+# allow only what the workspace build needs.
+**
+!.cargo/
+!Cargo.toml
+!Cargo.lock
+!crates/
+!fuzz/Cargo.toml
+!fuzz/fuzz_targets/
+!LICENSE
+!NOTICE
+# shadow-rs reads the commit, branch and tag from these at build time. The
+# index, logs and hooks change on every git command and stay out.
+!.git/HEAD
+!.git/packed-refs
+!.git/refs/
+!.git/objects/
+# Local build output and generated files inside the allowed directories.
+**/target/
+**/kafka-yang-consumer-cache/
+**/tests/trybuild/*.stderr
