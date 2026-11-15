@@ -26,7 +26,7 @@ use netcalyx_netconf_proto::yang_push::types::SubscriptionId;
 use netcalyx_udp_notif_pkt::notification::{SubscriptionStartedModified, Target};
 use std::net::SocketAddr;
 use tracing::{debug, trace, warn};
-use yang5::schema::SchemaPathFormat;
+use yang6::schema::SchemaPathFormat;
 
 impl ValidationActor {
     /// Resolve the inline `datastore-xpath-filter` target against the loaded
@@ -43,7 +43,7 @@ impl ValidationActor {
     /// without a spurious mismatch from the predicate itself.
     pub(super) fn check_xpath_target_resolves(
         subscription_info: &SubscriptionInfo,
-        yang_ctx: &yang5::context::Context,
+        yang_ctx: &yang6::context::Context,
     ) {
         let subscription_id = subscription_info.id();
         let peer = subscription_info.peer_ip();

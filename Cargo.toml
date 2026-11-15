@@ -108,7 +108,7 @@ sysinfo = { version = "0.40", default-features = false }
 shadow-rs = { version = "2.0", default-features = false }
 smallvec = { version = "1.15" }
 rustc-hash = { version = "2.1" }
-yang5 = { version = "0.2", features = ["bundled"] }
+yang6 = { git = "https://github.com/network-analytics/yang-rs", rev = "b3e67fd4389817f775e9446637739c37b393b253", features = ["bundled"] }
 tempfile = { version = "3.27" }
 quick-xml = { version = "0.40" }
 russh = { version = "0.65" }

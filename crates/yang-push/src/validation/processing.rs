@@ -34,7 +34,7 @@ use netcalyx_udp_notif_service::{OTL_UDP_NOTIF_PUBLISHER_ID_KEY, SessionInfo, Ud
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use tracing::{debug, trace, warn};
-use yang5::data::{DataFormat, DataOperation, DataParserFlags, DataValidationFlags};
+use yang6::data::{DataFormat, DataOperation, DataParserFlags, DataValidationFlags};
 
 /// The output of the validation stage: a decoded UDP-Notif packet together
 /// with the subscription identity, transport session, and the locally-computed
@@ -530,12 +530,12 @@ impl ValidationActor {
         subscription_info: &SubscriptionInfo,
         cached_content_id: ContentId,
         notification_type: &String,
-        yang_ctx: &yang5::context::Context,
+        yang_ctx: &yang6::context::Context,
         is_legacy: bool,
         anydata_strict: bool,
         stats: &ValidationStats,
         peer_tags: &[opentelemetry::KeyValue],
-    ) -> Result<(), yang5::Error> {
+    ) -> Result<(), yang6::Error> {
         let message_id = packet.message_id();
         let publisher_id = packet.publisher_id();
 
@@ -544,7 +544,7 @@ impl ValidationActor {
             if anydata_strict {
                 parser_flags |= DataParserFlags::ANYDATA_STRICT;
             }
-            let validation_result = yang5::data::DataTree::parse_string(
+            let validation_result = yang6::data::DataTree::parse_string(
                 yang_ctx,
                 packet.payload(),
                 DataFormat::JSON,
@@ -591,7 +591,7 @@ impl ValidationActor {
             );
             Ok(())
         } else {
-            let validation_result = yang5::data::DataTree::parse_op_string(
+            let validation_result = yang6::data::DataTree::parse_op_string(
                 yang_ctx,
                 packet.payload(),
                 DataFormat::JSON,
@@ -914,11 +914,12 @@ impl ValidationActor {
         // Update subscription info in the cache
         if let Some(yang_lib_ref) = yang_lib_ref {
             let search_dir = yang_lib_ref.search_dir();
-            let yang_ctx_result = yang5::context::Context::new_from_yang_library_file(
+            let yang_ctx_result = yang6::context::Context::new_from_yang_library_file(
                 &yang_lib_ref.yang_library_path(),
                 DataFormat::XML,
                 &search_dir.as_path(),
-                yang5::context::ContextFlags::empty(),
+                // TODO: remember to add this flag once updating yang-rs v6
+                yang6::context::ContextFlags::DISABLE_SEARCHDIR_CWD,
             );
             let yang_ctx = match yang_ctx_result {
                 Ok(yang_ctx) => {

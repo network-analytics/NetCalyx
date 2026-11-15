@@ -71,7 +71,7 @@
 //!
 //! - **Subscription Level**: Per-subscription state including:
 //!   - `SubscriptionInfo`: Metadata from `SubscriptionStarted`
-//!   - `yang5::Context`: Loaded YANG schemas for validation
+//!   - `yang6::Context`: Loaded YANG schemas for validation
 //!   - Buffered packets waiting for schema retrieval
 //!   - Enforces `max_buffered_packets_per_subscription` limit
 //!
@@ -91,7 +91,7 @@
 //!
 //! The actor validates packets when YANG schemas are available:
 //!
-//! - **Schema available**: Validates using `yang5` library
+//! - **Schema available**: Validates using `yang6` library
 //!   - Valid packets → forwarded with full `SubscriptionInfo`
 //!   - Invalid packets → dropped with error logged
 //!

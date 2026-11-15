@@ -49,7 +49,7 @@ pub(super) struct ValidationActor {
     pub(super) max_buffered_packets_per_peer: usize,
     pub(super) max_buffered_packets_per_subscription: usize,
     /// Whether `anydata` nodes are validated strictly against their
-    /// schema (see `yang5::data::DataParserFlags::ANYDATA_STRICT`).
+    /// schema (see `yang6::data::DataParserFlags::ANYDATA_STRICT`).
     pub(super) anydata_strict: bool,
     pub(super) peer_cache: FxHashMap<IpAddr, CachedPeerSubscriptions>,
     pub(super) cmd_rx: mpsc::Receiver<ValidationActorCommand>,

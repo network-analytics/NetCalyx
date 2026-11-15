@@ -48,8 +48,8 @@ use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use tokio::signal;
 use tracing::{debug, error, info, trace, warn};
-use yang5::context::Context;
-use yang5::data::{DataFormat, DataParserFlags, DataValidationFlags};
+use yang6::context::Context;
+use yang6::data::{DataFormat, DataParserFlags, DataValidationFlags};
 
 shadow!(build);
 
@@ -238,7 +238,8 @@ impl YangContextCache {
             &yang_lib_ref.yang_library_path(),
             DataFormat::XML,
             &search_dir.as_path(),
-            yang5::context::ContextFlags::empty(),
+            // TODO: remember to add this flag once updating yang-rs version 6
+            yang6::context::ContextFlags::DISABLE_SEARCHDIR_CWD,
         )?;
 
         info!(
@@ -999,7 +1000,7 @@ async fn main() -> Result<()> {
                                     debug!("Using YANG context for schema ID: {}", schema_id);
 
                                     // Validate message payload against YANG schemas.
-                                    let validation_result = yang5::data::DataTree::parse_string(
+                                    let validation_result = yang6::data::DataTree::parse_string(
                                         yang_ctx,
                                         payload,
                                         DataFormat::JSON,

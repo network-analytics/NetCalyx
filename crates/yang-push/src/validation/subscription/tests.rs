@@ -20,7 +20,7 @@ use crate::validation::actor::ValidationActor;
 use netcalyx_netconf_proto::yang_push::identities::{Encoding, Transport};
 use netcalyx_udp_notif_pkt::notification::Target;
 use std::net::{IpAddr, SocketAddr};
-use yang5::data::DataFormat;
+use yang6::data::DataFormat;
 
 /// A JSON `datastore-xpath-filter` with a redundant module prefix on
 /// every step must be collapsed to the prefix-on-change canonical form,
@@ -82,15 +82,16 @@ fn test_normalize_json_target_xpath_noop_without_xpath_filter() {
     assert_eq!(target, before);
 }
 
-/// Loads a `yang5::context::Context` from the bundled `ietf-interfaces`
+/// Loads a `yang6::context::Context` from the bundled `ietf-interfaces`
 /// test schema (the same assets used by the cache actor tests), for
 /// tests that need a real schema to resolve xpaths against.
-fn load_test_yang_ctx() -> yang5::context::Context {
-    yang5::context::Context::new_from_yang_library_file(
+fn load_test_yang_ctx() -> yang6::context::Context {
+    yang6::context::Context::new_from_yang_library_file(
         std::path::Path::new("../../assets/yang/ietf-interfaces/yang-lib.xml"),
         DataFormat::XML,
         std::path::Path::new("../../assets/yang/ietf-interfaces/modules"),
-        yang5::context::ContextFlags::empty(),
+        // TODO: remember to add this flag once updating yang-rs version 6
+        yang6::context::ContextFlags::DISABLE_SEARCHDIR_CWD,
     )
     .expect("Failed to load test YANG context")
 }

@@ -57,7 +57,7 @@ use std::sync::Arc;
 pub(super) struct CachedSubscription {
     pub(super) cached_content_id: Option<ContentId>,
     pub(super) subscription_info: SubscriptionInfo,
-    pub(super) yang_ctx: Option<yang5::context::Context>,
+    pub(super) yang_ctx: Option<yang6::context::Context>,
     pub(super) buffered_packets: Vec<Arc<UdpNotifRequest>>,
     pub(super) schema_fetch_pending: bool,
 }
