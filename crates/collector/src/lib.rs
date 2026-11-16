@@ -40,7 +40,9 @@ use netcalyx_udp_notif_service::UdpNotifRequest;
 use netcalyx_udp_notif_service::supervisor::UdpNotifSupervisorHandle;
 use netcalyx_yang_push::cache::actor::CacheActorHandle;
 use netcalyx_yang_push::cache::fetcher::{NetconfYangLibraryFetcher, RetryConfig};
-use netcalyx_yang_push::model::telemetry::Manifest;
+use netcalyx_yang_push::model::telemetry::{
+    CollectorInfo, DataCollectionManifest, Platform, SystemInfo, SystemState,
+};
 use netcalyx_yang_push::validation::ValidationActorHandle;
 use shadow_rs::shadow;
 use std::net::IpAddr;
@@ -1034,23 +1036,38 @@ fn netconf_fetcher(
     Ok(fetcher)
 }
 
-/// Fetches local system information into a Manifest object.
-/// (host name, OS version, software version, build info, etc.)
-pub(crate) fn fetch_sysinfo_manifest(name: Option<String>) -> Manifest {
-    Manifest::new(
-        name.filter(|n| !n.is_empty()).or_else(|| {
+/// Fetches local system information into a data collection manifest
+/// (draft-ietf-nmop-message-broker-telemetry-message-06): host name and OS
+/// details following the RFC 7317 `ietf-system` nodes, and the collector
+/// application name, release and build version.
+pub(crate) fn fetch_sysinfo_manifest(name: Option<String>) -> DataCollectionManifest {
+    let hostname = System::host_name().ok();
+    let collector_name = name.filter(|n| !n.is_empty()).or_else(|| {
+        Some(format!(
+            "{}@{}",
+            build::PROJECT_NAME,
+            hostname.as_deref().unwrap_or("unknown")
+        ))
+    });
+    DataCollectionManifest::new(
+        Some(SystemInfo::new(None, hostname, None)),
+        Some(SystemState::new(Some(Platform::new(
+            System::name().ok(),
+            System::kernel_version().ok(),
+            System::os_version().ok(),
+            Some(System::cpu_arch()),
+        )))),
+        Some(CollectorInfo::new(
+            collector_name,
+            Some(build::PKG_VERSION.to_string()),
             Some(format!(
-                "{}@{}",
-                build::PROJECT_NAME,
-                System::host_name().unwrap_or_else(|_| "unknown".to_string())
-            ))
-        }),
-        Some("NetCalyx".to_string()),
-        Some(3746), // Swisscom AG (temp until NetCalyx has its own PEN number)
-        Some(format!("{} ({})", build::PKG_VERSION, build::SHORT_COMMIT)),
-        Some(build::BUILD_RUST_CHANNEL.to_string()),
-        System::os_version().ok(),
-        System::name().ok(),
+                "{} ({}) {} {}",
+                build::PKG_VERSION,
+                build::SHORT_COMMIT,
+                build::BUILD_RUST_CHANNEL,
+                build::BUILD_TARGET
+            )),
+        )),
     )
 }
 

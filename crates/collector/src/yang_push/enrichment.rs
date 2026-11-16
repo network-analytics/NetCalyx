@@ -39,8 +39,9 @@ use netcalyx_udp_notif_pkt::decoded::{UdpNotifPacketDecoded, UdpNotifPayload};
 use netcalyx_udp_notif_service::{OTL_UDP_NOTIF_PUBLISHER_ID_KEY, SessionInfo};
 use netcalyx_yang_push::cache::storage::SubscriptionInfo;
 use netcalyx_yang_push::model::telemetry::{
-    EventType, Label, Manifest, NetworkOperatorMetadata, SessionProtocol, TelemetryMessage,
-    TelemetryMessageMetadata, TelemetryMessageWrapper, YangPushSubscriptionMetadata,
+    DataCollectionManifest, EventType, Label, NetworkOperatorMetadata, SessionProtocol,
+    TelemetryMessage, TelemetryMessageMetadata, TelemetryMessageWrapper,
+    YangPushSubscriptionMetadata,
 };
 use netcalyx_yang_push::validation::ValidatedNotification;
 use netcalyx_yang_push::{
@@ -177,7 +178,7 @@ struct YangPushEnrichmentActor {
     validated_rx: async_channel::Receiver<ValidatedNotification>,
     enriched_tx: async_channel::Sender<EnrichedNotification>,
     labels: HashMap<IpAddr, HashMap<String, WeightedLabel>>,
-    manifest: Manifest,
+    manifest: DataCollectionManifest,
     stats: YangPushEnrichmentStats,
 }
 
@@ -187,7 +188,7 @@ impl YangPushEnrichmentActor {
         enrichment_rx: async_channel::Receiver<EnrichmentOperation>,
         validated_rx: async_channel::Receiver<ValidatedNotification>,
         enriched_tx: async_channel::Sender<EnrichedNotification>,
-        manifest: Manifest,
+        manifest: DataCollectionManifest,
         stats: YangPushEnrichmentStats,
     ) -> Self {
         Self {
@@ -537,7 +538,7 @@ impl YangPushEnrichmentActorHandle {
     pub fn new(
         buffer_size: usize,
         validated_rx: async_channel::Receiver<ValidatedNotification>,
-        manifest: Manifest,
+        manifest: DataCollectionManifest,
         stats: either::Either<opentelemetry::metrics::Meter, YangPushEnrichmentStats>,
     ) -> (JoinHandle<anyhow::Result<String>>, Self) {
         let (cmd_send, cmd_recv) = mpsc::channel(10);
@@ -607,29 +608,36 @@ mod tests {
     use netcalyx_udp_notif_pkt::decoded::UdpNotifPacketDecoded;
     use netcalyx_udp_notif_pkt::notification::Target;
     use netcalyx_udp_notif_pkt::raw::{MediaType, UdpNotifPacket};
-    use netcalyx_yang_push::model::telemetry::{Label, LabelValue};
+    use netcalyx_yang_push::model::telemetry::{
+        CollectorInfo, Label, LabelValue, Platform, SystemInfo, SystemState,
+    };
     use opentelemetry::global;
     use serde_json::json;
     use std::collections::HashMap;
     use std::net::{Ipv4Addr, SocketAddr};
     use std::time::Duration;
 
-    fn test_manifest() -> Manifest {
-        Manifest::new(
-            Some("test-writer".into()),
-            Some("NetCalyx".into()),
-            Some(3746),
-            Some("0.11.0 (f5b7083e)".into()),
-            Some("debug".into()),
-            Some("26.4.1".into()),
-            Some("Darwin".into()),
+    fn test_manifest() -> DataCollectionManifest {
+        DataCollectionManifest::new(
+            Some(SystemInfo::new(None, Some("test-host".into()), None)),
+            Some(SystemState::new(Some(Platform::new(
+                Some("Darwin".into()),
+                Some("25.4.0".into()),
+                Some("26.4.1".into()),
+                Some("arm64".into()),
+            )))),
+            Some(CollectorInfo::new(
+                Some("test-writer".into()),
+                Some("0.11.0".into()),
+                Some("0.11.0 (f5b7083e) debug aarch64-apple-darwin".into()),
+            )),
         )
     }
 
     #[allow(clippy::type_complexity)]
     fn create_actor_handle() -> (
         async_channel::Sender<ValidatedNotification>,
-        Manifest,
+        DataCollectionManifest,
         JoinHandle<anyhow::Result<String>>,
         YangPushEnrichmentActorHandle,
     ) {
