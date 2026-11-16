@@ -121,6 +121,7 @@ mod processing;
 mod state;
 mod stats;
 mod subscription;
+pub mod yang_patch;
 
 pub use actor::{ValidationActorError, ValidationActorHandle, ValidationActorHandleError};
 pub use processing::ValidatedNotification;

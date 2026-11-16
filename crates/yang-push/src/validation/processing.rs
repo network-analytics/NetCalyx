@@ -23,6 +23,7 @@ use crate::validation::state::{CachedPeerSubscriptions, CachedSubscription};
 use crate::validation::stats::{
     CACHE_LOOKUP_BY_KEY, CacheLookupBy, DropReason, REASON_KEY, SkipReason, ValidationStats,
 };
+use crate::validation::yang_patch::{self, YangPatchValidationError};
 use crate::{
     ContentId, OTL_YANG_PUSH_SUBSCRIPTION_ID_KEY, OTL_YANG_PUSH_SUBSCRIPTION_ROUTER_CONTENT_ID_KEY,
     OTL_YANG_PUSH_SUBSCRIPTION_TARGET_KEY,
@@ -35,24 +36,6 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use tracing::{debug, trace, warn};
 use yang6::data::{DataFormat, DataOperation, DataParserFlags, DataTree, DataValidationFlags};
-use yang6::schema::SchemaPathFormat;
-
-const ENVELOPE_EVENT_TIME_POINTER: &str = "/ietf-yp-notification:envelope/event-time";
-const YANG_PATCH_EDITS_POINTER: &str = "/ietf-yp-notification:envelope/contents/ietf-yang-push:push-change-update/datastore-changes/yang-patch/edit";
-
-/// The yang-patch edit whose `value` failed validation.
-struct FailedEdit {
-    edit_id: String,
-    target: String,
-    anchor: Option<String>,
-}
-
-fn validation_error(msg: String) -> yang6::Error {
-    yang6::Error {
-        msg: Some(msg),
-        ..Default::default()
-    }
-}
 
 /// The output of the validation stage: a decoded UDP-Notif packet together
 /// with the subscription identity, transport session, and the locally-computed
@@ -567,7 +550,12 @@ impl ValidationActor {
                 parser_flags |= DataParserFlags::ANYDATA_STRICT;
             }
             let validation_result = if anydata_strict && is_change_update {
-                Self::validate_change_update(yang_ctx, &packet.payload(), parser_flags)
+                yang_patch::validate_change_update(
+                    yang_ctx,
+                    &packet.payload(),
+                    parser_flags,
+                    yang_patch::ENVELOPE_ROOT,
+                )
             } else {
                 DataTree::parse_string(
                     yang_ctx,
@@ -577,9 +565,13 @@ impl ValidationActor {
                     DataValidationFlags::PRESENT,
                 )
                 .map(|_| ())
-                .map_err(|err| (err, None))
+                .map_err(YangPatchValidationError::from)
             };
-            if let Err((err, failed_edit)) = validation_result {
+            if let Err(YangPatchValidationError {
+                error: err,
+                failed_edit,
+            }) = validation_result
+            {
                 let v = packet.payload().clone();
                 let packet_payload =
                     str::from_utf8(v.as_ref()).unwrap_or("unserializable packet payload");
@@ -592,9 +584,9 @@ impl ValidationActor {
                     target=%subscription_info.target(),
                     cached_content_id,
                     notification_type,
-                    edit_id=failed_edit.as_ref().map(|edit| edit.edit_id.as_str()),
-                    edit_target=failed_edit.as_ref().map(|edit| edit.target.as_str()),
-                    edit_anchor=failed_edit.as_ref().and_then(|edit| edit.anchor.as_deref()),
+                    edit_id=failed_edit.as_ref().map(|edit| edit.edit_id()),
+                    edit_target=failed_edit.as_ref().map(|edit| edit.target()),
+                    edit_anchor=failed_edit.as_ref().and_then(|edit| edit.anchor()),
                     error=%err,
                     packet=packet_payload,
                     "Failed to validate UDP-Notif payload, dropping packet"
@@ -659,121 +651,6 @@ impl ValidationActor {
                 "Successfully validated YANG-Push message using legacy UDP-Notif payload",
             );
             Ok(())
-        }
-    }
-
-    /// Validate a push-change-update in two steps, since a schema anchor only
-    /// applies to one anydata per parse: first the payload with all edit
-    /// values stripped, then each value in a minimal envelope whose `contents`
-    /// is anchored at the edit target.
-    fn validate_change_update(
-        yang_ctx: &yang6::context::Context,
-        payload: &[u8],
-        parser_flags: DataParserFlags,
-    ) -> Result<(), (yang6::Error, Option<Box<FailedEdit>>)> {
-        let parse = |data: &[u8], anchor: Option<&str>| {
-            match anchor {
-                Some(anchor) => DataTree::parse_string_with_anchor(
-                    yang_ctx,
-                    data,
-                    DataFormat::JSON,
-                    DataParserFlags::from_bits_truncate(parser_flags.bits()),
-                    DataValidationFlags::PRESENT,
-                    anchor,
-                ),
-                None => DataTree::parse_string(
-                    yang_ctx,
-                    data,
-                    DataFormat::JSON,
-                    DataParserFlags::from_bits_truncate(parser_flags.bits()),
-                    DataValidationFlags::PRESENT,
-                ),
-            }
-            .map(|_| ())
-        };
-
-        let Ok(mut envelope) = serde_json::from_slice::<serde_json::Value>(payload) else {
-            return parse(payload, None).map_err(|err| (err, None));
-        };
-        let event_time = envelope.pointer(ENVELOPE_EVENT_TIME_POINTER).cloned();
-        let edits = envelope
-            .pointer_mut(YANG_PATCH_EDITS_POINTER)
-            .and_then(serde_json::Value::as_array_mut);
-        let (Some(event_time), Some(edits)) = (event_time, edits) else {
-            return parse(payload, None).map_err(|err| (err, None));
-        };
-        let values: Vec<(String, String, serde_json::Value)> = edits
-            .iter_mut()
-            .filter_map(|edit| {
-                let edit = edit.as_object_mut()?;
-                let value = edit.remove("value")?;
-                let field = |name: &str| {
-                    edit.get(name)
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or_default()
-                        .to_owned()
-                };
-                Some((field("edit-id"), field("target"), value))
-            })
-            .collect();
-
-        let skeleton = serde_json::to_vec(&envelope)
-            .map_err(|err| (validation_error(err.to_string()), None))?;
-        parse(&skeleton, None).map_err(|err| (err, None))?;
-
-        for (edit_id, target, value) in values {
-            let failed = |anchor: Option<String>| {
-                Box::new(FailedEdit {
-                    edit_id: edit_id.clone(),
-                    target: target.clone(),
-                    anchor,
-                })
-            };
-            let anchor = Self::resolve_edit_anchor(yang_ctx, &target)
-                .map_err(|err| (err, Some(failed(None))))?;
-            trace!(
-                edit_id,
-                edit_target = target,
-                edit_anchor = anchor.as_deref(),
-                "Validating yang-patch edit value against its target anchor"
-            );
-            let carrier = serde_json::json!({
-                "ietf-yp-notification:envelope": {
-                    "event-time": event_time.clone(),
-                    "contents": value,
-                }
-            });
-            let carrier = serde_json::to_vec(&carrier).map_err(|err| {
-                (
-                    validation_error(err.to_string()),
-                    Some(failed(anchor.clone())),
-                )
-            })?;
-            parse(&carrier, anchor.as_deref()).map_err(|err| (err, Some(failed(anchor))))?;
-        }
-        Ok(())
-    }
-
-    /// Schema path of a yang-patch edit target, `None` for the datastore root.
-    fn resolve_edit_anchor(
-        yang_ctx: &yang6::context::Context,
-        target: &str,
-    ) -> Result<Option<String>, yang6::Error> {
-        if target == "/" {
-            return Ok(None);
-        }
-        // yang6 panics on interior NUL bytes when building the C string.
-        if target.contains('\0') {
-            return Err(validation_error(
-                "yang-patch edit target contains a NUL byte".to_string(),
-            ));
-        }
-        let nodes = yang_ctx.find_xpath(target)?.collect::<Vec<_>>();
-        match nodes.as_slice() {
-            [node] => Ok(Some(node.path(SchemaPathFormat::DATA))),
-            _ => Err(validation_error(format!(
-                "yang-patch edit target \"{target}\" does not resolve to a single schema node"
-            ))),
         }
     }
 
