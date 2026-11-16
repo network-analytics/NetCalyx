@@ -248,11 +248,9 @@
       <revision>2018-02-20</revision>
       <namespace>urn:ietf:params:xml:ns:yang:ietf-interfaces</namespace>
       <augmented-by
-        xmlns="urn:ietf:params:xml:ns:yang:ietf-yang-library-augmentedby">
-        ietf-ip</augmented-by>
+        xmlns="urn:ietf:params:xml:ns:yang:ietf-yang-library-augmentedby">ietf-ip</augmented-by>
       <augmented-by
-        xmlns="urn:ietf:params:xml:ns:yang:ietf-yang-library-augmentedby">
-        ietf-network-instance</augmented-by>
+        xmlns="urn:ietf:params:xml:ns:yang:ietf-yang-library-augmentedby">ietf-network-instance</augmented-by>
     </module>
     <!-- Augments ietf-interfaces with per-interface IP address
     configuration -->
