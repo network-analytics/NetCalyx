@@ -1,3 +1,4 @@
+// Copyright (C) 2026-present The NetCalyx Authors.
 // Copyright (C) 2024-present The NetGauze Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -208,8 +209,10 @@ impl<T, M: Serialize, F: Fn(Arc<T>, String) -> Vec<M>> HttpPublisherActor<T, M, 
                             debug!("[{}] Queued up a message for sending, there are {} messages in the queue", self.name, self.buf.len());
                             if self.buf.len() > self.batch_size {
                                 debug!("[{}] Blocking to send {} messages", self.name, self.buf.len());
-                                Self::send(&self.client, self.url.clone(), &self.buf, self.writer_id.clone(), self.buf.len(), self.stats.success_sent.clone(), self.stats.failed_sent.clone()).await?;
-                                debug!("[{}] messages send {} clearing buffer", self.name, self.buf.len());
+                                if let Err(err) = Self::send(&self.client, self.url.clone(), &self.buf, self.writer_id.clone(), self.buf.len(), self.stats.success_sent.clone(), self.stats.failed_sent.clone()).await {
+                                    error!("[{}] Failed to send {} messages, dropping batch: {err}", self.name, self.buf.len());
+                                }
+                                debug!("[{}] clearing buffer of {} messages", self.name, self.buf.len());
                                 self.buf.clear();
                             }
                         },
