@@ -16,6 +16,7 @@
 
 use opentelemetry::KeyValue;
 use serde::{Deserialize, Serialize};
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -27,8 +28,8 @@ pub struct HttpPublisherEndpoint {
     pub url: String,
     pub writer_id: String,
 
-    // Min number of messages to send in each HTTP request
-    pub batch_size: usize,
+    /// Minimum number of messages per HTTP request; must be at least 1.
+    pub batch_size: NonZeroUsize,
 
     /// See [reqwest::ClientBuilder::tcp_keepalive]
     #[serde(skip_serializing_if = "::std::option::Option::is_none")]
@@ -109,7 +110,7 @@ struct HttpPublisherActor<T, M: Serialize, F: Fn(Arc<T>, String) -> Vec<M>> {
     /// URL to post messages to
     url: String,
     /// Min number of messages to send in each HTTP request
-    batch_size: usize,
+    batch_size: NonZeroUsize,
     /// Function pointer to a function that converts the collected messages of
     /// type `T` to a Feldera message `Message<O>`
     converter: F,
@@ -208,7 +209,7 @@ impl<T, M: Serialize, F: Fn(Arc<T>, String) -> Vec<M>> HttpPublisherActor<T, M, 
                             let msgs = (self.converter)(msg, self.writer_id.clone());
                             self.buf.extend(msgs.into_iter());
                             debug!("[{}] Queued up a message for sending, there are {} messages in the queue", self.name, self.buf.len());
-                            if self.buf.len() > self.batch_size {
+                            if self.buf.len() >= self.batch_size.get() {
                                 debug!("[{}] Blocking to send {} messages", self.name, self.buf.len());
                                 if let Err(err) = Self::send(&self.client, self.url.clone(), &self.buf, self.writer_id.clone(), self.buf.len(), self.stats.success_sent.clone(), self.stats.failed_sent.clone()).await {
                                     error!("[{}] Failed to send {} messages, dropping batch: {err}", self.name, self.buf.len());
