@@ -26,6 +26,8 @@
 //! - Fetches YANG schemas (including dependencies) from Schema Registry
 //! - Builds and caches YANG Library contexts for validation
 //! - Validates message payloads against their associated YANG schemas
+//! - Validates yang-patch edit values of `push-change-update` notifications
+//!   against their edit target
 //! - Supports tail mode to read last N messages per partition
 //! - Supports follow mode to continuously consume new messages
 use anyhow::Result;
@@ -36,6 +38,7 @@ use netcalyx_netconf_proto::yanglib::{
 };
 use netcalyx_netconf_proto::yangparser::extract_yang_metadata;
 use netcalyx_yang_push::cache::storage::{SubscriptionInfo, YangLibraryReference};
+use netcalyx_yang_push::validation::yang_patch;
 use rdkafka::TopicPartitionList;
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{Consumer, StreamConsumer};
@@ -49,7 +52,7 @@ use std::net::IpAddr;
 use tokio::signal;
 use tracing::{debug, error, info, trace, warn};
 use yang6::context::Context;
-use yang6::data::{DataFormat, DataParserFlags, DataValidationFlags};
+use yang6::data::{DataFormat, DataParserFlags};
 
 shadow!(build);
 
@@ -999,13 +1002,13 @@ async fn main() -> Result<()> {
                                 Ok(yang_ctx) => {
                                     debug!("Using YANG context for schema ID: {}", schema_id);
 
-                                    // Validate message payload against YANG schemas.
-                                    let validation_result = yang6::data::DataTree::parse_string(
+                                    // Validate message payload against YANG schemas,
+                                    // anchoring yang-patch edit values at their target.
+                                    let validation_result = yang_patch::validate_change_update(
                                         yang_ctx,
                                         payload,
-                                        DataFormat::JSON,
                                         DataParserFlags::STRICT | DataParserFlags::ANYDATA_STRICT,
-                                        DataValidationFlags::PRESENT,
+                                        yang_patch::TELEMETRY_MESSAGE_ROOT,
                                     );
 
                                     match validation_result {
@@ -1020,13 +1023,17 @@ async fn main() -> Result<()> {
                                             validation_stats.passed += 1;
                                         }
                                         Err(err) => {
+                                            let failed_edit = err.failed_edit.as_deref();
                                             error!(
+                                                edit_id=failed_edit.map(|edit| edit.edit_id()),
+                                                edit_target=failed_edit.map(|edit| edit.target()),
+                                                edit_anchor=failed_edit.and_then(|edit| edit.anchor()),
                                                 "Message validation FAILED [partition: {}, offset: {}, key: {}, schema_id: {}]: {}",
                                                 borrowed_message.partition(),
                                                 borrowed_message.offset(),
                                                 String::from_utf8_lossy(key),
                                                 schema_id,
-                                                err
+                                                err.error
                                             );
                                             validation_stats.failed += 1;
                                         }

@@ -9,6 +9,8 @@ and validates them against YANG schemas stored in a Schema Registry.
 - Fetches YANG schemas (including dependencies) from a Schema Registry
 - Builds and caches YANG Library contexts for validation
 - Validates message payloads against their associated YANG schemas
+- Validates yang-patch edit values of `push-change-update` notifications
+  against their edit target
 - Supports tail mode to read the last N messages per partition
 - Supports follow mode to continuously consume new messages
 
