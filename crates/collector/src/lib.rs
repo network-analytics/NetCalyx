@@ -53,6 +53,7 @@ use tracing::{debug, info, warn};
 
 pub mod bmp;
 pub mod config;
+pub mod controller;
 pub mod flow;
 pub mod inputs;
 pub mod publishers;
@@ -783,6 +784,21 @@ pub async fn init_udp_notif_collection(
         // Add all enrichment handles in outer vec so shutdown works properly
         enrichment_handles.extend(publisher_enrichment_handles);
     }
+
+    // Assumes a single telemetry publisher endpoint, so the controller only
+    // uses the first validation actor.
+    let controller_join = match &udp_notif_config.controller {
+        Some(config) => {
+            let handle = validation_handles.first().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Controller requires a telemetry publisher endpoint (no validation actor running)"
+                )
+            })?;
+            Some(controller::spawn(config, handle.clone(), meter.clone()))
+        }
+        None => None,
+    };
+
     let ret = tokio::select! {
         supervisor_ret = supervisor_join_handle => {
             info!("udp-notif supervisor exited, shutting down all publishers");
@@ -854,6 +870,12 @@ pub async fn init_udp_notif_collection(
             }
         }
     };
+
+    if let Some(join) = controller_join {
+        info!("Shutting down controller API");
+        join.abort();
+    }
+
     ret
 }
 
