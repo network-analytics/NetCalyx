@@ -26,6 +26,7 @@ use crate::cache::storage::SubscriptionInfo;
 use netcalyx_netconf_proto::yang_push::types::SubscriptionId;
 use netcalyx_udp_notif_service::UdpNotifRequest;
 use rustc_hash::FxHashMap;
+use serde::Serialize;
 use std::net::IpAddr;
 use std::sync::Arc;
 
@@ -116,6 +117,23 @@ struct CachedPeerSubscriptions {
     total_buffered: usize,
 }
 
+impl CachedPeerSubscriptions {
+    fn has_schema_fetch_pending(&self) -> bool {
+        self.subscriptions
+            .values()
+            .any(|subscription| subscription.schema_fetch_pending)
+    }
+
+    fn snapshot(&self) -> FxHashMap<SubscriptionId, CachedSubscriptionSnapshot> {
+        self.subscriptions
+            .iter()
+            .map(|(subscription_id, cached_subscription)| {
+                (*subscription_id, cached_subscription.into())
+            })
+            .collect()
+    }
+}
+
 /// Schema-loading state of the cache entry matching a given
 /// `SubscriptionInfo` (see the table on [`CachedSubscription`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -134,6 +152,15 @@ pub(super) enum BufferError {
     UntrackedSubscription,
     SubscriptionFull,
     PeerFull,
+}
+
+/// Why a peer-scoped cache operation was refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PeerCacheError {
+    /// The peer is not in the cache.
+    PeerNotFound(IpAddr),
+    /// A schema fetch is pending, removing it would drop its hold buffer.
+    SchemaFetchPending(IpAddr),
 }
 
 /// Result of [`PeerCache::resolve`].
@@ -318,6 +345,95 @@ impl PeerCache {
             .entry(subscription_info.id())
             .or_insert_with(|| CachedSubscription::new(subscription_info))
     }
+
+    pub fn snapshot_all(&self) -> YangPushCacheSnapshot {
+        self.peers
+            .iter()
+            .map(|(peer_ip, cached_peer)| (*peer_ip, cached_peer.snapshot()))
+            .collect()
+    }
+
+    pub fn snapshot_peer(&self, peer_ip: IpAddr) -> Result<YangPushCacheSnapshot, PeerCacheError> {
+        self.peers
+            .get(&peer_ip)
+            .map(|cached_peer| {
+                YangPushCacheSnapshot::from_iter([(peer_ip, cached_peer.snapshot())])
+            })
+            .ok_or(PeerCacheError::PeerNotFound(peer_ip))
+    }
+
+    pub fn clear_all(&mut self) -> ClearCacheReport {
+        let mut cleared_peers: Vec<IpAddr> = vec![];
+        let mut skipped_peers: Vec<IpAddr> = vec![];
+
+        self.peers.retain(|peer_ip, cached_peer| {
+            if cached_peer.has_schema_fetch_pending() {
+                skipped_peers.push(*peer_ip);
+                true
+            } else {
+                cleared_peers.push(*peer_ip);
+                false
+            }
+        });
+
+        ClearCacheReport {
+            cleared_peers,
+            skipped_peers,
+        }
+    }
+
+    pub fn clear_peer(&mut self, peer_ip: IpAddr) -> Result<ClearCacheReport, PeerCacheError> {
+        match self
+            .peers
+            .get(&peer_ip)
+            .map(|cached_peer| cached_peer.has_schema_fetch_pending())
+        {
+            Some(true) => Err(PeerCacheError::SchemaFetchPending(peer_ip)),
+
+            Some(false) => {
+                self.peers.remove(&peer_ip);
+                Ok(ClearCacheReport {
+                    cleared_peers: vec![peer_ip],
+                    skipped_peers: vec![],
+                })
+            }
+
+            None => Err(PeerCacheError::PeerNotFound(peer_ip)),
+        }
+    }
+}
+
+/// Serializable snapshot of a cached subscription, excluding its YANG context
+/// and buffered packets.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CachedSubscriptionSnapshot {
+    pub cached_content_id: Option<ContentId>,
+    pub subscription_info: SubscriptionInfo,
+    pub buffered_packet_count: usize,
+    pub schema_fetch_pending: bool,
+}
+
+impl From<&CachedSubscription> for CachedSubscriptionSnapshot {
+    fn from(cached_subscription: &CachedSubscription) -> Self {
+        Self {
+            cached_content_id: cached_subscription.cached_content_id.clone(),
+            subscription_info: cached_subscription.subscription_info.clone(),
+            buffered_packet_count: cached_subscription.buffered_packets.len(),
+            schema_fetch_pending: cached_subscription.schema_fetch_pending,
+        }
+    }
+}
+
+/// Snapshot of the validation actor's YANG-Push cache
+pub type YangPushCacheSnapshot =
+    FxHashMap<IpAddr, FxHashMap<SubscriptionId, CachedSubscriptionSnapshot>>;
+
+/// Outcome of clearing the cache for one or all peers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ClearCacheReport {
+    pub cleared_peers: Vec<IpAddr>,
+    /// Peers left in the cache because they have a pending schema fetch.
+    pub skipped_peers: Vec<IpAddr>,
 }
 
 #[cfg(test)]

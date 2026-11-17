@@ -26,7 +26,10 @@
 
 use crate::cache::actor::{CacheLookupCommand, CacheResponse};
 use crate::cache::storage::{SubscriptionInfo, YangLibraryReference};
-use crate::validation::state::{BufferError, PeerCache, Resolved, SchemaState, Tracking};
+use crate::validation::state::{
+    BufferError, ClearCacheReport, PeerCache, PeerCacheError, Resolved, SchemaState, Tracking,
+    YangPushCacheSnapshot,
+};
 use crate::validation::stats::{
     CACHE_LOOKUP_BY_KEY, CacheLookupBy, DropReason, SkipReason, ValidationStats,
     extend_peer_tags_with_subscription_info, peer_tags_from_packet, with_reason,
@@ -317,6 +320,30 @@ impl Validator {
             (None, None)
         };
         self.apply_schema(subscription_info, cached_content_id, yang_ctx);
+    }
+
+    pub fn cache_snapshot(
+        &self,
+        peer: Option<IpAddr>,
+    ) -> Result<YangPushCacheSnapshot, PeerCacheError> {
+        match peer {
+            Some(ip) => self.peer_cache.snapshot_peer(ip),
+            None => Ok(self.peer_cache.snapshot_all()),
+        }
+    }
+
+    pub fn clear_cache(
+        &mut self,
+        peer: Option<IpAddr>,
+    ) -> Result<ClearCacheReport, PeerCacheError> {
+        let report = match peer {
+            Some(ip) => self.peer_cache.clear_peer(ip)?,
+            None => self.peer_cache.clear_all(),
+        };
+        for ip in &report.cleared_peers {
+            self.record_otel_gauges(*ip, 0, 0);
+        }
+        Ok(report)
     }
 
     /// Whether a cache entry exists for the subscription a cache response

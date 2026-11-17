@@ -25,27 +25,54 @@ use crate::cache::actor::{CacheLookupCommand, CacheResponse};
 use crate::validation::processing::{
     CacheLookup, PacketOutcome, ValidatedNotification, Validator, notification_type,
 };
+use crate::validation::state::{ClearCacheReport, PeerCacheError, YangPushCacheSnapshot};
 use crate::validation::stats::{DropReason, ValidationStats, with_reason};
 use netcalyx_udp_notif_service::UdpNotifRequest;
+use std::net::IpAddr;
 use std::sync::Arc;
-use tokio::sync::mpsc;
-use tracing::{info, trace, warn};
+use tokio::sync::{mpsc, oneshot};
+use tracing::{debug, info, trace, warn};
 
 #[derive(Debug, Clone, PartialEq, Eq, strum_macros::Display)]
 pub enum ValidationActorError {
     #[strum(serialize = "Failed to send cache lookup command")]
     CacheLookupSendError,
+
     #[strum(serialize = "Failed to receive cache response")]
     CacheResponseReceiveError,
+
     #[strum(serialize = "Failed to send the decoded UDP-Notif packet")]
     SendError,
+
+    #[strum(to_string = "Peer {0} not found in YANG-Push cache")]
+    PeerNotFound(IpAddr),
+
+    #[strum(to_string = "Cannot clear cache for peer {0}: schema fetch pending")]
+    SchemaFetchPending(IpAddr),
 }
 
 impl std::error::Error for ValidationActorError {}
 
-#[derive(Debug, Clone, Copy)]
+impl From<PeerCacheError> for ValidationActorError {
+    fn from(err: PeerCacheError) -> Self {
+        match err {
+            PeerCacheError::PeerNotFound(peer_ip) => Self::PeerNotFound(peer_ip),
+            PeerCacheError::SchemaFetchPending(peer_ip) => Self::SchemaFetchPending(peer_ip),
+        }
+    }
+}
+
+#[derive(Debug)]
 enum ValidationActorCommand {
     Shutdown,
+    GetYangPushCache(
+        Option<IpAddr>,
+        oneshot::Sender<Result<YangPushCacheSnapshot, ValidationActorError>>,
+    ),
+    ClearYangPushCache(
+        Option<IpAddr>,
+        oneshot::Sender<Result<ClearCacheReport, ValidationActorError>>,
+    ),
 }
 
 struct LogFields {
@@ -183,25 +210,46 @@ impl ValidationActor {
         loop {
             tokio::select! {
                 biased;
-                cmd = self.cmd_rx.recv() => {
-                    return match cmd {
-                        Some(ValidationActorCommand::Shutdown) => {
-                            info!("Shutting down YANG-Push validation actor");
-                            Ok("YANG-Push validation actor shutdown successfully".to_string())
-                        }
-                        None => {
-                            let msg = "YANG-Push validation actor terminated due to command channel closing";
-                            warn!(msg);
-                            Ok(msg.to_string())
+                cmd = self.cmd_rx.recv() => match cmd {
+                    Some(ValidationActorCommand::Shutdown) => {
+                        info!("Shutting down YANG-Push validation actor");
+
+                        return Ok("YANG-Push validation actor shutdown successfully".to_string());
+                    }
+
+                    Some(ValidationActorCommand::GetYangPushCache(peer_ip, resp_tx)) => {
+                        debug!("Received request to get YANG-Push cache");
+
+                        let snapshot = self.validator.cache_snapshot(peer_ip).map_err(Into::into);
+                        if resp_tx.send(snapshot).is_err() {
+                            warn!("Failed to send YANG-Push cache snapshot to requester");
                         }
                     }
-                }
+
+                    Some(ValidationActorCommand::ClearYangPushCache(peer_ip, resp_tx)) => {
+                        debug!("Received request to clear YANG-Push cache");
+
+                        let clear_result = self.validator.clear_cache(peer_ip).map_err(Into::into);
+                        if resp_tx.send(clear_result).is_err() {
+                            warn!("Failed to send cleared YANG-Push cache peers to requester");
+                        }
+                    }
+
+                    None => {
+                        let msg = "YANG-Push validation actor terminated due to command channel closing";
+                        warn!(msg);
+
+                        return Ok(msg.to_string());
+                    }
+                },
+
                 msg = self.cache_rx.recv() => {
                     match msg {
                         Ok(response) => self.validator.process_cache_response(response),
                         Err(error) => {
                             let err_msg = "YANG-Push validation actor cache receiver channel closed unexpectedly, shutting down";
                             warn!(error=%error, err_msg);
+
                             return Ok(err_msg.to_string());
                         }
                     }
@@ -210,21 +258,25 @@ impl ValidationActor {
                     if let Err(err) = self.process_udp_notif_msg(message, true).await {
                         let err_msg = "YANG-Push validation actor buffered packet processing unrecoverable error, shutting down";
                         warn!(error=%err, err_msg);
+
                         return Ok(err_msg.to_string());
                     }
                 }
+
                 msg = self.rx.recv() => {
                     match msg {
                         Ok(msg) => {
                             if let Err(err) = self.process_udp_notif_msg(msg, false).await {
                                 let err_msg = "YANG-Push validation actor UDP-Notif processing unrecoverable error, shutting down";
                                 warn!(error=%err, err_msg);
+
                                 return Ok(err_msg.to_string());
                             }
                         }
                         Err(error) => {
                             let err_msg = "YANG-Push validation actor UDP Notif receiver channel closed unexpectedly, shutting down";
                             warn!(error=%error, err_msg);
+
                             return Ok(err_msg.to_string());
                         }
                     }
@@ -238,9 +290,21 @@ impl ValidationActor {
 pub enum ValidationActorHandleError {
     #[strum(serialize = "Failed to send command to actor")]
     SendErr,
+
+    #[strum(serialize = "Failed to receive response from actor")]
+    ReceiveErr,
+
+    #[strum(to_string = "{0}")]
+    ActorErr(ValidationActorError),
 }
 
 impl std::error::Error for ValidationActorHandleError {}
+
+impl From<ValidationActorError> for ValidationActorHandleError {
+    fn from(err: ValidationActorError) -> Self {
+        ValidationActorHandleError::ActorErr(err)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct ValidationActorHandle {
@@ -295,6 +359,36 @@ impl ValidationActorHandle {
             .send(ValidationActorCommand::Shutdown)
             .await
             .map_err(|_| ValidationActorHandleError::SendErr)
+    }
+
+    pub async fn get_yang_push_cache(
+        &self,
+        peer_ip: Option<IpAddr>,
+    ) -> Result<YangPushCacheSnapshot, ValidationActorHandleError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(ValidationActorCommand::GetYangPushCache(peer_ip, tx))
+            .await
+            .map_err(|_| ValidationActorHandleError::SendErr)?;
+        let snapshot = rx
+            .await
+            .map_err(|_| ValidationActorHandleError::ReceiveErr)??;
+        Ok(snapshot)
+    }
+
+    pub async fn clear_yang_push_cache(
+        &self,
+        peer_ip: Option<IpAddr>,
+    ) -> Result<ClearCacheReport, ValidationActorHandleError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(ValidationActorCommand::ClearYangPushCache(peer_ip, tx))
+            .await
+            .map_err(|_| ValidationActorHandleError::SendErr)?;
+        let clear_cache_report = rx
+            .await
+            .map_err(|_| ValidationActorHandleError::ReceiveErr)??;
+        Ok(clear_cache_report)
     }
 }
 
