@@ -21,6 +21,7 @@ static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 use anyhow::anyhow;
 use clap::Parser;
 use futures::Future;
+use netcalyx_collector::admin_api::{self, AdminApiHandles};
 use netcalyx_collector::config::{CollectorConfig, TelemetryConfig};
 use netcalyx_collector::{init_bmp_collection, init_flow_collection, init_udp_notif_collection};
 use opentelemetry::global;
@@ -347,24 +348,33 @@ fn main() -> anyhow::Result<()> {
         // Keep the metrics alive for the entire process lifetime.
         let _collector_metrics = CollectorMetrics::new(&meter, process_start);
 
-        let mut handles = vec![];
+        let mut handles: Vec<Pin<Box<dyn Future<Output = Result<(), _>>>>> = vec![];
+
+        let admin_api_handles = AdminApiHandles::default();
 
         if let Some(flow_config) = config.flow {
-            let flow_handle: Pin<Box<dyn Future<Output = Result<(), anyhow::Error>>>> =
-                Box::pin(init_flow_collection(flow_config, meter.clone()));
+            let flow_handle = Box::pin(init_flow_collection(flow_config, meter.clone()));
             handles.push(flow_handle);
         }
 
         if let Some(bmp_config) = config.bmp {
-            let bmp_handle: Pin<Box<dyn Future<Output = Result<(), anyhow::Error>>>> =
-                Box::pin(init_bmp_collection(bmp_config, meter.clone()));
+            let bmp_handle = Box::pin(init_bmp_collection(bmp_config, meter.clone()));
             handles.push(bmp_handle);
         }
 
         if let Some(udp_notif_config) = config.udp_notif {
-            let udp_notif_handle: Pin<Box<dyn Future<Output = Result<(), anyhow::Error>>>> =
-                Box::pin(init_udp_notif_collection(udp_notif_config, meter.clone()));
+            let udp_notif_handle = Box::pin(init_udp_notif_collection(
+                udp_notif_config,
+                admin_api_handles.udp_notif_pipelines.clone(),
+                meter.clone(),
+            ));
             handles.push(udp_notif_handle);
+        }
+
+        if let Some(admin_api_config) = config.admin_api {
+            let admin_api_handle =
+                Box::pin(admin_api::serve(admin_api_config, admin_api_handles, meter));
+            handles.push(admin_api_handle);
         }
 
         // // Purge old entries periodically
