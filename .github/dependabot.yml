@@ -54,3 +54,15 @@ updates:
         patterns:
           - "arbitrary"
           - "arbitrary_ext"
+  - package-ecosystem: docker
+    directory: /crates/collector
+    schedule:
+      interval: weekly
+    labels:
+      - automated
+      - dependencies
+    # Keep the builder and runtime base images on the same Debian release
+    groups:
+      container-base-images:
+        patterns:
+          - "*"
