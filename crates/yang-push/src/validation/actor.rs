@@ -18,15 +18,15 @@
 
 use crate::cache::actor::{CacheLookupCommand, CacheResponse};
 use crate::validation::processing::ValidatedNotification;
-use crate::validation::state::CachedPeerSubscriptions;
+use crate::validation::state::{CachedPeerSubscriptions, YangPushCacheSnapshot};
 use crate::validation::stats::ValidationStats;
 use netcalyx_udp_notif_service::UdpNotifRequest;
 use rustc_hash::FxHashMap;
 use std::collections::VecDeque;
 use std::net::IpAddr;
 use std::sync::Arc;
-use tokio::sync::mpsc;
-use tracing::{info, warn};
+use tokio::sync::{mpsc, oneshot};
+use tracing::{debug, info, warn};
 
 #[derive(Debug, Clone, PartialEq, Eq, strum_macros::Display)]
 pub enum ValidationActorError {
@@ -36,13 +36,23 @@ pub enum ValidationActorError {
     CacheResponseReceiveError,
     #[strum(serialize = "Failed to send the decoded UDP-Notif packet")]
     SendError,
+    #[strum(to_string = "Peer {0} not found in YANG-Push cache")]
+    PeerNotFound(IpAddr),
 }
 
 impl std::error::Error for ValidationActorError {}
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub(super) enum ValidationActorCommand {
     Shutdown,
+    GetYangPushCache(
+        Option<IpAddr>,
+        oneshot::Sender<Result<YangPushCacheSnapshot, ValidationActorError>>,
+    ),
+    ClearYangPushCache(
+        Option<IpAddr>,
+        oneshot::Sender<Result<Vec<IpAddr>, ValidationActorError>>,
+    ),
 }
 
 pub(super) struct ValidationActor {
@@ -74,15 +84,61 @@ impl ValidationActor {
             tokio::select! {
                 biased;
                 cmd = self.cmd_rx.recv() => {
-                    return match cmd {
+                    match cmd {
                         Some(ValidationActorCommand::Shutdown) => {
                             info!("Shutting down YANG-Push validation actor");
-                            Ok("Enrichment shutdown successfully".to_string())
+                            return Ok("Enrichment shutdown successfully".to_string());
+                        }
+                        Some(ValidationActorCommand::GetYangPushCache(peer_ip, resp_tx)) => {
+                            debug!("Received request to get YANG-Push cache");
+                            let snapshot = match peer_ip {
+                                Some(peer_ip) => self
+                                    .peer_cache
+                                    .get(&peer_ip)
+                                    .map(|peer_subscriptions| {
+                                        YangPushCacheSnapshot::from_iter([(
+                                            peer_ip,
+                                            peer_subscriptions.snapshot(),
+                                        )])
+                                    })
+                                    .ok_or(ValidationActorError::PeerNotFound(peer_ip)),
+                                None => Ok(self
+                                    .peer_cache
+                                    .iter()
+                                    .map(|(peer_ip, peer_subscriptions)| {
+                                        (*peer_ip, peer_subscriptions.snapshot())
+                                    })
+                                    .collect()),
+                            };
+                            if resp_tx.send(snapshot).is_err() {
+                                warn!("Failed to send YANG-Push cache snapshot to requester");
+                            }
+                        }
+                        Some(ValidationActorCommand::ClearYangPushCache(peer_ip, resp_tx)) => {
+                            debug!("Received request to clear YANG-Push cache");
+                            let cleared_peers = match peer_ip {
+                                Some(peer_ip) => self
+                                    .peer_cache
+                                    .remove(&peer_ip)
+                                    .map(|_| vec![peer_ip])
+                                    .ok_or(ValidationActorError::PeerNotFound(peer_ip)),
+                                None => Ok(self.peer_cache.drain().map(|(peer_ip, _)| peer_ip).collect()),
+                            };
+                            // Reset the per-peer gauges only after the cache is updated, so
+                            // `cached_peers` reflects the new size.
+                            if let Ok(cleared_peers) = &cleared_peers {
+                                for peer_ip in cleared_peers {
+                                    self.record_otel_gauges(*peer_ip, 0, 0);
+                                }
+                            }
+                            if resp_tx.send(cleared_peers).is_err() {
+                                warn!("Failed to send cleared YANG-Push cache peers to requester");
+                            }
                         }
                         None => {
                             let msg = "YANG-Push validation actor terminated due to command channel closing";
                             warn!(msg);
-                            Ok(msg.to_string())
+                            return Ok(msg.to_string());
                         }
                     }
                 }
@@ -144,9 +200,19 @@ impl ValidationActor {
 pub enum ValidationActorHandleError {
     #[strum(serialize = "Failed to send command to actor")]
     SendErr,
+    #[strum(serialize = "Failed to receive response from actor")]
+    ReceiveErr,
+    #[strum(to_string = "{0}")]
+    ActorErr(ValidationActorError),
 }
 
 impl std::error::Error for ValidationActorHandleError {}
+
+impl From<ValidationActorError> for ValidationActorHandleError {
+    fn from(err: ValidationActorError) -> Self {
+        ValidationActorHandleError::ActorErr(err)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct ValidationActorHandle {
@@ -201,6 +267,37 @@ impl ValidationActorHandle {
             .send(ValidationActorCommand::Shutdown)
             .await
             .map_err(|_| ValidationActorHandleError::SendErr)
+    }
+
+    pub async fn get_yang_push_cache(
+        &self,
+        peer_ip: Option<IpAddr>,
+    ) -> Result<YangPushCacheSnapshot, ValidationActorHandleError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(ValidationActorCommand::GetYangPushCache(peer_ip, tx))
+            .await
+            .map_err(|_| ValidationActorHandleError::SendErr)?;
+        let snapshot = rx
+            .await
+            .map_err(|_| ValidationActorHandleError::ReceiveErr)??;
+        Ok(snapshot)
+    }
+
+    /// Returns the IPs of the peers removed from the cache.
+    pub async fn clear_yang_push_cache(
+        &self,
+        peer_ip: Option<IpAddr>,
+    ) -> Result<Vec<IpAddr>, ValidationActorHandleError> {
+        let (tx, rx) = oneshot::channel();
+        self.cmd_tx
+            .send(ValidationActorCommand::ClearYangPushCache(peer_ip, tx))
+            .await
+            .map_err(|_| ValidationActorHandleError::SendErr)?;
+        let cleared_peers = rx
+            .await
+            .map_err(|_| ValidationActorHandleError::ReceiveErr)??;
+        Ok(cleared_peers)
     }
 }
 
