@@ -832,3 +832,6 @@ fn validate_payload(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;
