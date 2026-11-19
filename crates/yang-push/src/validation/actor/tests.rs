@@ -1614,3 +1614,35 @@ async fn test_validation_actor_subscription_modified_while_fetch_in_flight() {
     caching_handle.shutdown().await.unwrap();
     caching_join_handle.await.unwrap().unwrap();
 }
+
+/// A shutdown command stops the actor cleanly with its own shutdown message.
+#[tokio::test]
+#[tracing_test::traced_test]
+async fn test_validation_actor_shutdown() {
+    let (_udp_notif_tx, udp_notif_rx) = async_channel::bounded(1);
+    let (validated_tx, _validated_rx) = async_channel::bounded(1);
+    let (cache_cmd_tx, _cache_cmd_rx) = async_channel::bounded(1);
+    let (join_handle, handle) = ValidationActorHandle::new(
+        1,
+        1,
+        1,
+        true,
+        udp_notif_rx,
+        validated_tx,
+        cache_cmd_tx,
+        either::Right(ValidationStats::new(opentelemetry::global::meter(
+            "test_meter",
+        ))),
+    )
+    .expect("Failed to spawn validation actor");
+
+    handle.shutdown().await.unwrap();
+    let result = tokio::time::timeout(Duration::from_secs(1), join_handle)
+        .await
+        .expect("timeout waiting for the actor to shut down")
+        .unwrap();
+    assert_eq!(
+        result,
+        Ok("YANG-Push validation actor shutdown successfully".to_string())
+    );
+}

@@ -318,3 +318,6 @@ impl PeerCache {
             .or_insert_with(|| CachedSubscription::new(subscription_info))
     }
 }
+
+#[cfg(test)]
+mod tests;
