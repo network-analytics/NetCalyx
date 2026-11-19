@@ -16,6 +16,14 @@
 
 //! OpenTelemetry metrics recorded by the validation actor.
 
+use crate::cache::storage::SubscriptionInfo;
+use crate::{
+    OTL_YANG_PUSH_SUBSCRIPTION_ID_KEY, OTL_YANG_PUSH_SUBSCRIPTION_ROUTER_CONTENT_ID_KEY,
+    OTL_YANG_PUSH_SUBSCRIPTION_TARGET_KEY,
+};
+use netcalyx_udp_notif_pkt::raw::UdpNotifPacket;
+use netcalyx_udp_notif_service::OTL_UDP_NOTIF_PUBLISHER_ID_KEY;
+use std::net::SocketAddr;
 use strum::VariantNames;
 
 // Attribute key shared by the `dropped` and `skipped` counters.
@@ -60,6 +68,7 @@ pub(super) enum CacheLookupBy {
     SubscriptionId,
 }
 
+/// OpenTelemetry metrics for YANG-Push validation.
 #[derive(Debug, Clone)]
 pub struct ValidationStats {
     pub received: opentelemetry::metrics::Counter<u64>,
@@ -200,4 +209,53 @@ impl ValidationStats {
             cached_subscriptions,
         }
     }
+}
+/// Build the base OpenTelemetry tag set (peer address, port, publisher id)
+/// for a given UDP-Notif packet.
+pub(super) fn peer_tags_from_packet(
+    peer: SocketAddr,
+    packet: &UdpNotifPacket,
+) -> Vec<opentelemetry::KeyValue> {
+    let publisher_id = packet.publisher_id();
+    Vec::from([
+        opentelemetry::KeyValue::new("network.peer.address", format!("{}", peer.ip())),
+        opentelemetry::KeyValue::new(
+            "network.peer.port",
+            opentelemetry::Value::I64(peer.port().into()),
+        ),
+        opentelemetry::KeyValue::new(
+            OTL_UDP_NOTIF_PUBLISHER_ID_KEY,
+            opentelemetry::Value::I64(publisher_id.into()),
+        ),
+    ])
+}
+
+/// Append subscription-specific OpenTelemetry tags (id, target,
+/// router content-id) to an existing tag vector.
+pub(super) fn extend_peer_tags_with_subscription_info(
+    subscription_info: &SubscriptionInfo,
+    peer_tags: &mut Vec<opentelemetry::KeyValue>,
+) {
+    peer_tags.push(opentelemetry::KeyValue::new(
+        OTL_YANG_PUSH_SUBSCRIPTION_ID_KEY,
+        opentelemetry::Value::I64(subscription_info.id().into()),
+    ));
+    peer_tags.push(opentelemetry::KeyValue::new(
+        OTL_YANG_PUSH_SUBSCRIPTION_TARGET_KEY,
+        format!("{}", subscription_info.target()),
+    ));
+    peer_tags.push(opentelemetry::KeyValue::new(
+        OTL_YANG_PUSH_SUBSCRIPTION_ROUTER_CONTENT_ID_KEY,
+        subscription_info.content_id().to_string(),
+    ));
+}
+
+/// Append the `reason` attribute to a copy of `tags`.
+pub(super) fn with_reason(
+    tags: &[opentelemetry::KeyValue],
+    reason: impl Into<&'static str>,
+) -> Vec<opentelemetry::KeyValue> {
+    let mut tags = tags.to_vec();
+    tags.push(opentelemetry::KeyValue::new(REASON_KEY, reason.into()));
+    tags
 }
