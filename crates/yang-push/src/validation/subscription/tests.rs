@@ -14,9 +14,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use super::{check_xpath_target_resolves, normalize_json_target_xpath};
 use crate::ContentId;
 use crate::cache::storage::SubscriptionInfo;
-use crate::validation::actor::ValidationActor;
 use netcalyx_netconf_proto::yang_push::identities::{Encoding, Transport};
 use netcalyx_udp_notif_pkt::notification::Target;
 use std::net::{IpAddr, SocketAddr};
@@ -34,11 +34,7 @@ fn test_normalize_json_target_xpath_collapses_redundant_prefixes() {
                 .to_string(),
         ),
     );
-    ValidationActor::normalize_json_target_xpath(
-        SocketAddr::from(([127, 0, 0, 1], 0)),
-        1,
-        &mut target,
-    );
+    normalize_json_target_xpath(SocketAddr::from(([127, 0, 0, 1], 0)), 1, &mut target);
     assert_eq!(
         target.datastore_xpath_filter.as_deref(),
         Some("/ietf-interfaces:interfaces/interface[name='eth0']/oper-status")
@@ -53,11 +49,7 @@ fn test_normalize_json_target_xpath_idempotent_on_canonical_path() {
         "ietf-datastores:operational".to_string(),
         either::Right("/ietf-interfaces:interfaces/interface".to_string()),
     );
-    ValidationActor::normalize_json_target_xpath(
-        SocketAddr::from(([127, 0, 0, 1], 0)),
-        1,
-        &mut target,
-    );
+    normalize_json_target_xpath(SocketAddr::from(([127, 0, 0, 1], 0)), 1, &mut target);
     assert_eq!(
         target.datastore_xpath_filter.as_deref(),
         Some("/ietf-interfaces:interfaces/interface")
@@ -74,18 +66,14 @@ fn test_normalize_json_target_xpath_noop_without_xpath_filter() {
         either::Left(serde_json::Value::Null),
     );
     let before = target.clone();
-    ValidationActor::normalize_json_target_xpath(
-        SocketAddr::from(([127, 0, 0, 1], 0)),
-        1,
-        &mut target,
-    );
+    normalize_json_target_xpath(SocketAddr::from(([127, 0, 0, 1], 0)), 1, &mut target);
     assert_eq!(target, before);
 }
 
 /// Loads a `yang5::context::Context` from the bundled `ietf-interfaces`
 /// test schema (the same assets used by the cache actor tests), for
 /// tests that need a real schema to resolve xpaths against.
-fn load_test_yang_ctx() -> yang5::context::Context {
+pub(crate) fn load_test_yang_ctx() -> yang5::context::Context {
     yang5::context::Context::new_from_yang_library_file(
         std::path::Path::new("../../assets/yang/ietf-interfaces/yang-lib.xml"),
         DataFormat::XML,
@@ -120,7 +108,7 @@ fn test_check_xpath_target_resolves_canonical_path_is_silent() {
         "ietf-datastores:operational".to_string(),
         either::Right("/ietf-interfaces:interfaces/interface/oper-status".to_string()),
     ));
-    ValidationActor::check_xpath_target_resolves(&subscription_info, &yang_ctx);
+    check_xpath_target_resolves(&subscription_info, &yang_ctx);
     assert!(!logs_contain(
         "target xpath differs from the schema canonical form"
     ));
@@ -141,7 +129,7 @@ fn test_check_xpath_target_resolves_non_canonical_path_warns() {
                 .to_string(),
         ),
     ));
-    ValidationActor::check_xpath_target_resolves(&subscription_info, &yang_ctx);
+    check_xpath_target_resolves(&subscription_info, &yang_ctx);
     assert!(logs_contain(
         "target xpath differs from the schema canonical form"
     ));
@@ -157,7 +145,7 @@ fn test_check_xpath_target_resolves_ignores_predicates_when_comparing() {
         "ietf-datastores:operational".to_string(),
         either::Right("/ietf-interfaces:interfaces/interface[name='eth0']/oper-status".to_string()),
     ));
-    ValidationActor::check_xpath_target_resolves(&subscription_info, &yang_ctx);
+    check_xpath_target_resolves(&subscription_info, &yang_ctx);
     assert!(!logs_contain(
         "target xpath differs from the schema canonical form"
     ));
@@ -173,7 +161,7 @@ fn test_check_xpath_target_resolves_missing_node_warns() {
         "ietf-datastores:operational".to_string(),
         either::Right("/ietf-interfaces:interfaces/interface/no-such-leaf".to_string()),
     ));
-    ValidationActor::check_xpath_target_resolves(&subscription_info, &yang_ctx);
+    check_xpath_target_resolves(&subscription_info, &yang_ctx);
     assert!(logs_contain(
         "target xpath does not resolve to any schema node"
     ));
@@ -189,7 +177,7 @@ fn test_check_xpath_target_resolves_invalid_xpath_warns() {
         "ietf-datastores:operational".to_string(),
         either::Right("/ietf-interfaces:interfaces[".to_string()),
     ));
-    ValidationActor::check_xpath_target_resolves(&subscription_info, &yang_ctx);
+    check_xpath_target_resolves(&subscription_info, &yang_ctx);
     assert!(logs_contain(
         "target xpath failed to evaluate against the schema"
     ));
@@ -206,6 +194,6 @@ fn test_check_xpath_target_resolves_noop_without_xpath_filter() {
         None,
         either::Left(serde_json::Value::Null),
     ));
-    ValidationActor::check_xpath_target_resolves(&subscription_info, &yang_ctx);
+    check_xpath_target_resolves(&subscription_info, &yang_ctx);
     assert!(!logs_contain("target xpath"));
 }

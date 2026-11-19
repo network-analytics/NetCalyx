@@ -115,6 +115,21 @@
 //!   - Output channel closed: Actor terminates (backpressure failure)
 //!   - Cache channel closed: Actor terminates (dependency failure)
 //!   - Shutdown command received: Graceful termination
+//!
+//! ## Module layout
+//!
+//! - `processing`: `Validator`, the validation state machine. It makes every
+//!   decision (decode, buffer, validate, drain) without any channel I/O, so it
+//!   can be unit tested synchronously.
+//! - `state`: `PeerCache`, the per-peer/per-subscription cache and bounded hold
+//!   buffers used by the validator.
+//! - `subscription`: building `SubscriptionInfo` from
+//!   `SubscriptionStarted`/`SubscriptionModified` notifications and
+//!   normalizing/checking their xpath targets.
+//! - `actor`: the tokio actor that feeds packets and cache responses into the
+//!   validator and executes its outcomes (forward downstream or send a cache
+//!   lookup), plus the public [`ValidationActorHandle`].
+//! - `stats`: [`ValidationStats`] and metric attribute helpers.
 
 mod actor;
 mod processing;
