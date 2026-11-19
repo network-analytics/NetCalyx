@@ -1051,18 +1051,24 @@ pub(crate) fn fetch_sysinfo_manifest(name: Option<String>) -> DataCollectionMani
     });
     DataCollectionManifest::new(
         Some(SystemInfo::new(None, hostname, None)),
+        // os-release/os-version mapping align with
+        // draft-ietf-nmop-message-broker-telemetry-message
         Some(SystemState::new(Some(Platform::new(
             System::name().ok(),
-            System::kernel_version().ok(),
             System::os_version().ok(),
+            System::kernel_long_version().ok(),
             Some(System::cpu_arch()),
         )))),
         Some(CollectorInfo::new(
             collector_name,
             Some(build::PKG_VERSION.to_string()),
             Some(format!(
-                "{} ({}) {} {}",
-                build::PKG_VERSION,
+                "{} {} ({}) {} {}",
+                build::PROJECT_NAME,
+                build::BUILD_TIME
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or(build::BUILD_TIME),
                 build::SHORT_COMMIT,
                 build::BUILD_RUST_CHANNEL,
                 build::BUILD_TARGET

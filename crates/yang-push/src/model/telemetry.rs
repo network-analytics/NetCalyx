@@ -838,13 +838,16 @@ mod tests {
                     Some(SystemState::new(Some(Platform::new(
                         Some("Rocky Linux".to_string()),
                         Some("8.10".to_string()),
-                        Some("4.18.0-553.el8_10.x86_64".to_string()),
+                        Some("Linux 4.18.0-553.el8_10.x86_64".to_string()),
                         Some("x86_64".to_string()),
                     )))),
                     Some(CollectorInfo::new(
-                        Some("dev-collector".to_string()),
-                        Some("1.0.0".to_string()),
-                        Some("1.0.0 (abc1234) release x86_64-unknown-linux-gnu".to_string()),
+                        Some("coll-netcalyx-telemetry-yang".to_string()),
+                        Some("0.4.0".to_string()),
+                        Some(
+                            "netcalyx-collector 2026-11-18 (c0d99701) debug x86_64-unknown-linux-gnu"
+                                .to_string(),
+                        ),
                     )),
                 )),
                 network_operator_metadata: Some(NetworkOperatorMetadata {
@@ -875,7 +878,7 @@ mod tests {
         let serialized = serde_json::to_string(&original_message).expect("Failed to serialize");
 
         // Expected JSON string
-        let expected_json = r#"{"ietf-telemetry-message:message":{"network-node-manifest":{"system":{"hostname":"node_id"},"system-state":{"platform":{"os-name":"FRR"}}},"telemetry-message-metadata":{"collection-timestamp":"1970-01-01T00:00:00Z","notification-event":"log","sequence-number":1,"session-protocol":"yang-push","export-address":"127.0.0.1","export-port":8080,"ietf-yang-push-telemetry-message:yang-push-subscription":{"id":1,"stream":"example-stream-subtree-filter-map","subtree-filter":{"example-map":{"e1":"v1","e2":"v2"}},"transport":"ietf-udp-notif-transport:udp-notif","encoding":"ietf-subscribed-notifications:encode-json","periodic":{"period":100,"anchor-time":"1970-01-01T00:00:00Z"},"module":[{"name":"example-module","revision":"2025-01-01","version":"1.0.0"}],"yang-library-content-id":"random-content-id"}},"data-collection-manifest":{"system":{"contact":"network-telemetry@example.com","hostname":"dev-collector-host","location":"IETF LAB"},"system-state":{"platform":{"os-name":"Rocky Linux","os-release":"8.10","os-version":"4.18.0-553.el8_10.x86_64","machine":"x86_64"}},"collector":{"name":"dev-collector","release":"1.0.0","version":"1.0.0 (abc1234) release x86_64-unknown-linux-gnu"}},"network-operator-metadata":{"labels":[{"name":"priority_level","number-value":"100"},{"name":"platform_id","string-value":"IETF LAB"},{"name":"test_anykey_label","anydata-values":{"key":"value"}}]}}}"#;
+        let expected_json = r#"{"ietf-telemetry-message:message":{"network-node-manifest":{"system":{"hostname":"node_id"},"system-state":{"platform":{"os-name":"FRR"}}},"telemetry-message-metadata":{"collection-timestamp":"1970-01-01T00:00:00Z","notification-event":"log","sequence-number":1,"session-protocol":"yang-push","export-address":"127.0.0.1","export-port":8080,"ietf-yang-push-telemetry-message:yang-push-subscription":{"id":1,"stream":"example-stream-subtree-filter-map","subtree-filter":{"example-map":{"e1":"v1","e2":"v2"}},"transport":"ietf-udp-notif-transport:udp-notif","encoding":"ietf-subscribed-notifications:encode-json","periodic":{"period":100,"anchor-time":"1970-01-01T00:00:00Z"},"module":[{"name":"example-module","revision":"2025-01-01","version":"1.0.0"}],"yang-library-content-id":"random-content-id"}},"data-collection-manifest":{"system":{"contact":"network-telemetry@example.com","hostname":"dev-collector-host","location":"IETF LAB"},"system-state":{"platform":{"os-name":"Rocky Linux","os-release":"8.10","os-version":"Linux 4.18.0-553.el8_10.x86_64","machine":"x86_64"}},"collector":{"name":"coll-netcalyx-telemetry-yang","release":"0.4.0","version":"netcalyx-collector 2026-11-18 (c0d99701) debug x86_64-unknown-linux-gnu"}},"network-operator-metadata":{"labels":[{"name":"priority_level","number-value":"100"},{"name":"platform_id","string-value":"IETF LAB"},{"name":"test_anykey_label","anydata-values":{"key":"value"}}]}}}"#;
 
         // Assert that the serialized JSON string matches the expected
         // JSON string
@@ -902,36 +905,42 @@ mod tests {
         let collector_json = r#"{"system":{"hostname":"data-collector-server-1","contact":"network-telemetry@example.com","location":"Data Center 1, Rack D4"},"system-state":{"platform":{"os-name":"Red Hat Enterprise Linux","os-release":"10.0","os-version":"Linux 6.12.0-rc3-rh10 x86_64","machine":"x86_64-server"}},"collector":{"name":"data-collector-5","release":"1.1","version":"Example Collector 20261114 (90e364ec)"}}"#;
 
         let node: Manifest = serde_json::from_str(node_json).expect("Failed to deserialize");
-        let system = node.system().expect("system missing");
-        assert_eq!(system.hostname(), Some("router"));
-        assert_eq!(system.contact(), Some("network-operation@example.com"));
-        assert_eq!(system.location(), Some("Data Center 1, Rack B4"));
-        let platform = node
-            .system_state()
-            .and_then(SystemState::platform)
-            .expect("platform missing");
-        assert_eq!(platform.os_name(), Some("Cisco IOS XR"));
-        assert_eq!(platform.os_release(), Some("25.4.2"));
-        assert_eq!(platform.os_version(), Some("25.4.2.04-IPI-BUILD"));
-        assert_eq!(platform.machine(), Some("ASR-9904"));
+        let expected_node = Manifest::new(
+            Some(SystemInfo::new(
+                Some("network-operation@example.com".to_string()),
+                Some("router".to_string()),
+                Some("Data Center 1, Rack B4".to_string()),
+            )),
+            Some(SystemState::new(Some(Platform::new(
+                Some("Cisco IOS XR".to_string()),
+                Some("25.4.2".to_string()),
+                Some("25.4.2.04-IPI-BUILD".to_string()),
+                Some("ASR-9904".to_string()),
+            )))),
+        );
+        assert_eq!(node, expected_node);
 
         let collector: DataCollectionManifest =
             serde_json::from_str(collector_json).expect("Failed to deserialize");
-        assert_eq!(
-            collector.system().and_then(SystemInfo::hostname),
-            Some("data-collector-server-1")
+        let expected_collector = DataCollectionManifest::new(
+            Some(SystemInfo::new(
+                Some("network-telemetry@example.com".to_string()),
+                Some("data-collector-server-1".to_string()),
+                Some("Data Center 1, Rack D4".to_string()),
+            )),
+            Some(SystemState::new(Some(Platform::new(
+                Some("Red Hat Enterprise Linux".to_string()),
+                Some("10.0".to_string()),
+                Some("Linux 6.12.0-rc3-rh10 x86_64".to_string()),
+                Some("x86_64-server".to_string()),
+            )))),
+            Some(CollectorInfo::new(
+                Some("data-collector-5".to_string()),
+                Some("1.1".to_string()),
+                Some("Example Collector 20261114 (90e364ec)".to_string()),
+            )),
         );
-        assert_eq!(
-            collector
-                .system_state()
-                .and_then(SystemState::platform)
-                .and_then(Platform::machine),
-            Some("x86_64-server")
-        );
-        let app = collector.collector().expect("collector missing");
-        assert_eq!(app.name(), Some("data-collector-5"));
-        assert_eq!(app.release(), Some("1.1"));
-        assert_eq!(app.version(), Some("Example Collector 20261114 (90e364ec)"));
+        assert_eq!(collector, expected_collector);
 
         // Round trip keeps the same content (key order follows the YANG model)
         let reserialized: Value = serde_json::to_value(&collector).expect("Failed to serialize");

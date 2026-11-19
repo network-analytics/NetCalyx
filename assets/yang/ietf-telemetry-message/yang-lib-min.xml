@@ -27,7 +27,7 @@
     </module>
     <module>
       <name>ietf-platform-manifest</name>
-      <revision>2026-06-27</revision>
+      <revision>2026-10-24</revision>
       <namespace>urn:ietf:params:xml:ns:yang:ietf-platform-manifest</namespace>
     </module>
     <module>
@@ -40,8 +40,9 @@
     <name>complete</name>
     <module-set>complete</module-set>
   </schema>
-  <content-id>ietf-telemetry-message-min</content-id>
+  <!-- Bump with each draft revision; keep module-set-id and collector configs in sync -->
+  <content-id>ietf-telemetry-message-06-min</content-id>
 </yang-library>
 <modules-state xmlns="urn:ietf:params:xml:ns:yang:ietf-yang-library">
-  <module-set-id>34</module-set-id>
+  <module-set-id>ietf-telemetry-message-06-min</module-set-id>
 </modules-state>

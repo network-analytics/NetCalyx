@@ -619,17 +619,20 @@ mod tests {
 
     fn test_manifest() -> DataCollectionManifest {
         DataCollectionManifest::new(
-            Some(SystemInfo::new(None, Some("test-host".into()), None)),
+            Some(SystemInfo::new(None, Some("leo-rocky".into()), None)),
             Some(SystemState::new(Some(Platform::new(
-                Some("Darwin".into()),
-                Some("25.4.0".into()),
-                Some("26.4.1".into()),
-                Some("arm64".into()),
+                Some("Rocky Linux".into()),
+                Some("8.10".into()),
+                Some("Linux 4.18.0-553.132.1.el8_10.x86_64".into()),
+                Some("x86_64".into()),
             )))),
             Some(CollectorInfo::new(
-                Some("test-writer".into()),
-                Some("0.11.0".into()),
-                Some("0.11.0 (f5b7083e) debug aarch64-apple-darwin".into()),
+                Some("coll-netcalyx-telemetry-yang".into()),
+                Some("0.4.0".into()),
+                Some(
+                    "netcalyx-collector 2026-11-18 (c0d99701) debug x86_64-unknown-linux-gnu"
+                        .into(),
+                ),
             )),
         )
     }
