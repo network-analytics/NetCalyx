@@ -158,6 +158,7 @@ impl<T, M: Serialize, F: Fn(Arc<T>, String) -> Vec<M>> HttpPublisherActor<T, M, 
             .json(&value)
             .send()
             .await
+            .and_then(|response| response.error_for_status())
             .map(|response| {
                 success_counter.add(
                     buf_len as u64,
