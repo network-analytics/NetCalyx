@@ -119,9 +119,11 @@ sha2 = { version = "0.11" }
 schema-registry-client = { version = "0.4" }
 bitflags = { version = "2.13" }
 axum = { version = "0.8"}
+axum-server = { version = "0.8", default-features = false, features = ["tls-rustls"] }
 schemars = { version = "1.2", features = ["derive"] }
 itertools = { version = "0.15" }
 derive_more = { version = "2.1", default-features = false, features = ["from"] }
+constant_time_eq = "0.4"
 
 [profile.release]
 codegen-units = 1

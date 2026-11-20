@@ -21,6 +21,8 @@ use crate::cache::storage::SubscriptionInfo;
 use netcalyx_netconf_proto::yang_push::types::SubscriptionId;
 use netcalyx_udp_notif_service::UdpNotifRequest;
 use rustc_hash::FxHashMap;
+use serde::Serialize;
+use std::net::IpAddr;
 use std::sync::Arc;
 
 /// Per-subscription state held by the validation actor.
@@ -84,3 +86,39 @@ pub(super) struct CachedPeerSubscriptions {
     pub(super) subscriptions: FxHashMap<SubscriptionId, CachedSubscription>,
     pub(super) total_buffered: usize,
 }
+
+impl CachedPeerSubscriptions {
+    pub(super) fn snapshot(&self) -> FxHashMap<SubscriptionId, CachedSubscriptionSnapshot> {
+        self.subscriptions
+            .iter()
+            .map(|(subscription_id, cached_subscription)| {
+                (*subscription_id, cached_subscription.into())
+            })
+            .collect()
+    }
+}
+
+/// Serializable snapshot of a cached subscription, excluding its YANG context
+/// and buffered packets.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CachedSubscriptionSnapshot {
+    pub cached_content_id: Option<ContentId>,
+    pub subscription_info: SubscriptionInfo,
+    pub buffered_packet_count: usize,
+    pub schema_fetch_pending: bool,
+}
+
+impl From<&CachedSubscription> for CachedSubscriptionSnapshot {
+    fn from(cached_subscription: &CachedSubscription) -> Self {
+        Self {
+            cached_content_id: cached_subscription.cached_content_id.clone(),
+            subscription_info: cached_subscription.subscription_info.clone(),
+            buffered_packet_count: cached_subscription.buffered_packets.len(),
+            schema_fetch_pending: cached_subscription.schema_fetch_pending,
+        }
+    }
+}
+
+/// Snapshot of the validation actor's YANG-Push cache
+pub type YangPushCacheSnapshot =
+    FxHashMap<IpAddr, FxHashMap<SubscriptionId, CachedSubscriptionSnapshot>>;

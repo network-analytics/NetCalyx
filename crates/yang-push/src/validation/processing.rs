@@ -302,7 +302,12 @@ impl ValidationActor {
     /// Record the peer-scoped cache gauges together so they never drift. Call
     /// after any change to `peer_cache` for `peer_ip`; pass `0`/`0` once the
     /// peer is gone so its per-peer series reset to zero.
-    fn record_otel_gauges(&self, peer_ip: IpAddr, total_buffered: usize, sub_count: usize) {
+    pub(super) fn record_otel_gauges(
+        &self,
+        peer_ip: IpAddr,
+        total_buffered: usize,
+        sub_count: usize,
+    ) {
         let peer_tag = [opentelemetry::KeyValue::new(
             "network.peer.address",
             format!("{peer_ip}"),

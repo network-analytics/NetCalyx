@@ -278,6 +278,9 @@ pub struct UdpNotifConfig {
     pub netconf: NetconfConfig,
 
     pub publishers: HashMap<String, PublisherConfig>,
+
+    /// Optional HTTPS controller API configuration.
+    pub controller: Option<ControllerConfig>,
 }
 
 impl UdpNotifConfig {
@@ -396,4 +399,17 @@ pub enum PublisherEndpoint {
 
     /// Kafka AVRO publisher endpoint (for BMP messages)
     BmpKafkaAvro(kafka_avro::KafkaConfig<BmpAvroConfig>),
+}
+
+/// HTTPS controller API configuration.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ControllerConfig {
+    /// Socket address on which the controller API listens.
+    pub address: SocketAddr,
+    /// Path to the PEM-encoded TLS certificate chain.
+    pub tls_cert_path: String,
+    /// Path to the PEM-encoded TLS private key.
+    pub tls_key_path: String,
+    /// Access token for authenticating requests to the controller API.
+    pub access_token: String,
 }
