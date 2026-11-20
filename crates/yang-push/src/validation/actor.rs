@@ -48,6 +48,60 @@ enum ValidationActorCommand {
     Shutdown,
 }
 
+struct LogFields {
+    peer: std::net::SocketAddr,
+    message_id: u32,
+    publisher_id: u32,
+    subscription_id: u32,
+    router_content_id: String,
+    target: String,
+    cached_content_id: String,
+    notification_type: String,
+}
+
+impl LogFields {
+    fn new(notification: &ValidatedNotification) -> Self {
+        Self {
+            peer: notification.session.peer(),
+            message_id: notification.packet.message_id(),
+            publisher_id: notification.packet.publisher_id(),
+            subscription_id: notification.subscription_info.id(),
+            router_content_id: notification.subscription_info.content_id().to_string(),
+            target: notification.subscription_info.target().to_string(),
+            cached_content_id: notification.cached_content_id.clone().unwrap_or_default(),
+            notification_type: notification_type(&notification.packet),
+        }
+    }
+
+    fn warn(&self) {
+        warn!(
+            peer=%self.peer,
+            message_id = self.message_id,
+            publisher_id = self.publisher_id,
+            subscription_id = self.subscription_id,
+            router_content_id = self.router_content_id,
+            target = self.target,
+            cached_content_id = self.cached_content_id,
+            notification_type = self.notification_type,
+            "Failed to send UDP-Notif message to the next actor"
+        );
+    }
+
+    fn trace(&self) {
+        trace!(
+            peer=%self.peer,
+            message_id = self.message_id,
+            publisher_id = self.publisher_id,
+            subscription_id = self.subscription_id,
+            router_content_id = self.router_content_id,
+            target = self.target,
+            cached_content_id = self.cached_content_id,
+            notification_type = self.notification_type,
+            "Successfully sent UDP-Notif message to the next actor"
+        );
+    }
+}
+
 struct ValidationActor {
     validator: Validator,
     cmd_rx: mpsc::Receiver<ValidationActorCommand>,
@@ -81,46 +135,29 @@ impl ValidationActor {
         notification: ValidatedNotification,
         peer_tags: &[opentelemetry::KeyValue],
     ) -> Result<(), ValidationActorError> {
-        let peer = notification.session.peer();
-        let message_id = notification.packet.message_id();
-        let publisher_id = notification.packet.publisher_id();
-        let notification_type = notification_type(&notification.packet);
-        let subscription_id = notification.subscription_info.id();
-        let router_content_id = notification.subscription_info.content_id().to_string();
-        let target = notification.subscription_info.target().to_string();
-        let cached_content_id = notification.cached_content_id.clone().unwrap_or_default();
+        // Log fields are only built when they will be used (hot path).
+        let trace_fields =
+            tracing::level_enabled!(tracing::Level::TRACE).then(|| LogFields::new(&notification));
 
-        if self.tx.send(notification).await.is_err() {
-            warn!(
-                peer=%peer,
-                message_id,
-                publisher_id,
-                subscription_id,
-                router_content_id,
-                target,
-                cached_content_id,
-                notification_type,
-                "Failed to send UDP-Notif message to the next actor"
-            );
-            self.validator
-                .stats()
-                .dropped
-                .add(1, &with_reason(peer_tags, DropReason::SendError));
-            return Err(ValidationActorError::SendError);
+        match self.tx.send(notification).await {
+            Ok(()) => {
+                self.validator.stats().sent.add(1, peer_tags);
+                if let Some(fields) = trace_fields {
+                    fields.trace();
+                }
+                Ok(())
+            }
+            Err(async_channel::SendError(notification)) => {
+                trace_fields
+                    .unwrap_or_else(|| LogFields::new(&notification))
+                    .warn();
+                self.validator
+                    .stats()
+                    .dropped
+                    .add(1, &with_reason(peer_tags, DropReason::SendError));
+                Err(ValidationActorError::SendError)
+            }
         }
-        self.validator.stats().sent.add(1, peer_tags);
-        trace!(
-            peer=%peer,
-            message_id,
-            publisher_id,
-            subscription_id,
-            router_content_id,
-            target,
-            cached_content_id,
-            notification_type,
-            "Successfully sent UDP-Notif message to the next actor"
-        );
-        Ok(())
     }
 
     /// Send a schema lookup request to the cache actor.
