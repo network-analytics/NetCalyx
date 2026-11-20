@@ -276,6 +276,21 @@ jobs:
           echo "DEB_VERSION=${DEB_VERSION}" >> $GITHUB_OUTPUT
           echo "DEB_RELEASE=${DEB_RELEASE}" >> $GITHUB_OUTPUT
 
+  # Build the collector docker image
+  build-collector-docker:
+    runs-on: ubuntu-24.04
+    name: Build collector docker image
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # shadow-rs embeds tag and commit information
+          persist-credentials: false
+      - name: Build netcalyx-collector image
+        run: docker build -f crates/collector/Dockerfile -t netcalyx-collector .
+      - name: Smoke-test netcalyx-collector image
+        run: docker run --rm --network none netcalyx-collector --version
+
   # Build RPM packages for different distributions
   build-collector-rpm:
     runs-on: ubuntu-24.04
