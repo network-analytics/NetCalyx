@@ -14,24 +14,33 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Packet decoding, buffering and validation logic of the validation actor.
+//! Validation logic, independent of the actor runtime.
+//!
+//! [`Validator`] makes every decision about incoming packets (decode,
+//! resolve subscription, buffer, validate) and cache responses (load the
+//! YANG context, drain the hold buffer).
+//! [`PeerCache`] holds the underlying per-peer/per-subscription state.
+//!
+//! It performs no channel I/O: the actor executes the returned
+//! [`PacketOutcome`] (forward downstream or send a cache lookup).
 
 use crate::cache::actor::{CacheLookupCommand, CacheResponse};
-use crate::cache::storage::SubscriptionInfo;
-use crate::validation::actor::{ValidationActor, ValidationActorError};
-use crate::validation::state::{CachedPeerSubscriptions, CachedSubscription};
+use crate::cache::storage::{SubscriptionInfo, YangLibraryReference};
+use crate::validation::state::{BufferFull, PeerCache, Resolved, SchemaState, Tracking};
 use crate::validation::stats::{
-    CACHE_LOOKUP_BY_KEY, CacheLookupBy, DropReason, REASON_KEY, SkipReason, ValidationStats,
+    CACHE_LOOKUP_BY_KEY, CacheLookupBy, DropReason, SkipReason, ValidationStats,
+    extend_peer_tags_with_subscription_info, peer_tags_from_packet, with_reason,
 };
-use crate::{
-    ContentId, OTL_YANG_PUSH_SUBSCRIPTION_ID_KEY, OTL_YANG_PUSH_SUBSCRIPTION_ROUTER_CONTENT_ID_KEY,
-    OTL_YANG_PUSH_SUBSCRIPTION_TARGET_KEY,
-};
+use crate::validation::subscription::{build_subscription_info, check_xpath_target_resolves};
+use crate::{ContentId, OTL_YANG_PUSH_SUBSCRIPTION_ID_KEY};
+use netcalyx_netconf_proto::yang_push::types::SubscriptionId;
 use netcalyx_udp_notif_pkt::decoded::{UdpNotifPacketDecoded, UdpNotifPayload};
 use netcalyx_udp_notif_pkt::notification::NotificationVariant;
 use netcalyx_udp_notif_pkt::raw::UdpNotifPacket;
-use netcalyx_udp_notif_service::{OTL_UDP_NOTIF_PUBLISHER_ID_KEY, SessionInfo, UdpNotifRequest};
+use netcalyx_udp_notif_service::{SessionInfo, UdpNotifRequest};
+use std::collections::VecDeque;
 use std::net::{IpAddr, SocketAddr};
+use std::ops::ControlFlow;
 use std::sync::Arc;
 use tracing::{debug, trace, warn};
 use yang5::data::{DataFormat, DataOperation, DataParserFlags, DataValidationFlags};
@@ -57,400 +66,203 @@ pub struct ValidatedNotification {
     pub packet: UdpNotifPacketDecoded,
 }
 
-impl ValidationActor {
-    /// Check if the subscription is different from the existing one in the
-    /// cache.
-    ///
-    /// If it is different, remove the existing one from the cache to allow a
-    /// new request to the caching actor.
-    ///
-    /// Only called when `schema_fetch_pending` is `false` for this id (see the
-    /// gate in `extract_subscription_info`), so `buffered_packets` is always
-    /// empty whenever an entry is removed below.
-    fn check_subscription_new(&mut self, peer: SocketAddr, subscription_info: &SubscriptionInfo) {
-        let Some(cached_peer_subscriptions) = self.peer_cache.get_mut(&peer.ip()) else {
-            return;
-        };
-        let is_different = cached_peer_subscriptions
-            .subscriptions
-            .get(&subscription_info.id())
-            .map(|x| x.subscription_info != *subscription_info)
-            .unwrap_or(true);
-        if !is_different {
-            return;
-        }
-        trace!(
-            peer=%peer,
-            subscription_id=subscription_info.id(),
-            router_content_id=subscription_info.content_id(),
-            target=%subscription_info.target(),
-            "Subscription changed, removing from cache to allow a new fetch schemas request"
-        );
-        if let Some(removed) = cached_peer_subscriptions
-            .subscriptions
-            .remove(&subscription_info.id())
-        {
-            cached_peer_subscriptions.total_buffered -= removed.buffered_packets.len();
-        }
-        // clear peer if there are no subscriptions left
-        if cached_peer_subscriptions.subscriptions.is_empty() {
-            self.peer_cache.remove(&peer.ip());
-        }
-        // Resync the per-peer gauges after the removal (0/0 when the peer is
-        // gone, resetting its series).
-        let (total_buffered, sub_count) = self
-            .peer_cache
-            .get(&peer.ip())
-            .map(|p| (p.total_buffered, p.subscriptions.len()))
-            .unwrap_or((0, 0));
-        self.record_otel_gauges(peer.ip(), total_buffered, sub_count);
-    }
+/// A cache lookup that the actor must send on behalf of the [`Validator`].
+///
+/// By the time it is returned, the subscription is already marked as
+/// `schema_fetch_pending` and the triggering packet is buffered (or dropped
+/// if the hold buffers were full).
+#[derive(Debug)]
+pub(super) enum CacheLookup {
+    BySubscriptionInfo {
+        subscription_info: Box<SubscriptionInfo>,
+        session: SessionInfo,
+    },
+    BySubscriptionId {
+        subscription_id: SubscriptionId,
+        session: SessionInfo,
+    },
+}
 
-    /// Get the subscription info from the cache or from the SubscriptionStarted
-    /// notification, and the cached content id if it's found in the cache.
-    ///
-    /// If the notification is a SubscriptionStarted, create a new
-    /// SubscriptionInfo and return it. If the notification is not a
-    /// SubscriptionStarted, look up the subscription info in the cache.
-    fn get_subscription_info(
-        &mut self,
-        peer: SocketAddr,
-        decoded: &UdpNotifPacketDecoded,
-    ) -> Option<(SubscriptionInfo, Option<Option<String>>)> {
-        let message_id = decoded.message_id();
-        let publisher_id = decoded.publisher_id();
-        let notif_contents = if let Some(notif) = decoded.payload().notification_contents() {
-            notif
-        } else {
-            warn!(
-                peer=%peer,
-                message_id,
-                publisher_id,
-                "Received UDP-Notif payload without a notifications content, dropping packet"
-            );
-            return None;
-        };
-
-        let subscription_info = if let NotificationVariant::SubscriptionStarted(
-            subscription_started,
-        )
-        | NotificationVariant::SubscriptionModified(
-            subscription_started,
-        ) = notif_contents
-        {
-            let subscription_info = if let Some(subscription_info) =
-                self.build_subscription_info(peer, message_id, publisher_id, subscription_started)
-            {
-                subscription_info
-            } else {
-                warn!(
-                    peer=%peer,
-                    message_id,
-                    publisher_id,
-                    notifification_type=%notif_contents.notification_type(),
-                    "Received UDP-Notif of subscription started/modified payload without subscription info, dropping packet"
-                );
-                return None;
-            };
-            self.check_subscription_new(peer, &subscription_info);
-            Some(subscription_info)
-        } else {
-            self.peer_cache.get(&peer.ip()).and_then(
-                |cached_peer_subscriptions: &CachedPeerSubscriptions| {
-                    cached_peer_subscriptions
-                        .subscriptions
-                        .get(&notif_contents.subscription_id())
-                        .map(|x| x.subscription_info.clone())
-                },
-            )
-        };
-        if let Some(subscription_info) = subscription_info {
-            let cached_content_id = self
-                .peer_cache
-                .get(&peer.ip())
-                .and_then(|cached_peer_subscriptions: &CachedPeerSubscriptions| {
-                    cached_peer_subscriptions
-                        .subscriptions
-                        .get(&notif_contents.subscription_id())
-                })
-                .filter(|x| x.subscription_info == subscription_info)
-                .map(|x| x.cached_content_id.clone());
-
-            Some((subscription_info, cached_content_id))
-        } else {
-            None
-        }
-    }
-
-    /// Attempt to add `message` to the per-subscription hold buffer, enforcing
-    /// both the per-subscription and per-peer packet limits.
-    /// Returns `true` if the packet was buffered, `false` if it was dropped.
-    fn buffer_packet(
-        &mut self,
-        subscription_info: SubscriptionInfo,
-        message: Arc<UdpNotifRequest>,
-    ) -> bool {
-        let peer = message.peer_address();
-        let packet = message.packet();
-        let message_id = packet.message_id();
-        let publisher_id = packet.publisher_id();
-        let mut peer_tags = Self::peer_tags_from_packet(peer, packet);
-        Self::extend_peer_tags_with_subscription_info(&subscription_info, &mut peer_tags);
-        let subscription_id = subscription_info.id();
-        let peer_cache = self.peer_cache.entry(peer.ip()).or_default();
-
-        let sub_buffered_packets = peer_cache
-            .subscriptions
-            .get(&subscription_id)
-            .map(|s| s.buffered_packets.len())
-            .unwrap_or(0);
-        if sub_buffered_packets >= self.max_buffered_packets_per_subscription {
-            // drop the new packet, since the buffer is full
-            warn!(
-                peer=%peer,
-                message_id,
-                publisher_id,
+impl CacheLookup {
+    /// Build the cache actor command, with `tx` as the response channel.
+    pub fn into_command(self, tx: async_channel::Sender<CacheResponse>) -> CacheLookupCommand {
+        match self {
+            Self::BySubscriptionInfo {
+                subscription_info,
+                session,
+            } => CacheLookupCommand::LookupBySubscriptionInfo {
+                subscription_info: *subscription_info,
+                session,
+                tx,
+            },
+            Self::BySubscriptionId {
                 subscription_id,
-                subscription_target=%subscription_info.target(),
-                router_content_id=subscription_info.content_id(),
-                "Buffer full for subscription, dropping new packet"
-            );
-            peer_tags.push(opentelemetry::KeyValue::new(
-                REASON_KEY,
-                <&str>::from(DropReason::BufferFullSubscription),
-            ));
-            self.stats.dropped.add(1, &peer_tags);
-            return false;
-        }
-        if peer_cache.total_buffered >= self.max_buffered_packets_per_peer {
-            warn!(
-                peer=%peer,
-                message_id,
-                publisher_id,
+                session,
+            } => CacheLookupCommand::LookupBySubscriptionId {
                 subscription_id,
-                subscription_target=%subscription_info.target(),
-                router_content_id=subscription_info.content_id(),
-                "Buffer full for peer, dropping new packet");
-            peer_tags.push(opentelemetry::KeyValue::new(
-                REASON_KEY,
-                <&str>::from(DropReason::BufferFullPeer),
-            ));
-            self.stats.dropped.add(1, &peer_tags);
-            return false;
+                session,
+                tx,
+            },
         }
-        let subscription_cache = peer_cache
-            .subscriptions
-            .entry(subscription_id)
-            .or_insert_with(|| CachedSubscription::new(subscription_info.clone()));
-        trace!(
-            peer=%peer,
-            message_id,
-            publisher_id,
-            subscription_id,
-            subscription_target=%subscription_info.target(),
-            router_content_id=subscription_info.content_id(),
-            "Buffered UDP-Notif packet"
-        );
-        subscription_cache.buffered_packets.push(message);
-        peer_cache.total_buffered += 1;
-        let total_buffered = peer_cache.total_buffered;
-        let sub_count = peer_cache.subscriptions.len();
-        self.record_otel_gauges(peer.ip(), total_buffered, sub_count);
-        true
     }
+}
 
-    /// Build the base OpenTelemetry tag set (peer address, port, publisher id)
-    /// for a given UDPNotif packet.
-    pub(super) fn peer_tags_from_packet(
-        peer: SocketAddr,
-        packet: &UdpNotifPacket,
-    ) -> Vec<opentelemetry::KeyValue> {
-        let publisher_id = packet.publisher_id();
-        Vec::from([
-            opentelemetry::KeyValue::new("network.peer.address", format!("{}", peer.ip())),
-            opentelemetry::KeyValue::new(
-                "network.peer.port",
-                opentelemetry::Value::I64(peer.port().into()),
+/// The action the actor must take after [`Validator::process_packet`].
+// Keep `Forward` inline instead of boxing it to avoid an additional heap
+// allocation per packet.
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug)]
+pub(super) enum PacketOutcome {
+    /// Forward the notification downstream. `peer_tags` are the metric
+    /// attributes to record the `sent` (or `dropped`) counter with.
+    Forward {
+        notification: ValidatedNotification,
+        peer_tags: Vec<opentelemetry::KeyValue>,
+    },
+    /// Send a cache lookup; the packet waits in the hold buffer
+    /// until the response arrives.
+    CacheLookup(CacheLookup),
+    /// Nothing left to do: the packet was dropped or buffered.
+    Consumed,
+}
+
+/// Validation state machine, independent of the actor runtime.
+///
+/// Owns the two-level (peer/subscription) cache, the hold buffers, and the
+/// queue of packets drained from the hold buffers once schemas arrive. It
+/// performs no channel I/O: every decision is returned to the caller as a
+/// [`PacketOutcome`], so the logic can be unit tested synchronously.
+#[derive(Debug)]
+pub(super) struct Validator {
+    /// Whether `anydata` nodes are validated strictly against their
+    /// schema (see `yang5::data::DataParserFlags::ANYDATA_STRICT`).
+    anydata_strict: bool,
+    peer_cache: PeerCache,
+    /// Packets drained from the per-subscription hold buffers once the cache
+    /// responds, waiting to be reprocessed one at a time.
+    pending_packets: VecDeque<Arc<UdpNotifRequest>>,
+    stats: ValidationStats,
+}
+
+impl Validator {
+    pub fn new(
+        max_buffered_packets_per_peer: usize,
+        max_buffered_packets_per_subscription: usize,
+        anydata_strict: bool,
+        stats: ValidationStats,
+    ) -> Self {
+        Self {
+            anydata_strict,
+            peer_cache: PeerCache::new(
+                max_buffered_packets_per_peer,
+                max_buffered_packets_per_subscription,
             ),
-            opentelemetry::KeyValue::new(
-                OTL_UDP_NOTIF_PUBLISHER_ID_KEY,
-                opentelemetry::Value::I64(publisher_id.into()),
-            ),
-        ])
-    }
-
-    /// Append subscription-specific OpenTelemetry tags (id, target,
-    /// router content-id) to an existing tag vector.
-    fn extend_peer_tags_with_subscription_info(
-        subscription_info: &SubscriptionInfo,
-        peer_tags: &mut Vec<opentelemetry::KeyValue>,
-    ) {
-        peer_tags.push(opentelemetry::KeyValue::new(
-            OTL_YANG_PUSH_SUBSCRIPTION_ID_KEY,
-            opentelemetry::Value::I64(subscription_info.id().into()),
-        ));
-        peer_tags.push(opentelemetry::KeyValue::new(
-            OTL_YANG_PUSH_SUBSCRIPTION_TARGET_KEY,
-            format!("{}", subscription_info.target()),
-        ));
-        peer_tags.push(opentelemetry::KeyValue::new(
-            OTL_YANG_PUSH_SUBSCRIPTION_ROUTER_CONTENT_ID_KEY,
-            subscription_info.content_id().to_string(),
-        ));
-    }
-
-    /// Record the peer-scoped cache gauges together so they never drift. Call
-    /// after any change to `peer_cache` for `peer_ip`; pass `0`/`0` once the
-    /// peer is gone so its per-peer series reset to zero.
-    fn record_otel_gauges(&self, peer_ip: IpAddr, total_buffered: usize, sub_count: usize) {
-        let peer_tag = [opentelemetry::KeyValue::new(
-            "network.peer.address",
-            format!("{peer_ip}"),
-        )];
-        self.stats.buffered.record(total_buffered as u64, &peer_tag);
-        self.stats
-            .cached_subscriptions
-            .record(sub_count as u64, &peer_tag);
-        self.stats
-            .cached_peers
-            .record(self.peer_cache.len() as u64, &[]);
-    }
-
-    /// Decode a raw `UdpNotifPacket` into a `UdpNotifPacketDecoded`.
-    /// Returns `Err(())` and drops the packet on unsupported media type or
-    /// parse failure.
-    ///
-    /// Set `count_decoded` to `false` when reprocessing a buffered message to
-    /// avoid double-counting the `decoded` metric.
-    fn decode_message(
-        &mut self,
-        peer: SocketAddr,
-        packet: &UdpNotifPacket,
-        count_decoded: bool,
-    ) -> Result<UdpNotifPacketDecoded, ()> {
-        let message_id = packet.message_id();
-        let publisher_id = packet.publisher_id();
-        let mut peer_tags = Self::peer_tags_from_packet(peer, packet);
-
-        // Decode the UDP-Notif packet to get subscription ID and payload
-        // information
-        match UdpNotifPacketDecoded::try_from(packet) {
-            Ok(decoded) => {
-                let notif_contents = decoded.payload().notification_contents();
-                if let Some(notif_contents) = notif_contents {
-                    peer_tags.push(opentelemetry::KeyValue::new(
-                        OTL_YANG_PUSH_SUBSCRIPTION_ID_KEY,
-                        opentelemetry::Value::I64(notif_contents.subscription_id().into()),
-                    ));
-                }
-                if tracing::enabled!(tracing::Level::TRACE) {
-                    let notification_type = decoded
-                        .notification_type()
-                        .map(|x| x.to_string())
-                        .unwrap_or("UNKNOWN".to_string());
-                    trace!(
-                        peer=%peer,
-                        message_id,
-                        publisher_id,
-                        notification_type,
-                        "Decoded UDP-Notif payload, starting the validation step"
-                    );
-                }
-                if count_decoded {
-                    self.stats.decoded.add(1, &peer_tags);
-                }
-                Ok(decoded)
-            }
-            Err(err) => {
-                warn!(
-                    peer=%peer,
-                    message_id,
-                    publisher_id,
-                    error=%err,
-                    "Failed to decode UDP-Notif payload, dropping packet"
-                );
-                peer_tags.push(opentelemetry::KeyValue::new(
-                    REASON_KEY,
-                    <&str>::from(DropReason::DecodeError),
-                ));
-                self.stats.dropped.add(1, &peer_tags);
-                Err(())
-            }
+            pending_packets: VecDeque::new(),
+            stats,
         }
     }
 
-    /// Core per-packet handler, called for every incoming UDP-Notif message and
-    /// for every packet drained from the per-subscription buffer once schemas
-    /// arrive.
-    pub(super) async fn process_udp_notif_msg(
+    pub const fn stats(&self) -> &ValidationStats {
+        &self.stats
+    }
+
+    pub fn has_pending(&self) -> bool {
+        !self.pending_packets.is_empty()
+    }
+
+    /// Pop the next packet drained from a hold buffer, to be passed back to
+    /// [`Self::process_packet`] with `is_reprocessed = true`.
+    pub fn pop_pending(&mut self) -> Option<Arc<UdpNotifRequest>> {
+        let message = self.pending_packets.pop_front()?;
+        self.stats
+            .pending
+            .record(self.pending_packets.len() as u64, &[]);
+        Some(message)
+    }
+
+    /// Core per-packet handler, called for every incoming UDP-Notif message
+    /// and for every packet drained from the hold buffers once schemas arrive
+    /// (`is_reprocessed = true`, which avoids double-counting the `received`
+    /// and `decoded` metrics).
+    pub fn process_packet(
         &mut self,
         message: Arc<UdpNotifRequest>,
         is_reprocessed: bool,
-    ) -> Result<(), ValidationActorError> {
+    ) -> PacketOutcome {
         let peer = message.peer_address();
         let packet = message.packet();
-        let session = message.session().clone();
+        if !is_reprocessed {
+            self.stats
+                .received
+                .add(1, &peer_tags_from_packet(peer, packet));
+        }
 
-        // Step 1: decode the raw UDP-Notif payload.
-        let decoded = match self.decode_message(peer, packet, !is_reprocessed) {
-            Ok(decoded) => decoded,
-            // Decoding errors are logged in the [Self::decode_message], and
-            // packets are dropped here.
-            Err(_) => return Ok(()),
+        // Step 1: decode the raw UDP-Notif payload. Errors are logged and
+        // counted in `decode_message`.
+        let Some(decoded) = self.decode_message(peer, packet, !is_reprocessed) else {
+            return PacketOutcome::Consumed;
         };
-        let notification_type = decoded
-            .notification_type()
-            .map(|x| x.to_string())
-            .unwrap_or("UNKNOWN".to_string());
-        let mut peer_tags = Self::peer_tags_from_packet(peer, packet);
+        let notification_type = notification_type(&decoded);
+        let mut peer_tags = peer_tags_from_packet(peer, packet);
         let message_id = decoded.message_id();
         let publisher_id = decoded.publisher_id();
         let is_legacy = matches!(decoded.payload(), UdpNotifPayload::NotificationLegacy(_));
 
-        // Step 2: resolve subscription info.
-        // Returns None if the packet was buffered (schemas not ready yet);
-        // in that case we stop here and wait for the cache to respond.
-        let extract_sub_info = self
-            .extract_subscription_info(Arc::clone(&message), peer, &decoded)
-            .await?;
-        let subscription_info = if let Some(subscription_info) = extract_sub_info {
-            subscription_info
-        } else {
-            return Ok(());
-        };
-        Self::extend_peer_tags_with_subscription_info(&subscription_info, &mut peer_tags);
+        // Step 2: resolve subscription info. Breaks if the packet was
+        // buffered, dropped, or needs a cache lookup first.
+        let subscription_info =
+            match self.resolve_subscription_info(Arc::clone(&message), peer, &decoded) {
+                ControlFlow::Continue(subscription_info) => subscription_info,
+                ControlFlow::Break(outcome) => return outcome,
+            };
+        extend_peer_tags_with_subscription_info(&subscription_info, &mut peer_tags);
 
         // Step 3: validate against YANG schemas if available, skip otherwise.
-        let peer_cache = self.peer_cache.entry(peer.ip()).or_default();
-        let subscription_cache = peer_cache
-            .subscriptions
-            .entry(subscription_info.id())
-            .or_insert_with(|| CachedSubscription::new(subscription_info.clone()));
-        let cached_content_id = if let Some(cached_content_id) =
-            subscription_cache.cached_content_id.clone()
-            && let Some(yang_ctx) = subscription_cache.yang_ctx.as_ref()
+        let cached = self.peer_cache.get(peer.ip(), subscription_info.id());
+        let cached_content_id = if let Some(cached) = cached
+            && let Some(cached_content_id) = cached.cached_content_id().cloned()
+            && let Some(yang_ctx) = cached.yang_ctx()
             && !subscription_info.is_empty()
         {
-            let validation_result = Self::validate_message(
-                packet,
-                peer,
-                &subscription_info,
-                cached_content_id.clone(),
-                &notification_type,
-                yang_ctx,
-                is_legacy,
-                self.anydata_strict,
-                &self.stats,
-                &peer_tags,
-            );
-            if validation_result.is_err() {
-                return Ok(());
+            let payload = packet.payload();
+            if let Err(err) = validate_payload(yang_ctx, &payload, is_legacy, self.anydata_strict) {
+                warn!(
+                    peer=%peer,
+                    message_id,
+                    publisher_id,
+                    subscription_id=subscription_info.id(),
+                    router_content_id=subscription_info.content_id(),
+                    target=%subscription_info.target(),
+                    cached_content_id,
+                    notification_type,
+                    is_legacy,
+                    error=%err,
+                    packet=str::from_utf8(&payload).unwrap_or("unserializable packet payload"),
+                    "Failed to validate UDP-Notif payload, dropping packet"
+                );
+                self.stats
+                    .dropped
+                    .add(1, &with_reason(&peer_tags, DropReason::ValidationFailed));
+                return PacketOutcome::Consumed;
             }
+            self.stats.validated.add(1, &peer_tags);
+            trace!(
+                peer=%peer,
+                message_id,
+                publisher_id,
+                subscription_id=subscription_info.id(),
+                router_content_id=subscription_info.content_id(),
+                target=%subscription_info.target(),
+                notification_type,
+                cached_content_id,
+                is_legacy,
+                "Successfully validated YANG-Push message",
+            );
             Some(cached_content_id)
         } else {
             let skip_reason = if subscription_info.is_empty() {
                 SkipReason::NoSubscriptionInfo
-            } else if subscription_cache.cached_content_id.is_some() {
+            } else if cached.is_some_and(|c| c.cached_content_id().is_some()) {
                 // Library reference exists but context creation failed
                 SkipReason::ContextFailed
             } else {
@@ -468,505 +280,143 @@ impl ValidationActor {
                 skip_reason = <&str>::from(skip_reason),
                 "No YANG schemas found, skipping validation step",
             );
-            let mut skip_tags = peer_tags.clone();
-            skip_tags.push(opentelemetry::KeyValue::new(
-                REASON_KEY,
-                <&str>::from(skip_reason),
-            ));
-            self.stats.skipped.add(1, &skip_tags);
+            self.stats
+                .skipped
+                .add(1, &with_reason(&peer_tags, skip_reason));
             None
         };
 
-        // Step 4: forward to the enrichment actor.
-        self.tx
-            .send(ValidatedNotification {
-                cached_content_id: cached_content_id.clone(),
-                subscription_info: subscription_info.clone(),
-                session,
+        // Step 4: hand over to the actor for forwarding.
+        PacketOutcome::Forward {
+            notification: ValidatedNotification {
+                cached_content_id,
+                subscription_info,
+                session: message.session().clone(),
                 packet: decoded,
-            })
-            .await
-            .map_err(|_| {
-                warn!(
-                    peer=%peer,
-                    message_id,
-                    publisher_id,
-                    subscription_id=subscription_info.id(),
-                    router_content_id=subscription_info.content_id(),
-                    target=%subscription_info.target(),
-                    cached_content_id=cached_content_id.clone().unwrap_or_default(),
-                    notification_type,
-                    "Failed to send UDP-Notif message for the next actor to process"
-                );
-                let mut drop_tags = peer_tags.clone();
-                drop_tags.push(opentelemetry::KeyValue::new(
-                    REASON_KEY,
-                    <&str>::from(DropReason::SendError),
-                ));
-                self.stats.dropped.add(1, &drop_tags);
-                ValidationActorError::SendError
-            })?;
-        self.stats.sent.add(1, &peer_tags);
-        trace!(
-            peer=%peer,
-            message_id,
-            publisher_id,
+            },
+            peer_tags,
+        }
+    }
+
+    /// Handle a cache lookup response: load (or clear) the YANG context for
+    /// the subscription, clear `schema_fetch_pending`, and drain the hold
+    /// buffer into the pending queue for reprocessing.
+    pub fn process_cache_response(&mut self, response: CacheResponse) {
+        let (cached_content_id, subscription_info, yang_lib_ref) = response.into();
+        if !self.is_tracked(&subscription_info, cached_content_id.as_ref()) {
+            return;
+        }
+        let otl_tags = cache_response_tags(&subscription_info);
+        let (cached_content_id, yang_ctx) = if let Some(yang_lib_ref) = yang_lib_ref {
+            let yang_ctx = self.load_yang_context(&subscription_info, &yang_lib_ref, &otl_tags);
+            (cached_content_id, yang_ctx)
+        } else {
+            self.stats.yang_context_empty.add(1, &otl_tags);
+            (None, None)
+        };
+        self.apply_schema(subscription_info, cached_content_id, yang_ctx);
+    }
+
+    /// Whether a cache entry exists for the subscription a cache response
+    /// refers to; logs and returns `false` otherwise.
+    fn is_tracked(
+        &self,
+        subscription_info: &SubscriptionInfo,
+        cached_content_id: Option<&ContentId>,
+    ) -> bool {
+        let msg = match self
+            .peer_cache
+            .tracking(subscription_info.peer_ip(), subscription_info.id())
+        {
+            Tracking::Tracked => return true,
+            Tracking::UnknownPeer => {
+                "Received cache response for subscription from peer that is not in the cache, ignoring the response"
+            }
+            Tracking::UnknownSubscription => {
+                "Received cache response for subscription that is not in the cache, ignoring the response"
+            }
+        };
+        warn!(
+            peer_ip=%subscription_info.peer_ip(),
             subscription_id=subscription_info.id(),
             router_content_id=subscription_info.content_id(),
             target=%subscription_info.target(),
-            cached_content_id=cached_content_id.unwrap_or_default(),
-            notification_type,
-            "Successfully send UDP-Notif message for the next actor to process"
+            cached_content_id,
+            "{msg}"
         );
-        Ok(())
+        false
     }
 
-    /// Validate the raw packet payload against the loaded YANG context.
-    /// Returns `Err` and drops the packet on validation failure.
-    #[allow(clippy::too_many_arguments)]
-    fn validate_message(
-        packet: &UdpNotifPacket,
-        peer: SocketAddr,
+    /// Create the libyang context for a YANG library reference returned by
+    /// the cache. Returns `None` (validation disabled) if creation fails.
+    fn load_yang_context(
+        &self,
         subscription_info: &SubscriptionInfo,
-        cached_content_id: ContentId,
-        notification_type: &String,
-        yang_ctx: &yang5::context::Context,
-        is_legacy: bool,
-        anydata_strict: bool,
-        stats: &ValidationStats,
-        peer_tags: &[opentelemetry::KeyValue],
-    ) -> Result<(), yang5::Error> {
-        let message_id = packet.message_id();
-        let publisher_id = packet.publisher_id();
-
-        if !is_legacy {
-            let mut parser_flags = DataParserFlags::STRICT;
-            if anydata_strict {
-                parser_flags |= DataParserFlags::ANYDATA_STRICT;
+        yang_lib_ref: &YangLibraryReference,
+        otl_tags: &[opentelemetry::KeyValue],
+    ) -> Option<yang5::context::Context> {
+        let search_dir = yang_lib_ref.search_dir();
+        match yang5::context::Context::new_from_yang_library_file(
+            &yang_lib_ref.yang_library_path(),
+            DataFormat::XML,
+            &search_dir.as_path(),
+            yang5::context::ContextFlags::empty(),
+        ) {
+            Ok(yang_ctx) => {
+                self.stats.yang_context_loaded.add(1, otl_tags);
+                // Sanity-check the subscription target resolves against the
+                // schema and warn if it is missing or not in canonical form.
+                // Diagnostic only: the target is never modified here.
+                check_xpath_target_resolves(subscription_info, &yang_ctx);
+                Some(yang_ctx)
             }
-            let validation_result = yang5::data::DataTree::parse_string(
-                yang_ctx,
-                packet.payload(),
-                DataFormat::JSON,
-                parser_flags,
-                DataValidationFlags::PRESENT,
-            );
-            if let Err(err) = validation_result {
-                let v = packet.payload().clone();
-                let packet_payload =
-                    str::from_utf8(v.as_ref()).unwrap_or("unserializable packet payload");
+            Err(err) => {
+                self.stats.yang_context_failed.add(1, otl_tags);
                 warn!(
-                    peer=%peer,
-                    message_id,
-                    publisher_id,
+                    peer_ip=%subscription_info.peer_ip(),
                     subscription_id=subscription_info.id(),
                     router_content_id=subscription_info.content_id(),
-                    target=%subscription_info.target(),
-                    cached_content_id,
-                    notification_type,
+                    cached_content_id=yang_lib_ref.content_id(),
+                    yang_library_path=%yang_lib_ref.yang_library_path().display(),
+                    search_dir=%search_dir.display(),
                     error=%err,
-                    packet=packet_payload,
-                    "Failed to validate UDP-Notif payload, dropping packet"
+                    "Failed to create YANG context, disabling YANG validation for this subscription"
                 );
-
-                let mut drop_tags = peer_tags.to_vec();
-                drop_tags.push(opentelemetry::KeyValue::new(
-                    REASON_KEY,
-                    <&str>::from(DropReason::ValidationFailed),
-                ));
-                stats.dropped.add(1, &drop_tags);
-                return Err(err);
-            }
-            stats.validated.add(1, peer_tags);
-            trace!(
-                peer=%peer,
-                message_id,
-                publisher_id,
-                subscription_id=subscription_info.id(),
-                router_content_id=subscription_info.content_id(),
-                target=%subscription_info.target(),
-                notification_type,
-                cached_content_id,
-                "Successfully validated YANG-Push message",
-            );
-            Ok(())
-        } else {
-            let validation_result = yang5::data::DataTree::parse_op_string(
-                yang_ctx,
-                packet.payload(),
-                DataFormat::JSON,
-                DataParserFlags::STRICT,
-                DataOperation::NotificationYang,
-            );
-            if let Err(err) = validation_result {
-                warn!(
-                    peer=%peer,
-                    subscription_id=subscription_info.id(),
-                    router_content_id=subscription_info.content_id(),
-                    target=%subscription_info.target(),
-                    cached_content_id,
-                    notification_type,
-                    error=%err, "Failed to validate legacy UDP-Notif payload, dropping packet");
-                let mut drop_tags = peer_tags.to_vec();
-                drop_tags.push(opentelemetry::KeyValue::new(
-                    REASON_KEY,
-                    <&str>::from(DropReason::ValidationFailed),
-                ));
-                stats.dropped.add(1, &drop_tags);
-                return Err(err);
-            }
-            stats.validated.add(1, peer_tags);
-            trace!(
-                peer=%peer,
-                message_id,
-                publisher_id,
-                subscription_id=subscription_info.id(),
-                router_content_id=subscription_info.content_id(),
-                target=%subscription_info.target(),
-                notification_type,
-                cached_content_id,
-                "Successfully validated YANG-Push message using legacy UDP-Notif payload",
-            );
-            Ok(())
-        }
-    }
-
-    /// Get the subscription info from the message, if not present cache and
-    /// send a cache request and return none for the subscription info.
-    async fn extract_subscription_info(
-        &mut self,
-        message: Arc<UdpNotifRequest>,
-        peer: SocketAddr,
-        decoded: &UdpNotifPacketDecoded,
-    ) -> Result<Option<SubscriptionInfo>, ValidationActorError> {
-        let packet = message.packet();
-        let mut peer_tags = Self::peer_tags_from_packet(peer, packet);
-        let message_id = decoded.message_id();
-        let publisher_id = decoded.publisher_id();
-        let notification_type = decoded
-            .notification_type()
-            .map(|x| x.to_string())
-            .unwrap_or("UNKNOWN".to_string());
-
-        // Defer started/modified notifications while a fetch is already
-        // in-flight for this id, so a stale response can never clobber
-        // a newer generation.
-        if let Some(notif_contents) = decoded.payload().notification_contents()
-            && matches!(
-                notif_contents,
-                NotificationVariant::SubscriptionStarted(_)
-                    | NotificationVariant::SubscriptionModified(_)
-            )
-        {
-            let subscription_id = notif_contents.subscription_id();
-            let pending_entry_info = self
-                .peer_cache
-                .get(&peer.ip())
-                .and_then(|c| c.subscriptions.get(&subscription_id))
-                .filter(|s| s.schema_fetch_pending)
-                .map(|s| s.subscription_info.clone());
-            if let Some(existing_info) = pending_entry_info {
-                peer_tags.push(opentelemetry::KeyValue::new(
-                    OTL_YANG_PUSH_SUBSCRIPTION_ID_KEY,
-                    opentelemetry::Value::I64(subscription_id.into()),
-                ));
-
-                if self.buffer_packet(existing_info, message) {
-                    debug!(
-                        peer=%peer,
-                        message_id,
-                        publisher_id,
-                        subscription_id,
-                        notification_type,
-                        "Schema fetch already in-flight for this subscription, deferring \
-                        subscription started/modified notification until it resolves"
-                    );
-                    self.stats.subscription_update_deferred.add(1, &peer_tags);
-                }
-                return Ok(None);
-            }
-        }
-
-        match self.get_subscription_info(peer, decoded) {
-            Some((subscription_info, cached_content_id)) => {
-                Self::extend_peer_tags_with_subscription_info(&subscription_info, &mut peer_tags);
-
-                match cached_content_id {
-                    Some(Some(_)) => {
-                        // Schema is loaded → validate and forward immediately.
-                        return Ok(Some(subscription_info));
-                    }
-                    Some(None) => {
-                        // Cache entry exists but schema not yet available.
-                        // We distinguish:
-                        // - fetch in-flight (schema_fetch_pending = true):
-                        //   buffer the packet so it is validated once the
-                        //   response arrives, instead of slipping through
-                        //   unvalidated.
-                        // - fetch already completed with no schema
-                        //   (schema_fetch_pending = false): forward unvalidated
-                        //   as usual; no point buffering.
-                        let fetch_pending = self
-                            .peer_cache
-                            .get(&peer.ip())
-                            .and_then(|c| c.subscriptions.get(&subscription_info.id()))
-                            .map(|s| s.schema_fetch_pending)
-                            .unwrap_or(false);
-                        if fetch_pending {
-                            trace!(
-                                peer=%peer,
-                                message_id,
-                                publisher_id,
-                                subscription_id=subscription_info.id(),
-                                router_content_id=subscription_info.content_id(),
-                                subscription_target=%subscription_info.target(),
-                                notification_type,
-                                "Schema fetch in-flight, buffering packet until response arrives",
-                            );
-                            self.buffer_packet(subscription_info.clone(), message);
-                            return Ok(None);
-                        }
-                        // Fetch already completed → fast path.
-                        return Ok(Some(subscription_info));
-                    }
-                    None => {} // no entry → fall through to send lookup + buffer
-                }
-                debug!(
-                    peer=%peer,
-                    message_id,
-                    publisher_id,
-                    subscription_id=subscription_info.id(),
-                    router_content_id=subscription_info.content_id(),
-                    subscription_target=%subscription_info.target(),
-                    notification_type,
-                    "Received new subscription sending lookup by subscription info request to the cache"
-                );
-                peer_tags.push(opentelemetry::KeyValue::new(
-                    CACHE_LOOKUP_BY_KEY,
-                    <&str>::from(CacheLookupBy::SubscriptionInfo),
-                ));
-                self.stats.cache_lookups.add(1, &peer_tags);
-
-                // Mark the fetch as in-flight
-                self.peer_cache
-                    .entry(peer.ip())
-                    .or_default()
-                    .subscriptions
-                    .entry(subscription_info.id())
-                    .or_insert_with(|| CachedSubscription::new(subscription_info.clone()))
-                    .schema_fetch_pending = true;
-                self.cache_cmd_tx
-                    .send(CacheLookupCommand::LookupBySubscriptionInfo {
-                        subscription_info: subscription_info.clone(),
-                        session: message.session().clone(),
-                        tx: self.cache_tx.clone(),
-                    })
-                    .await
-                    .map_err(|error| {
-                        warn!(
-                            message_id,
-                            publisher_id,
-                            subscription_id=subscription_info.id(),
-                            router_content_id=subscription_info.content_id(),
-                            subscription_target=%subscription_info.target(),
-                            notification_type,
-                            error=%error,
-                            "Error sending lookup by subscription info request to the cache"
-                        );
-                        ValidationActorError::CacheLookupSendError
-                    })?;
-                self.buffer_packet(subscription_info.clone(), message);
-                Ok(None)
-            }
-            None => {
-                let notif_contents = decoded.payload().notification_contents();
-                if matches!(
-                    notif_contents,
-                    Some(NotificationVariant::SubscriptionStarted(_))
-                        | Some(NotificationVariant::SubscriptionModified(_))
-                ) {
-                    // A subscription-started/modified that reached here failed
-                    // to build SubscriptionInfo (e.g. missing module version).
-                    // It will fail identically every time, so buffering it and
-                    // re-fetching would loop forever. Drop it permanently.
-                    warn!(
-                        peer=%peer,
-                        message_id,
-                        publisher_id,
-                        notification_type,
-                        "Incomplete subscription started/modified (no usable subscription info), dropping packet"
-                    );
-                    peer_tags.push(opentelemetry::KeyValue::new(
-                        REASON_KEY,
-                        <&str>::from(DropReason::IncompleteSubscriptionStarted),
-                    ));
-                    self.stats.dropped.add(1, &peer_tags);
-                    return Ok(None);
-                }
-                let subscription_id = notif_contents.map(|x| x.subscription_id());
-                if let Some(subscription_id) = subscription_id {
-                    debug!(
-                        peer=%peer,
-                        message_id,
-                        publisher_id,
-                        subscription_id,
-                        notification_type,
-                        "Received UDP-Notif packet without subscription info, \
-                        caching the packet and looking up subscription info in cache");
-                    peer_tags.push(opentelemetry::KeyValue::new(
-                        CACHE_LOOKUP_BY_KEY,
-                        <&str>::from(CacheLookupBy::SubscriptionId),
-                    ));
-                    self.stats.cache_lookups.add(1, &peer_tags);
-                    let subscription_info = SubscriptionInfo::new_empty(peer.ip(), subscription_id);
-
-                    // Mark the fetch as in-flight
-                    self.peer_cache
-                        .entry(peer.ip())
-                        .or_default()
-                        .subscriptions
-                        .entry(subscription_info.id())
-                        .or_insert_with(|| CachedSubscription::new(subscription_info.clone()))
-                        .schema_fetch_pending = true;
-                    self.cache_cmd_tx
-                        .send(CacheLookupCommand::LookupBySubscriptionId {
-                            session: message.session().clone(),
-                            subscription_id,
-                            tx: self.cache_tx.clone(),
-                        })
-                        .await
-                        .map_err(|error| {
-                            warn!(
-                                peer=%peer,
-                                message_id,
-                                publisher_id,
-                                subscription_id,
-                                notification_type,
-                                error=%error,
-                                "Error sending lookup by subscription id request to the cache"
-                            );
-                            ValidationActorError::CacheLookupSendError
-                        })?;
-                    self.buffer_packet(subscription_info.clone(), message);
-                    return Ok(None);
-                }
-                warn!(
-                    peer=%peer,
-                    message_id,
-                    publisher_id,
-                    notification_type,
-                    "Received UDP-Notif packet without subscription info nor subscription ID, dropping packet"
-                );
-                peer_tags.push(opentelemetry::KeyValue::new(
-                    REASON_KEY,
-                    <&str>::from(DropReason::NoSubscriptionId),
-                ));
-                self.stats.dropped.add(1, &peer_tags);
-                Ok(None)
+                None
             }
         }
     }
 
-    /// Handle a cache lookup response: load (or clear) the YANG context for the
-    /// subscription, clear `schema_fetch_pending`, and drain the hold buffer
-    /// into `pending_packets` for validation.
-    pub(super) fn process_cache_response(
+    /// Store the outcome of a schema fetch in the subscription's cache entry
+    /// and move its buffered packets to the pending queue.
+    ///
+    /// `cached_content_id`/`yang_ctx` follow the state table on
+    /// `CachedSubscription`. No-op if the subscription is not tracked.
+    fn apply_schema(
         &mut self,
-        response: CacheResponse,
-    ) -> Result<(), ValidationActorError> {
-        let (cached_content_id, subscription_info, yang_lib_ref) = response.into();
-        let mut otl_tags = Vec::from([opentelemetry::KeyValue::new(
-            "network.peer.address",
-            format!("{}", subscription_info.peer_ip()),
-        )]);
-        Self::extend_peer_tags_with_subscription_info(&subscription_info, &mut otl_tags);
-        let peer_cache = if let Some(peer_cache) =
-            self.peer_cache.get_mut(&subscription_info.peer_ip())
-        {
-            peer_cache
-        } else {
-            warn!(
-                peer_ip=%subscription_info.peer_ip(),
-                subscription_id=subscription_info.id(),
-                router_content_id=subscription_info.content_id(),
-                target=%subscription_info.target(),
-                cached_content_id,
-                "Received cache response for subscription from peer that is not in the cache, ignoring the response"
-            );
-            return Ok(());
+        subscription_info: SubscriptionInfo,
+        cached_content_id: Option<ContentId>,
+        yang_ctx: Option<yang5::context::Context>,
+    ) {
+        let Some(Resolved {
+            drained,
+            peer_buffered,
+            peer_subscriptions,
+        }) = self.peer_cache.resolve(
+            subscription_info.clone(),
+            cached_content_id.clone(),
+            yang_ctx,
+        )
+        else {
+            return;
         };
+        let peer_ip = subscription_info.peer_ip();
 
-        let subscription_cache = if let Some(subscription_cache) =
-            peer_cache.subscriptions.get_mut(&subscription_info.id())
-        {
-            subscription_cache
-        } else {
-            warn!(
-                peer_ip=%subscription_info.peer_ip(),
-                subscription_id=subscription_info.id(),
-                router_content_id=subscription_info.content_id(),
-                target=%subscription_info.target(),
-                cached_content_id,
-                "Received cache response for subscription that is not in the cache, ignoring the response");
-            return Ok(());
-        };
-
-        // Update subscription info in the cache
-        if let Some(yang_lib_ref) = yang_lib_ref {
-            let search_dir = yang_lib_ref.search_dir();
-            let yang_ctx_result = yang5::context::Context::new_from_yang_library_file(
-                &yang_lib_ref.yang_library_path(),
-                DataFormat::XML,
-                &search_dir.as_path(),
-                yang5::context::ContextFlags::empty(),
-            );
-            let yang_ctx = match yang_ctx_result {
-                Ok(yang_ctx) => {
-                    self.stats.yang_context_loaded.add(1, &otl_tags);
-                    Some(yang_ctx)
-                }
-                Err(err) => {
-                    self.stats.yang_context_failed.add(1, &otl_tags);
-                    warn!(
-                        peer_ip=%subscription_info.peer_ip(),
-                        subscription_id=subscription_info.id(),
-                        router_content_id=subscription_info.content_id(),
-                        cached_content_id=yang_lib_ref.content_id(),
-                        yang_library_path=%yang_lib_ref.yang_library_path().display(),
-                        search_dir=%search_dir.display(),
-                        error=%err,
-                        "Failed to create YANG context, disabling YANG validation for this subscription");
-                    None
-                }
-            };
-            // Sanity-check the subscription target resolves against the schema
-            // and warn if it is missing or not in canonical form. Diagnostic
-            // only: the target is never modified here.
-            if let Some(ctx) = yang_ctx.as_ref() {
-                Self::check_xpath_target_resolves(&subscription_info, ctx);
-            }
-            subscription_cache.cached_content_id = cached_content_id.clone();
-            subscription_cache.yang_ctx = yang_ctx;
-        } else {
-            self.stats.yang_context_empty.add(1, &otl_tags);
-            subscription_cache.cached_content_id = None;
-            subscription_cache.yang_ctx = None;
-        }
-
-        // Store the subscription info in the cache.
-        subscription_cache.subscription_info = subscription_info.clone();
-        subscription_cache.schema_fetch_pending = false;
-        let buffered_packets = std::mem::take(&mut subscription_cache.buffered_packets);
-        let drained = buffered_packets.len();
-        // Update the per-peer counter while we still hold the peer_cache
-        // borrow.
-        peer_cache.total_buffered -= drained;
-        let remaining = peer_cache.total_buffered;
-        for message in buffered_packets {
+        for message in drained {
             let peer = message.peer_address();
             let packet = message.packet();
-            let mut peer_tags = Self::peer_tags_from_packet(peer, packet);
-            Self::extend_peer_tags_with_subscription_info(&subscription_info, &mut peer_tags);
+            let mut peer_tags = peer_tags_from_packet(peer, packet);
+            extend_peer_tags_with_subscription_info(&subscription_info, &mut peer_tags);
             self.stats.buffer_drained.add(1, &peer_tags);
             trace!(
                 peer=%peer,
@@ -983,13 +433,405 @@ impl ValidationActor {
         self.stats
             .pending
             .record(self.pending_packets.len() as u64, &[]);
-        let peer_ip = subscription_info.peer_ip();
-        let peer_sub_count = self
-            .peer_cache
-            .get(&peer_ip)
-            .map(|p| p.subscriptions.len())
-            .unwrap_or(0);
-        self.record_otel_gauges(peer_ip, remaining, peer_sub_count);
-        Ok(())
+        self.record_otel_gauges(peer_ip, peer_buffered, peer_subscriptions);
+    }
+
+    /// Record the peer-scoped cache gauges together so they never drift. Call
+    /// after any change to the peer cache for `peer_ip`; pass `0`/`0` once the
+    /// peer is gone so its per-peer series reset to zero.
+    fn record_otel_gauges(&self, peer_ip: IpAddr, total_buffered: usize, sub_count: usize) {
+        let peer_tag = [opentelemetry::KeyValue::new(
+            "network.peer.address",
+            format!("{peer_ip}"),
+        )];
+        self.stats.buffered.record(total_buffered as u64, &peer_tag);
+        self.stats
+            .cached_subscriptions
+            .record(sub_count as u64, &peer_tag);
+        self.stats
+            .cached_peers
+            .record(self.peer_cache.peer_count() as u64, &[]);
+    }
+
+    /// Resolve the subscription info for a decoded packet.
+    ///
+    /// Continues with the subscription info when the packet can be validated
+    /// (or forwarded unvalidated) right away. Breaks with the outcome when the
+    /// packet was buffered, dropped, or requires a cache lookup first.
+    fn resolve_subscription_info(
+        &mut self,
+        message: Arc<UdpNotifRequest>,
+        peer: SocketAddr,
+        decoded: &UdpNotifPacketDecoded,
+    ) -> ControlFlow<PacketOutcome, SubscriptionInfo> {
+        let mut peer_tags = peer_tags_from_packet(peer, message.packet());
+        let message_id = decoded.message_id();
+        let publisher_id = decoded.publisher_id();
+        let notification_type = notification_type(decoded);
+        let notif_contents = decoded.payload().notification_contents();
+        let is_started_or_modified = matches!(
+            notif_contents,
+            Some(
+                NotificationVariant::SubscriptionStarted(_)
+                    | NotificationVariant::SubscriptionModified(_)
+            )
+        );
+
+        // Defer started/modified notifications while a fetch is already
+        // in-flight for this id, so a stale response can never clobber
+        // a newer generation.
+        if is_started_or_modified && let Some(notif_contents) = notif_contents {
+            let subscription_id = notif_contents.subscription_id();
+            let pending_entry_info = self
+                .peer_cache
+                .get(peer.ip(), subscription_id)
+                .filter(|s| s.is_fetch_pending())
+                .map(|s| s.subscription_info().clone());
+            if let Some(existing_info) = pending_entry_info {
+                peer_tags.push(opentelemetry::KeyValue::new(
+                    OTL_YANG_PUSH_SUBSCRIPTION_ID_KEY,
+                    opentelemetry::Value::I64(subscription_id.into()),
+                ));
+                if self.buffer_packet(existing_info, message) {
+                    debug!(
+                        peer=%peer,
+                        message_id,
+                        publisher_id,
+                        subscription_id,
+                        notification_type,
+                        "Schema fetch already in-flight for this subscription, deferring \
+                        subscription started/modified notification until it resolves"
+                    );
+                    self.stats.subscription_update_deferred.add(1, &peer_tags);
+                }
+                return ControlFlow::Break(PacketOutcome::Consumed);
+            }
+        }
+
+        if let Some(subscription_info) = self.subscription_info(peer, decoded) {
+            extend_peer_tags_with_subscription_info(&subscription_info, &mut peer_tags);
+            match self.peer_cache.schema_state(&subscription_info) {
+                SchemaState::Resolved => return ControlFlow::Continue(subscription_info),
+                SchemaState::FetchPending => {
+                    // Buffer the packet so it is validated once the response
+                    // arrives, instead of slipping through unvalidated.
+                    trace!(
+                        peer=%peer,
+                        message_id,
+                        publisher_id,
+                        subscription_id=subscription_info.id(),
+                        router_content_id=subscription_info.content_id(),
+                        subscription_target=%subscription_info.target(),
+                        notification_type,
+                        "Schema fetch in-flight, buffering packet until response arrives",
+                    );
+                    self.buffer_packet(subscription_info, message);
+                    return ControlFlow::Break(PacketOutcome::Consumed);
+                }
+                SchemaState::Untracked => {}
+            }
+            debug!(
+                peer=%peer,
+                message_id,
+                publisher_id,
+                subscription_id=subscription_info.id(),
+                router_content_id=subscription_info.content_id(),
+                subscription_target=%subscription_info.target(),
+                notification_type,
+                "Subscription is not tracked, requesting schemas from the cache using subscription metadata"
+            );
+            peer_tags.push(opentelemetry::KeyValue::new(
+                CACHE_LOOKUP_BY_KEY,
+                <&str>::from(CacheLookupBy::SubscriptionInfo),
+            ));
+            self.stats.cache_lookups.add(1, &peer_tags);
+            self.peer_cache.mark_fetch_pending(&subscription_info);
+            let lookup = CacheLookup::BySubscriptionInfo {
+                subscription_info: Box::new(subscription_info.clone()),
+                session: message.session().clone(),
+            };
+            self.buffer_packet(subscription_info, message);
+            return ControlFlow::Break(PacketOutcome::CacheLookup(lookup));
+        }
+
+        if is_started_or_modified {
+            // A subscription-started/modified that reached here failed
+            // to build SubscriptionInfo (e.g. missing module version).
+            // It will fail identically every time, so buffering it and
+            // re-fetching would loop forever. Drop it permanently.
+            warn!(
+                peer=%peer,
+                message_id,
+                publisher_id,
+                notification_type,
+                "Incomplete subscription started/modified (no usable subscription info), dropping packet"
+            );
+            self.stats.dropped.add(
+                1,
+                &with_reason(&peer_tags, DropReason::IncompleteSubscriptionStarted),
+            );
+            return ControlFlow::Break(PacketOutcome::Consumed);
+        }
+
+        let Some(subscription_id) = notif_contents.map(|x| x.subscription_id()) else {
+            warn!(
+                peer=%peer,
+                message_id,
+                publisher_id,
+                notification_type,
+                "Received UDP-Notif packet has no usable subscription metadata or subscription ID, dropping packet"
+            );
+            self.stats
+                .dropped
+                .add(1, &with_reason(&peer_tags, DropReason::NoSubscriptionId));
+            return ControlFlow::Break(PacketOutcome::Consumed);
+        };
+        debug!(
+            peer=%peer,
+            message_id,
+            publisher_id,
+            subscription_id,
+            notification_type,
+            "Received UDP-Notif packet without subscription info, \
+            caching the packet and looking up subscription info in cache"
+        );
+        peer_tags.push(opentelemetry::KeyValue::new(
+            CACHE_LOOKUP_BY_KEY,
+            <&str>::from(CacheLookupBy::SubscriptionId),
+        ));
+        self.stats.cache_lookups.add(1, &peer_tags);
+        let subscription_info = SubscriptionInfo::new_empty(peer.ip(), subscription_id);
+        self.peer_cache.mark_fetch_pending(&subscription_info);
+        let lookup = CacheLookup::BySubscriptionId {
+            subscription_id,
+            session: message.session().clone(),
+        };
+        self.buffer_packet(subscription_info, message);
+        ControlFlow::Break(PacketOutcome::CacheLookup(lookup))
+    }
+
+    /// Get the subscription info from the `SubscriptionStarted/Modified`
+    /// notification itself, or from the cache for any other notification.
+    fn subscription_info(
+        &mut self,
+        peer: SocketAddr,
+        decoded: &UdpNotifPacketDecoded,
+    ) -> Option<SubscriptionInfo> {
+        let message_id = decoded.message_id();
+        let publisher_id = decoded.publisher_id();
+        let Some(notif_contents) = decoded.payload().notification_contents() else {
+            warn!(
+                peer=%peer,
+                message_id,
+                publisher_id,
+                "UDP-Notif payload contains no supported notification content, dropping packet"
+            );
+            return None;
+        };
+
+        if let NotificationVariant::SubscriptionStarted(subscription_started)
+        | NotificationVariant::SubscriptionModified(subscription_started) = notif_contents
+        {
+            let Some(subscription_info) =
+                build_subscription_info(peer, message_id, publisher_id, subscription_started)
+            else {
+                warn!(
+                    peer=%peer,
+                    message_id,
+                    publisher_id,
+                    notifification_type=%notif_contents.notification_type(),
+                    "SubscriptionStarted/SubscriptionModified notification is missing module-version metadata, dropping packet"
+                );
+                return None;
+            };
+            if self.peer_cache.evict_if_changed(&subscription_info) {
+                trace!(
+                    peer=%peer,
+                    subscription_id=subscription_info.id(),
+                    router_content_id=subscription_info.content_id(),
+                    target=%subscription_info.target(),
+                    "Subscription changed, removing from cache to allow a new fetch schemas request"
+                );
+                // Resync the per-peer gauges after the removal (0/0 when the
+                // peer is gone, resetting its series).
+                self.record_otel_gauges(
+                    peer.ip(),
+                    self.peer_cache.peer_buffered(peer.ip()),
+                    self.peer_cache.peer_subscriptions(peer.ip()),
+                );
+            }
+            Some(subscription_info)
+        } else {
+            self.peer_cache
+                .get(peer.ip(), notif_contents.subscription_id())
+                .map(|x| x.subscription_info().clone())
+        }
+    }
+
+    /// Attempt to add `message` to the per-subscription hold buffer, enforcing
+    /// both the per-subscription and per-peer packet limits.
+    /// Returns `true` if the packet was buffered, `false` if it was dropped.
+    fn buffer_packet(
+        &mut self,
+        subscription_info: SubscriptionInfo,
+        message: Arc<UdpNotifRequest>,
+    ) -> bool {
+        let peer = message.peer_address();
+        let packet = message.packet();
+        let message_id = packet.message_id();
+        let publisher_id = packet.publisher_id();
+        let mut peer_tags = peer_tags_from_packet(peer, packet);
+        extend_peer_tags_with_subscription_info(&subscription_info, &mut peer_tags);
+        let subscription_id = subscription_info.id();
+        let subscription_target = subscription_info.target().to_string();
+        let router_content_id = subscription_info.content_id().to_string();
+
+        match self.peer_cache.buffer(subscription_info, message) {
+            Ok(peer_buffered) => {
+                trace!(
+                    peer=%peer,
+                    message_id,
+                    publisher_id,
+                    subscription_id,
+                    subscription_target=%subscription_target,
+                    router_content_id,
+                    "Buffered UDP-Notif packet"
+                );
+                let sub_count = self.peer_cache.peer_subscriptions(peer.ip());
+                self.record_otel_gauges(peer.ip(), peer_buffered, sub_count);
+                true
+            }
+            Err(full) => {
+                let (reason, msg) = match full {
+                    BufferFull::Subscription => (
+                        DropReason::BufferFullSubscription,
+                        "Buffer full for subscription, dropping new packet",
+                    ),
+                    BufferFull::Peer => (
+                        DropReason::BufferFullPeer,
+                        "Buffer full for peer, dropping new packet",
+                    ),
+                };
+                warn!(
+                    peer=%peer,
+                    message_id,
+                    publisher_id,
+                    subscription_id,
+                    subscription_target=%subscription_target,
+                    router_content_id,
+                    "{msg}"
+                );
+                self.stats.dropped.add(1, &with_reason(&peer_tags, reason));
+                false
+            }
+        }
+    }
+
+    /// Decode a raw `UdpNotifPacket` into a `UdpNotifPacketDecoded`.
+    /// Returns `None` and drops the packet on unsupported media type or
+    /// parse failure.
+    ///
+    /// Set `count_decoded` to `false` when reprocessing a buffered message to
+    /// avoid double-counting the `decoded` metric.
+    fn decode_message(
+        &self,
+        peer: SocketAddr,
+        packet: &UdpNotifPacket,
+        count_decoded: bool,
+    ) -> Option<UdpNotifPacketDecoded> {
+        let message_id = packet.message_id();
+        let publisher_id = packet.publisher_id();
+        let mut peer_tags = peer_tags_from_packet(peer, packet);
+
+        let decoded = match UdpNotifPacketDecoded::try_from(packet) {
+            Ok(decoded) => decoded,
+            Err(err) => {
+                warn!(
+                    peer=%peer,
+                    message_id,
+                    publisher_id,
+                    error=%err,
+                    "Failed to decode UDP-Notif payload, dropping packet"
+                );
+                self.stats
+                    .dropped
+                    .add(1, &with_reason(&peer_tags, DropReason::DecodeError));
+                return None;
+            }
+        };
+        if let Some(notif_contents) = decoded.payload().notification_contents() {
+            peer_tags.push(opentelemetry::KeyValue::new(
+                OTL_YANG_PUSH_SUBSCRIPTION_ID_KEY,
+                opentelemetry::Value::I64(notif_contents.subscription_id().into()),
+            ));
+        }
+        if tracing::enabled!(tracing::Level::TRACE) {
+            trace!(
+                peer=%peer,
+                message_id,
+                publisher_id,
+                notification_type=notification_type(&decoded),
+                "Decoded UDP-Notif payload, starting the validation step"
+            );
+        }
+        if count_decoded {
+            self.stats.decoded.add(1, &peer_tags);
+        }
+        Some(decoded)
     }
 }
+
+/// Human-readable notification type used in logs.
+pub(super) fn notification_type(decoded: &UdpNotifPacketDecoded) -> String {
+    decoded
+        .notification_type()
+        .map(|x| x.to_string())
+        .unwrap_or_else(|| "UNKNOWN".to_string())
+}
+
+/// Metric attributes attached to cache-response driven metrics.
+fn cache_response_tags(subscription_info: &SubscriptionInfo) -> Vec<opentelemetry::KeyValue> {
+    let mut tags = Vec::from([opentelemetry::KeyValue::new(
+        "network.peer.address",
+        format!("{}", subscription_info.peer_ip()),
+    )]);
+    extend_peer_tags_with_subscription_info(subscription_info, &mut tags);
+    tags
+}
+
+/// Validate a raw JSON UDP-Notif payload against a loaded YANG context.
+///
+/// Legacy (non-envelope) payloads are parsed as a YANG notification
+/// operation; `anydata_strict` only applies to envelope payloads.
+fn validate_payload(
+    yang_ctx: &yang5::context::Context,
+    payload: &[u8],
+    is_legacy: bool,
+    anydata_strict: bool,
+) -> Result<(), yang5::Error> {
+    if is_legacy {
+        yang5::data::DataTree::parse_op_string(
+            yang_ctx,
+            payload,
+            DataFormat::JSON,
+            DataParserFlags::STRICT,
+            DataOperation::NotificationYang,
+        )?;
+    } else {
+        let mut parser_flags = DataParserFlags::STRICT;
+        if anydata_strict {
+            parser_flags |= DataParserFlags::ANYDATA_STRICT;
+        }
+        yang5::data::DataTree::parse_string(
+            yang_ctx,
+            payload,
+            DataFormat::JSON,
+            parser_flags,
+            DataValidationFlags::PRESENT,
+        )?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests;

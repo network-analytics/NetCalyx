@@ -14,19 +14,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Validation actor event loop and its public handle.
+//! Actor runtime for the validation stage.
+//!
+//! [`ValidationActor`] only moves data between channels: it feeds incoming
+//! packets and cache responses into the [`Validator`] and executes the
+//! resulting [`PacketOutcome`]s (forwarding downstream or sending cache
+//! lookups).
 
 use crate::cache::actor::{CacheLookupCommand, CacheResponse};
-use crate::validation::processing::ValidatedNotification;
-use crate::validation::state::CachedPeerSubscriptions;
-use crate::validation::stats::ValidationStats;
+use crate::validation::processing::{
+    CacheLookup, PacketOutcome, ValidatedNotification, Validator, notification_type,
+};
+use crate::validation::stats::{DropReason, ValidationStats, with_reason};
 use netcalyx_udp_notif_service::UdpNotifRequest;
-use rustc_hash::FxHashMap;
-use std::collections::VecDeque;
-use std::net::IpAddr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tracing::{info, warn};
+use tracing::{info, trace, warn};
 
 #[derive(Debug, Clone, PartialEq, Eq, strum_macros::Display)]
 pub enum ValidationActorError {
@@ -41,31 +44,138 @@ pub enum ValidationActorError {
 impl std::error::Error for ValidationActorError {}
 
 #[derive(Debug, Clone, Copy)]
-pub(super) enum ValidationActorCommand {
+enum ValidationActorCommand {
     Shutdown,
 }
 
-pub(super) struct ValidationActor {
-    pub(super) max_buffered_packets_per_peer: usize,
-    pub(super) max_buffered_packets_per_subscription: usize,
-    /// Whether `anydata` nodes are validated strictly against their
-    /// schema (see `yang5::data::DataParserFlags::ANYDATA_STRICT`).
-    pub(super) anydata_strict: bool,
-    pub(super) peer_cache: FxHashMap<IpAddr, CachedPeerSubscriptions>,
-    pub(super) cmd_rx: mpsc::Receiver<ValidationActorCommand>,
-    pub(super) rx: async_channel::Receiver<Arc<UdpNotifRequest>>,
-    pub(super) tx: async_channel::Sender<ValidatedNotification>,
-    pub(super) cache_cmd_tx: async_channel::Sender<CacheLookupCommand>,
-    pub(super) cache_tx: async_channel::Sender<CacheResponse>,
-    pub(super) cache_rx: async_channel::Receiver<CacheResponse>,
-    /// Packets buffered while their subscription waits for schemas to arrive,
-    /// then drained in pending_packets once the cache responds. They are
-    /// processed one at a time.
-    pub(super) pending_packets: VecDeque<Arc<UdpNotifRequest>>,
-    pub(super) stats: ValidationStats,
+struct LogFields {
+    peer: std::net::SocketAddr,
+    message_id: u32,
+    publisher_id: u32,
+    subscription_id: u32,
+    router_content_id: String,
+    target: String,
+    cached_content_id: String,
+    notification_type: String,
+}
+
+impl LogFields {
+    fn new(notification: &ValidatedNotification) -> Self {
+        Self {
+            peer: notification.session.peer(),
+            message_id: notification.packet.message_id(),
+            publisher_id: notification.packet.publisher_id(),
+            subscription_id: notification.subscription_info.id(),
+            router_content_id: notification.subscription_info.content_id().to_string(),
+            target: notification.subscription_info.target().to_string(),
+            cached_content_id: notification.cached_content_id.clone().unwrap_or_default(),
+            notification_type: notification_type(&notification.packet),
+        }
+    }
+
+    fn warn(&self) {
+        warn!(
+            peer=%self.peer,
+            message_id = self.message_id,
+            publisher_id = self.publisher_id,
+            subscription_id = self.subscription_id,
+            router_content_id = self.router_content_id,
+            target = self.target,
+            cached_content_id = self.cached_content_id,
+            notification_type = self.notification_type,
+            "Failed to send UDP-Notif message to the next actor"
+        );
+    }
+
+    fn trace(&self) {
+        trace!(
+            peer=%self.peer,
+            message_id = self.message_id,
+            publisher_id = self.publisher_id,
+            subscription_id = self.subscription_id,
+            router_content_id = self.router_content_id,
+            target = self.target,
+            cached_content_id = self.cached_content_id,
+            notification_type = self.notification_type,
+            "Successfully sent UDP-Notif message to the next actor"
+        );
+    }
+}
+
+struct ValidationActor {
+    validator: Validator,
+    cmd_rx: mpsc::Receiver<ValidationActorCommand>,
+    rx: async_channel::Receiver<Arc<UdpNotifRequest>>,
+    tx: async_channel::Sender<ValidatedNotification>,
+    cache_cmd_tx: async_channel::Sender<CacheLookupCommand>,
+    cache_tx: async_channel::Sender<CacheResponse>,
+    cache_rx: async_channel::Receiver<CacheResponse>,
 }
 
 impl ValidationActor {
+    /// Run a packet through the [`Validator`] and execute the outcome.
+    async fn process_udp_notif_msg(
+        &mut self,
+        message: Arc<UdpNotifRequest>,
+        is_reprocessed: bool,
+    ) -> Result<(), ValidationActorError> {
+        match self.validator.process_packet(message, is_reprocessed) {
+            PacketOutcome::Forward {
+                notification,
+                peer_tags,
+            } => self.forward(notification, &peer_tags).await,
+            PacketOutcome::CacheLookup(lookup) => self.send_cache_lookup(lookup).await,
+            PacketOutcome::Consumed => Ok(()),
+        }
+    }
+
+    /// Forward a validated (or unvalidated) notification to the next actor.
+    async fn forward(
+        &self,
+        notification: ValidatedNotification,
+        peer_tags: &[opentelemetry::KeyValue],
+    ) -> Result<(), ValidationActorError> {
+        // Log fields are only built when they will be used (hot path).
+        let trace_fields =
+            tracing::level_enabled!(tracing::Level::TRACE).then(|| LogFields::new(&notification));
+
+        match self.tx.send(notification).await {
+            Ok(()) => {
+                self.validator.stats().sent.add(1, peer_tags);
+                if let Some(fields) = trace_fields {
+                    fields.trace();
+                }
+                Ok(())
+            }
+            Err(async_channel::SendError(notification)) => {
+                trace_fields
+                    .unwrap_or_else(|| LogFields::new(&notification))
+                    .warn();
+                self.validator
+                    .stats()
+                    .dropped
+                    .add(1, &with_reason(peer_tags, DropReason::SendError));
+                Err(ValidationActorError::SendError)
+            }
+        }
+    }
+
+    /// Send a schema lookup request to the cache actor.
+    async fn send_cache_lookup(&self, lookup: CacheLookup) -> Result<(), ValidationActorError> {
+        let description = format!("{lookup:?}");
+        self.cache_cmd_tx
+            .send(lookup.into_command(self.cache_tx.clone()))
+            .await
+            .map_err(|error| {
+                warn!(
+                    lookup=description,
+                    error=%error,
+                    "Error sending lookup request to the cache"
+                );
+                ValidationActorError::CacheLookupSendError
+            })
+    }
+
     /// Actor event loop. Runs until a shutdown command is received or a
     /// fatal channel error occurs.
     async fn run(mut self) -> Result<String, ValidationActorError> {
@@ -77,7 +187,7 @@ impl ValidationActor {
                     return match cmd {
                         Some(ValidationActorCommand::Shutdown) => {
                             info!("Shutting down YANG-Push validation actor");
-                            Ok("Enrichment shutdown successfully".to_string())
+                            Ok("YANG-Push validation actor shutdown successfully".to_string())
                         }
                         None => {
                             let msg = "YANG-Push validation actor terminated due to command channel closing";
@@ -88,13 +198,7 @@ impl ValidationActor {
                 }
                 msg = self.cache_rx.recv() => {
                     match msg {
-                        Ok(response) => {
-                            if let Err(err) = self.process_cache_response(response) {
-                                let err_msg = "YANG-Push validation actor cache response processing unrecoverable error, shutting down";
-                                warn!(error=%err, err_msg);
-                                return Ok(err_msg.to_string());
-                            }
-                        }
+                        Ok(response) => self.validator.process_cache_response(response),
                         Err(error) => {
                             let err_msg = "YANG-Push validation actor cache receiver channel closed unexpectedly, shutting down";
                             warn!(error=%error, err_msg);
@@ -102,10 +206,7 @@ impl ValidationActor {
                         }
                     }
                 }
-                Some(message) = async { self.pending_packets.pop_front() }, if !self.pending_packets.is_empty() => {
-                    self.stats
-                        .pending
-                        .record(self.pending_packets.len() as u64, &[]);
+                Some(message) = async { self.validator.pop_pending() }, if self.validator.has_pending() => {
                     if let Err(err) = self.process_udp_notif_msg(message, true).await {
                         let err_msg = "YANG-Push validation actor buffered packet processing unrecoverable error, shutting down";
                         warn!(error=%err, err_msg);
@@ -115,13 +216,6 @@ impl ValidationActor {
                 msg = self.rx.recv() => {
                     match msg {
                         Ok(msg) => {
-                            self.stats.received.add(
-                                1,
-                                &Self::peer_tags_from_packet(
-                                    msg.peer_address(),
-                                    msg.packet(),
-                                ),
-                            );
                             if let Err(err) = self.process_udp_notif_msg(msg, false).await {
                                 let err_msg = "YANG-Push validation actor UDP-Notif processing unrecoverable error, shutting down";
                                 warn!(error=%err, err_msg);
@@ -178,18 +272,18 @@ impl ValidationActorHandle {
             either::Either::Right(stats) => stats,
         };
         let actor = ValidationActor {
-            max_buffered_packets_per_peer,
-            max_buffered_packets_per_subscription,
-            anydata_strict,
-            peer_cache: FxHashMap::default(),
+            validator: Validator::new(
+                max_buffered_packets_per_peer,
+                max_buffered_packets_per_subscription,
+                anydata_strict,
+                stats,
+            ),
             cmd_rx,
             rx,
             tx,
             cache_cmd_tx,
             cache_tx,
             cache_rx,
-            pending_packets: VecDeque::new(),
-            stats,
         };
         let handle = ValidationActorHandle { cmd_tx };
         let join_handle = tokio::spawn(async move { actor.run().await });
