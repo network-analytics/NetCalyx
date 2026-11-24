@@ -26,7 +26,7 @@
 
 use crate::cache::actor::{CacheLookupCommand, CacheResponse};
 use crate::cache::storage::{SubscriptionInfo, YangLibraryReference};
-use crate::validation::state::{BufferFull, PeerCache, Resolved, SchemaState, Tracking};
+use crate::validation::state::{BufferError, PeerCache, Resolved, SchemaState, Tracking};
 use crate::validation::stats::{
     CACHE_LOOKUP_BY_KEY, CacheLookupBy, DropReason, SkipReason, ValidationStats,
     extend_peer_tags_with_subscription_info, peer_tags_from_packet, with_reason,
@@ -191,30 +191,32 @@ impl Validator {
     ) -> PacketOutcome {
         let peer = message.peer_address();
         let packet = message.packet();
+        let mut peer_tags = peer_tags_from_packet(peer, packet);
         if !is_reprocessed {
-            self.stats
-                .received
-                .add(1, &peer_tags_from_packet(peer, packet));
+            self.stats.received.add(1, &peer_tags);
         }
 
         // Step 1: decode the raw UDP-Notif payload. Errors are logged and
         // counted in `decode_message`.
-        let Some(decoded) = self.decode_message(peer, packet, !is_reprocessed) else {
+        let Some(decoded) = self.decode_message(peer, packet, &peer_tags, !is_reprocessed) else {
             return PacketOutcome::Consumed;
         };
         let notification_type = notification_type(&decoded);
-        let mut peer_tags = peer_tags_from_packet(peer, packet);
         let message_id = decoded.message_id();
         let publisher_id = decoded.publisher_id();
         let is_legacy = matches!(decoded.payload(), UdpNotifPayload::NotificationLegacy(_));
 
         // Step 2: resolve subscription info. Breaks if the packet was
         // buffered, dropped, or needs a cache lookup first.
-        let subscription_info =
-            match self.resolve_subscription_info(Arc::clone(&message), peer, &decoded) {
-                ControlFlow::Continue(subscription_info) => subscription_info,
-                ControlFlow::Break(outcome) => return outcome,
-            };
+        let subscription_info = match self.resolve_subscription_info(
+            Arc::clone(&message),
+            peer,
+            &peer_tags,
+            &decoded,
+        ) {
+            ControlFlow::Continue(subscription_info) => subscription_info,
+            ControlFlow::Break(outcome) => return outcome,
+        };
         extend_peer_tags_with_subscription_info(&subscription_info, &mut peer_tags);
 
         // Step 3: validate against YANG schemas if available, skip otherwise.
@@ -462,9 +464,10 @@ impl Validator {
         &mut self,
         message: Arc<UdpNotifRequest>,
         peer: SocketAddr,
+        base_peer_tags: &[opentelemetry::KeyValue],
         decoded: &UdpNotifPacketDecoded,
     ) -> ControlFlow<PacketOutcome, SubscriptionInfo> {
-        let mut peer_tags = peer_tags_from_packet(peer, message.packet());
+        let mut peer_tags = base_peer_tags.to_vec();
         let message_id = decoded.message_id();
         let publisher_id = decoded.publisher_id();
         let notification_type = notification_type(decoded);
@@ -492,7 +495,7 @@ impl Validator {
                     OTL_YANG_PUSH_SUBSCRIPTION_ID_KEY,
                     opentelemetry::Value::I64(subscription_id.into()),
                 ));
-                if self.buffer_packet(existing_info, message) {
+                if self.buffer_packet(&existing_info, message) {
                     debug!(
                         peer=%peer,
                         message_id,
@@ -525,7 +528,7 @@ impl Validator {
                         notification_type,
                         "Schema fetch in-flight, buffering packet until response arrives",
                     );
-                    self.buffer_packet(subscription_info, message);
+                    self.buffer_packet(&subscription_info, message);
                     return ControlFlow::Break(PacketOutcome::Consumed);
                 }
                 SchemaState::Untracked => {}
@@ -550,7 +553,7 @@ impl Validator {
                 subscription_info: Box::new(subscription_info.clone()),
                 session: message.session().clone(),
             };
-            self.buffer_packet(subscription_info, message);
+            self.buffer_packet(&subscription_info, message);
             return ControlFlow::Break(PacketOutcome::CacheLookup(lookup));
         }
 
@@ -606,7 +609,7 @@ impl Validator {
             subscription_id,
             session: message.session().clone(),
         };
-        self.buffer_packet(subscription_info, message);
+        self.buffer_packet(&subscription_info, message);
         ControlFlow::Break(PacketOutcome::CacheLookup(lookup))
     }
 
@@ -673,7 +676,7 @@ impl Validator {
     /// Returns `true` if the packet was buffered, `false` if it was dropped.
     fn buffer_packet(
         &mut self,
-        subscription_info: SubscriptionInfo,
+        subscription_info: &SubscriptionInfo,
         message: Arc<UdpNotifRequest>,
     ) -> bool {
         let peer = message.peer_address();
@@ -681,12 +684,15 @@ impl Validator {
         let message_id = packet.message_id();
         let publisher_id = packet.publisher_id();
         let mut peer_tags = peer_tags_from_packet(peer, packet);
-        extend_peer_tags_with_subscription_info(&subscription_info, &mut peer_tags);
+        extend_peer_tags_with_subscription_info(subscription_info, &mut peer_tags);
         let subscription_id = subscription_info.id();
         let subscription_target = subscription_info.target().to_string();
         let router_content_id = subscription_info.content_id().to_string();
 
-        match self.peer_cache.buffer(subscription_info, message) {
+        match self
+            .peer_cache
+            .buffer(subscription_info.peer_ip(), subscription_id, message)
+        {
             Ok(peer_buffered) => {
                 trace!(
                     peer=%peer,
@@ -701,13 +707,17 @@ impl Validator {
                 self.record_otel_gauges(peer.ip(), peer_buffered, sub_count);
                 true
             }
-            Err(full) => {
-                let (reason, msg) = match full {
-                    BufferFull::Subscription => (
+            Err(error) => {
+                let (reason, msg) = match error {
+                    BufferError::UntrackedSubscription => (
+                        DropReason::UntrackedSubscription,
+                        "Subscription not tracked, dropping packet instead of buffering it",
+                    ),
+                    BufferError::SubscriptionFull => (
                         DropReason::BufferFullSubscription,
                         "Buffer full for subscription, dropping new packet",
                     ),
-                    BufferFull::Peer => (
+                    BufferError::PeerFull => (
                         DropReason::BufferFullPeer,
                         "Buffer full for peer, dropping new packet",
                     ),
@@ -737,11 +747,11 @@ impl Validator {
         &self,
         peer: SocketAddr,
         packet: &UdpNotifPacket,
+        peer_tags: &[opentelemetry::KeyValue],
         count_decoded: bool,
     ) -> Option<UdpNotifPacketDecoded> {
         let message_id = packet.message_id();
         let publisher_id = packet.publisher_id();
-        let mut peer_tags = peer_tags_from_packet(peer, packet);
 
         let decoded = match UdpNotifPacketDecoded::try_from(packet) {
             Ok(decoded) => decoded,
@@ -755,16 +765,10 @@ impl Validator {
                 );
                 self.stats
                     .dropped
-                    .add(1, &with_reason(&peer_tags, DropReason::DecodeError));
+                    .add(1, &with_reason(peer_tags, DropReason::DecodeError));
                 return None;
             }
         };
-        if let Some(notif_contents) = decoded.payload().notification_contents() {
-            peer_tags.push(opentelemetry::KeyValue::new(
-                OTL_YANG_PUSH_SUBSCRIPTION_ID_KEY,
-                opentelemetry::Value::I64(notif_contents.subscription_id().into()),
-            ));
-        }
         if tracing::enabled!(tracing::Level::TRACE) {
             trace!(
                 peer=%peer,
@@ -775,7 +779,14 @@ impl Validator {
             );
         }
         if count_decoded {
-            self.stats.decoded.add(1, &peer_tags);
+            let mut decoded_tags = peer_tags.to_vec();
+            if let Some(notif_contents) = decoded.payload().notification_contents() {
+                decoded_tags.push(opentelemetry::KeyValue::new(
+                    OTL_YANG_PUSH_SUBSCRIPTION_ID_KEY,
+                    opentelemetry::Value::I64(notif_contents.subscription_id().into()),
+                ));
+            }
+            self.stats.decoded.add(1, &decoded_tags);
         }
         Some(decoded)
     }

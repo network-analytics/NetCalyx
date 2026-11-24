@@ -38,6 +38,7 @@ pub(super) enum DropReason {
     DecodeError,
     BufferFullSubscription,
     BufferFullPeer,
+    UntrackedSubscription,
     ValidationFailed,
     IncompleteSubscriptionStarted,
     NoSubscriptionId,
