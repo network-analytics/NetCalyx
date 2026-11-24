@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{BufferFull, PeerCache, SchemaState, Tracking};
+use super::{BufferError, PeerCache, SchemaState, Tracking};
 use crate::ContentId;
 use crate::cache::storage::SubscriptionInfo;
 use bytes::Bytes;
@@ -101,26 +101,45 @@ fn test_tracking() {
 #[test]
 fn test_buffer_limits() {
     let mut cache = PeerCache::new(3, 2);
-    let sub1 = info(PEER_IP, 1, "c1");
-    let sub2 = info(PEER_IP, 2, "c2");
-    assert_eq!(cache.buffer(sub1.clone(), message(PEER_IP, 1)), Ok(1));
-    assert_eq!(cache.buffer(sub1.clone(), message(PEER_IP, 2)), Ok(2));
+    cache.mark_fetch_pending(&info(PEER_IP, 1, "c1"));
+    cache.mark_fetch_pending(&info(PEER_IP, 2, "c2"));
+    assert_eq!(cache.buffer(PEER_IP, 1, message(PEER_IP, 1)), Ok(1));
+    assert_eq!(cache.buffer(PEER_IP, 1, message(PEER_IP, 2)), Ok(2));
     assert_eq!(
-        cache.buffer(sub1.clone(), message(PEER_IP, 3)),
-        Err(BufferFull::Subscription)
+        cache.buffer(PEER_IP, 1, message(PEER_IP, 3)),
+        Err(BufferError::SubscriptionFull)
     );
-    assert_eq!(cache.buffer(sub2.clone(), message(PEER_IP, 4)), Ok(3));
+    assert_eq!(cache.buffer(PEER_IP, 2, message(PEER_IP, 4)), Ok(3));
     assert_eq!(
-        cache.buffer(sub2, message(PEER_IP, 5)),
-        Err(BufferFull::Peer)
+        cache.buffer(PEER_IP, 2, message(PEER_IP, 5)),
+        Err(BufferError::PeerFull)
     );
     assert_eq!(cache.peer_buffered(PEER_IP), 3);
 
     // Limits are per peer.
+    cache.mark_fetch_pending(&info(OTHER_PEER_IP, 1, "c1"));
     assert_eq!(
-        cache.buffer(info(OTHER_PEER_IP, 1, "c1"), message(OTHER_PEER_IP, 6)),
+        cache.buffer(OTHER_PEER_IP, 1, message(OTHER_PEER_IP, 6)),
         Ok(1)
     );
+}
+
+#[test]
+fn test_buffer_does_not_create_cache_entries() {
+    let mut cache = PeerCache::new(10, 10);
+    assert_eq!(
+        cache.buffer(PEER_IP, 1, message(PEER_IP, 1)),
+        Err(BufferError::UntrackedSubscription)
+    );
+    assert_eq!(cache.tracking(PEER_IP, 1), Tracking::UnknownPeer);
+
+    cache.mark_fetch_pending(&info(PEER_IP, 2, "c2"));
+    assert_eq!(
+        cache.buffer(PEER_IP, 1, message(PEER_IP, 2)),
+        Err(BufferError::UntrackedSubscription)
+    );
+    assert_eq!(cache.tracking(PEER_IP, 1), Tracking::UnknownSubscription);
+    assert_eq!(cache.peer_buffered(PEER_IP), 0);
 }
 
 /// Resolving drains only that subscription's buffer, in arrival order, and
@@ -129,13 +148,14 @@ fn test_buffer_limits() {
 fn test_resolve_drains_buffer() {
     let mut cache = PeerCache::new(10, 10);
     let sub1 = info(PEER_IP, 1, "c1");
-    let sub2 = info(PEER_IP, 2, "c2");
-    cache.buffer(sub1.clone(), message(PEER_IP, 1)).unwrap();
-    cache.buffer(sub2, message(PEER_IP, 2)).unwrap();
-    cache.buffer(sub1.clone(), message(PEER_IP, 3)).unwrap();
+    cache.mark_fetch_pending(&sub1);
+    cache.mark_fetch_pending(&info(PEER_IP, 2, "c2"));
+    cache.buffer(PEER_IP, 1, message(PEER_IP, 1)).unwrap();
+    cache.buffer(PEER_IP, 2, message(PEER_IP, 2)).unwrap();
+    cache.buffer(PEER_IP, 1, message(PEER_IP, 3)).unwrap();
 
     let resolved = cache
-        .resolve(sub1.clone(), Some(ContentId::from("x".to_string())), None)
+        .resolve(sub1, Some(ContentId::from("x".to_string())), None)
         .unwrap();
     assert_eq!(message_ids(&resolved.drained), vec![1, 3]);
     assert_eq!(resolved.peer_buffered, 1);

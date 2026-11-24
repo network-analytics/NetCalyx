@@ -128,11 +128,12 @@ pub(super) enum SchemaState {
     Resolved,
 }
 
-/// Which hold-buffer limit rejected a packet.
+/// Why a packet could not be added to the hold buffer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum BufferFull {
-    Subscription,
-    Peer,
+pub(super) enum BufferError {
+    UntrackedSubscription,
+    SubscriptionFull,
+    PeerFull,
 }
 
 /// Result of [`PeerCache::resolve`].
@@ -254,32 +255,32 @@ impl PeerCache {
         is_different
     }
 
-    /// Add `message` to the subscription's hold buffer, enforcing the
-    /// per-subscription limit first, then the per-peer limit. Returns
+    /// Add `message` to an existing subscription's hold buffer, enforcing
+    /// the per-subscription limit first, then the per-peer limit. Returns
     /// the peer's total buffered packets on success.
     pub fn buffer(
         &mut self,
-        subscription_info: SubscriptionInfo,
+        peer_ip: IpAddr,
+        subscription_id: SubscriptionId,
         message: Arc<UdpNotifRequest>,
-    ) -> Result<usize, BufferFull> {
+    ) -> Result<usize, BufferError> {
         let max_per_subscription = self.max_buffered_packets_per_subscription;
         let max_per_peer = self.max_buffered_packets_per_peer;
-        let peer = self.peers.entry(subscription_info.peer_ip()).or_default();
-        let sub_buffered = peer
+        let peer = self
+            .peers
+            .get_mut(&peer_ip)
+            .ok_or(BufferError::UntrackedSubscription)?;
+        let subscription = peer
             .subscriptions
-            .get(&subscription_info.id())
-            .map_or(0, |s| s.buffered_packets.len());
-        if sub_buffered >= max_per_subscription {
-            return Err(BufferFull::Subscription);
+            .get_mut(&subscription_id)
+            .ok_or(BufferError::UntrackedSubscription)?;
+        if subscription.buffered_packets.len() >= max_per_subscription {
+            return Err(BufferError::SubscriptionFull);
         }
         if peer.total_buffered >= max_per_peer {
-            return Err(BufferFull::Peer);
+            return Err(BufferError::PeerFull);
         }
-        peer.subscriptions
-            .entry(subscription_info.id())
-            .or_insert_with(|| CachedSubscription::new(subscription_info))
-            .buffered_packets
-            .push(message);
+        subscription.buffered_packets.push(message);
         peer.total_buffered += 1;
         Ok(peer.total_buffered)
     }
