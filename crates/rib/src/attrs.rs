@@ -101,6 +101,9 @@ pub struct AsPathSegment {
 
 pub(crate) trait SlicePool<T> {
     fn intern_slice(&mut self, slice: &[T]) -> Arc<[T]>;
+    fn gc(&mut self);
+    #[cfg(test)]
+    fn pool_len(&self) -> usize;
 }
 
 #[derive(Default)]
@@ -156,6 +159,27 @@ where
             .filter(|c| !c.is_empty())
             .map(|c| self.large_communities.intern_slice(c));
     }
+
+    pub(crate) fn gc(&mut self) {
+        self.as_path.gc();
+        self.cluster_list.gc();
+        self.communities.gc();
+        self.ext_communities.gc();
+        self.ext_communities_ipv6.gc();
+        self.large_communities.gc();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pool_lens(&self) -> [usize; 6] {
+        [
+            self.as_path.pool_len(),
+            self.cluster_list.pool_len(),
+            self.communities.pool_len(),
+            self.ext_communities.pool_len(),
+            self.ext_communities_ipv6.pool_len(),
+            self.large_communities.pool_len(),
+        ]
+    }
 }
 
 /// Attribute store with interning for common sub-components (AS paths,
@@ -196,12 +220,7 @@ impl StrongAttrStore {
     /// fall before the sub-pools are scanned.
     pub fn gc(&mut self) {
         self.attrs.retain(|a| Arc::strong_count(a) > 1);
-        self.sub_pools.as_path.gc();
-        self.sub_pools.cluster_list.gc();
-        self.sub_pools.communities.gc();
-        self.sub_pools.ext_communities.gc();
-        self.sub_pools.ext_communities_ipv6.gc();
-        self.sub_pools.large_communities.gc();
+        self.sub_pools.gc();
     }
 
     /// Number of distinct interned attribute sets currently held.
@@ -224,6 +243,15 @@ pub struct SliceInterner<T> {
 impl<T: Hash + Eq + Clone> SlicePool<T> for SliceInterner<T> {
     fn intern_slice(&mut self, slice: &[T]) -> Arc<[T]> {
         self.intern(slice)
+    }
+
+    fn gc(&mut self) {
+        SliceInterner::gc(self);
+    }
+
+    #[cfg(test)]
+    fn pool_len(&self) -> usize {
+        SliceInterner::pool_len(self)
     }
 }
 
@@ -278,7 +306,7 @@ mod tests {
     #[test]
     fn intern_normalizes_empty_optional_slices() {
         for empty_first in [false, true] {
-            let mut store = AttrStore::new();
+            let mut store = StrongAttrStore::new();
             let empty = RouteAttributes {
                 as_path: Some(Arc::new([])),
                 as4_path: Some(Arc::new([])),
@@ -307,18 +335,13 @@ mod tests {
             assert!(a.cluster_list.is_none());
             assert!(Arc::ptr_eq(&a, &b));
             assert_eq!(store.unique_attrs(), 1);
-            assert_eq!(store.as_path.pool_len(), 0);
-            assert_eq!(store.cluster_list.pool_len(), 0);
-            assert_eq!(store.communities.pool_len(), 0);
-            assert_eq!(store.ext_communities.pool_len(), 0);
-            assert_eq!(store.ext_communities_ipv6.pool_len(), 0);
-            assert_eq!(store.large_communities.pool_len(), 0);
+            assert_eq!(store.sub_pools.pool_lens(), [0; 6]);
         }
     }
 
     #[test]
     fn intern_preserves_and_deduplicates_nonempty_optional_slices() {
-        let mut store = AttrStore::new();
+        let mut store = StrongAttrStore::new();
         let attrs = RouteAttributes {
             as_path: Some(Arc::from([AsPathSegment {
                 segment_type: AsPathSegmentType::AsSequence,
@@ -456,6 +479,86 @@ mod tests {
             a.communities.as_ref().unwrap(),
             b.communities.as_ref().unwrap()
         ));
+    }
+
+    #[test]
+    fn interner_wires_every_slice_field_to_its_pool() {
+        fn assert_slice_fields_are_interned(interner: &mut impl crate::interner::AttrInterner) {
+            let as_path: Arc<[AsPathSegment]> = Arc::from(vec![AsPathSegment {
+                segment_type: AsPathSegmentType::AsSequence,
+                as_numbers: Box::new([65000]),
+            }]);
+            let cluster_list: Arc<[Ipv4Addr]> = Arc::from(vec![Ipv4Addr::new(1, 1, 1, 1)]);
+            let communities: Arc<[Box<str>]> = Arc::from(vec![Box::from("65000:1")]);
+            let ext_communities: Arc<[Box<str>]> = Arc::from(vec![Box::from("65000:2")]);
+            let ext_communities_ipv6: Arc<[Box<str>]> = Arc::from(vec![Box::from("65000:3")]);
+            let large_communities: Arc<[Box<str>]> = Arc::from(vec![Box::from("65000:4")]);
+
+            let attrs = RouteAttributes {
+                as_path: Some(Arc::clone(&as_path)),
+                as4_path: Some(Arc::clone(&as_path)),
+                cluster_list: Some(Arc::clone(&cluster_list)),
+                communities: Some(Arc::clone(&communities)),
+                ext_communities: Some(Arc::clone(&ext_communities)),
+                ext_communities_ipv6: Some(Arc::clone(&ext_communities_ipv6)),
+                large_communities: Some(Arc::clone(&large_communities)),
+                ..Default::default()
+            };
+            let a = interner.intern(attrs.clone());
+            let b = interner.intern(RouteAttributes {
+                local_pref: Some(100),
+                ..attrs
+            });
+
+            assert!(!Arc::ptr_eq(&a, &b));
+            assert!(Arc::ptr_eq(
+                a.as_path.as_ref().unwrap(),
+                b.as_path.as_ref().unwrap()
+            ));
+            assert!(Arc::ptr_eq(
+                a.as4_path.as_ref().unwrap(),
+                b.as4_path.as_ref().unwrap()
+            ));
+            assert!(Arc::ptr_eq(
+                a.as_path.as_ref().unwrap(),
+                a.as4_path.as_ref().unwrap()
+            ));
+            assert!(Arc::ptr_eq(
+                a.cluster_list.as_ref().unwrap(),
+                b.cluster_list.as_ref().unwrap()
+            ));
+            assert!(Arc::ptr_eq(
+                a.communities.as_ref().unwrap(),
+                b.communities.as_ref().unwrap()
+            ));
+            assert!(Arc::ptr_eq(
+                a.ext_communities.as_ref().unwrap(),
+                b.ext_communities.as_ref().unwrap()
+            ));
+            assert!(Arc::ptr_eq(
+                a.ext_communities_ipv6.as_ref().unwrap(),
+                b.ext_communities_ipv6.as_ref().unwrap()
+            ));
+            assert!(Arc::ptr_eq(
+                a.large_communities.as_ref().unwrap(),
+                b.large_communities.as_ref().unwrap()
+            ));
+
+            let community_fields = [
+                a.communities.as_ref().unwrap(),
+                a.ext_communities.as_ref().unwrap(),
+                a.ext_communities_ipv6.as_ref().unwrap(),
+                a.large_communities.as_ref().unwrap(),
+            ];
+            for i in 0..community_fields.len() {
+                for j in i + 1..community_fields.len() {
+                    assert!(!Arc::ptr_eq(community_fields[i], community_fields[j]));
+                }
+            }
+        }
+
+        assert_slice_fields_are_interned(&mut StrongAttrStore::new());
+        assert_slice_fields_are_interned(&mut crate::interner::WeakAttrStore::default());
     }
 
     #[test]

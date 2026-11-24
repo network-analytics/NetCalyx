@@ -34,11 +34,13 @@ can use `I::NEEDS_GC` to decide whether to schedule explicit sweeps.
 route or retained snapshot releases its `Arc`. On an insertion miss into a
 full pool, that pool scans out dead weak entries; if it remains more than 75%
 full, it reserves additional capacity. This is occasional synchronous cleanup,
-not background or pause-free GC. `gc()` is a no-op for this implementation.
+not background or pause-free GC. Calling `gc()` synchronously scans every pool
+and removes dead weak entries, which is optional for value reclamation but can
+free their backing allocations after a period without inserts. Cleanup does not
+shrink pool capacity.
 
-Dead weak entries retain backing allocations, including inline slice storage,
-until removed. After large withdrawals with no subsequent insertions, those
-allocations can remain indefinitely, and cleanup does not shrink table capacity.
+Without subsequent inserts or an explicit `gc()`, dead weak entries and their
+backing allocations, including inline slice storage, can remain indefinitely.
 Dropping values also does not guarantee immediate return of memory to the OS.
 
 When using the default interner without an otherwise constraining type context,

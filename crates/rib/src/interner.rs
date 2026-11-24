@@ -17,10 +17,10 @@
 //!
 //! [`StrongAttrStore`] retains strong references until an explicit sweep.
 //! [`WeakAttrStore`] lets values drop with their last owner. Its pools still
-//! sweep dead weak entries before growing; this can pause the writer.
-//! Dead weak pointers retain backing allocations (including inline slice
-//! storage) until removed. Without subsequent inserts, dead entries can remain
-//! indefinitely. Pool capacity is not reduced by cleanup.
+//! sweep dead weak entries before growing or when `gc()` is called; this can
+//! pause the writer. Explicit cleanup is optional for value reclamation but
+//! removes dead weak pointers and their backing allocations. Pool capacity is
+//! not reduced by cleanup.
 
 use std::hash::{BuildHasher, Hash};
 use std::net::Ipv4Addr;
@@ -40,7 +40,7 @@ pub trait AttrInterner: Default {
 
     fn intern(&mut self, attrs: RouteAttributes) -> Arc<RouteAttributes>;
 
-    /// Release entries retained only by the interner, if applicable.
+    /// Remove entries no longer owned by callers, if applicable.
     fn gc(&mut self);
 }
 
@@ -87,7 +87,7 @@ impl<T: ?Sized + Hash + Eq> WeakPool<T> {
 
     fn insert(&mut self, hash: u64, value: &Arc<T>) {
         if self.table.len() == self.table.capacity() && self.table.capacity() > 0 {
-            self.table.retain(|(_, weak)| weak.strong_count() > 0);
+            self.gc();
             let capacity = self.table.capacity();
             let (numerator, denominator) = MAX_POST_SWEEP_LOAD;
             if self.table.len() > capacity * numerator / denominator {
@@ -121,6 +121,21 @@ impl<T: Hash + Eq + Clone> SlicePool<T> for WeakPool<[T]> {
         self.insert(hash, &value);
         value
     }
+
+    fn gc(&mut self) {
+        WeakPool::gc(self);
+    }
+
+    #[cfg(test)]
+    fn pool_len(&self) -> usize {
+        self.table.len()
+    }
+}
+
+impl<T: ?Sized> WeakPool<T> {
+    fn gc(&mut self) {
+        self.table.retain(|(_, weak)| weak.strong_count() > 0);
+    }
 }
 
 type WeakAttrSubPools =
@@ -129,8 +144,8 @@ type WeakAttrSubPools =
 /// Two-level interner whose pools do not own their attribute values.
 ///
 /// Routes and retained snapshots own attributes through `Arc`. Values drop
-/// when those owners release them; dead weak entries are removed only when
-/// insertion into their pool would otherwise require growth.
+/// when those owners release them. Dead weak entries are removed when an
+/// insertion would otherwise require growth or when `gc()` is called.
 #[derive(Default)]
 pub struct WeakAttrStore {
     sub_pools: WeakAttrSubPools,
@@ -145,13 +160,35 @@ impl AttrInterner for WeakAttrStore {
         self.attrs.intern(attrs)
     }
 
-    fn gc(&mut self) {}
+    fn gc(&mut self) {
+        self.attrs.gc();
+        self.sub_pools.gc();
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::RibStore;
+
+    #[test]
+    fn weak_store_normalizes_empty_slices() {
+        let mut store = WeakAttrStore::default();
+        let empty = store.intern(RouteAttributes {
+            as_path: Some(Arc::new([])),
+            as4_path: Some(Arc::new([])),
+            cluster_list: Some(Arc::new([])),
+            communities: Some(Arc::new([])),
+            ext_communities: Some(Arc::new([])),
+            ext_communities_ipv6: Some(Arc::new([])),
+            large_communities: Some(Arc::new([])),
+            ..Default::default()
+        });
+        let absent = store.intern(RouteAttributes::default());
+        assert_eq!(*empty, RouteAttributes::default());
+        assert!(Arc::ptr_eq(&empty, &absent));
+        assert_eq!(store.sub_pools.pool_lens(), [0; 6]);
+    }
 
     #[test]
     fn weak_store_deduplicates_whole_attrs_and_subcomponents() {
@@ -198,6 +235,48 @@ mod tests {
         let fresh = pool.intern(0);
         assert_eq!(*fresh, 0);
         assert!(!Weak::ptr_eq(&Arc::downgrade(&fresh), &dead_weak));
+    }
+
+    #[test]
+    fn weak_store_gc_removes_dead_entries_from_every_pool() {
+        use netcalyx_bgp_pkt::path_attribute::AsPathSegmentType;
+
+        let mut store = WeakAttrStore::default();
+        let as_path: Arc<[AsPathSegment]> = Arc::from(vec![AsPathSegment {
+            segment_type: AsPathSegmentType::AsSequence,
+            as_numbers: Box::new([65000]),
+        }]);
+        let cluster_list: Arc<[Ipv4Addr]> = Arc::from(vec![Ipv4Addr::LOCALHOST]);
+        let communities: Arc<[Box<str>]> = Arc::from(vec![Box::from("65000:1")]);
+        let ext_communities: Arc<[Box<str>]> = Arc::from(vec![Box::from("65000:2")]);
+        let ext_communities_ipv6: Arc<[Box<str>]> = Arc::from(vec![Box::from("65000:3")]);
+        let large_communities: Arc<[Box<str>]> = Arc::from(vec![Box::from("65000:4")]);
+        let attrs = store.intern(RouteAttributes {
+            as_path: Some(Arc::clone(&as_path)),
+            as4_path: Some(Arc::clone(&as_path)),
+            cluster_list: Some(Arc::clone(&cluster_list)),
+            communities: Some(Arc::clone(&communities)),
+            ext_communities: Some(Arc::clone(&ext_communities)),
+            ext_communities_ipv6: Some(Arc::clone(&ext_communities_ipv6)),
+            large_communities: Some(Arc::clone(&large_communities)),
+            ..Default::default()
+        });
+
+        drop(attrs);
+        drop(as_path);
+        drop(cluster_list);
+        drop(communities);
+        drop(ext_communities);
+        drop(ext_communities_ipv6);
+        drop(large_communities);
+
+        assert_eq!(store.attrs.table.len(), 1);
+        assert_eq!(store.sub_pools.pool_lens(), [1; 6]);
+
+        store.gc();
+
+        assert!(store.attrs.table.is_empty());
+        assert_eq!(store.sub_pools.pool_lens(), [0; 6]);
     }
 
     #[test]
