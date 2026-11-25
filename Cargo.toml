@@ -21,6 +21,7 @@ members = [
     "crates/pcap-decoder",
     "crates/pcap-tools",
     "crates/netconf-proto",
+    "crates/rib",
     "fuzz",
 ]
 resolver = "2"
@@ -45,6 +46,7 @@ netcalyx-yang-push = { version = "0.4.0", path = "crates/yang-push" }
 netcalyx-yang-consumer = { version = "0.4.0", path = "crates/yang-consumer" }
 netcalyx-pcap-decoder = { version = "0.4.0", path = "crates/pcap-decoder" }
 netcalyx-netconf-proto = { version = "0.4.0", path = "crates/netconf-proto" }
+netcalyx-rib = { version = "0.4.0", path = "crates/rib" }
 thiserror = "2.0"
 async-channel = "2.5"
 libc = { version = "0.2" }
@@ -122,6 +124,7 @@ axum = { version = "0.8"}
 schemars = { version = "1.2", features = ["derive"] }
 itertools = { version = "0.15" }
 derive_more = { version = "2.1", default-features = false, features = ["from"] }
+prefix-trie = { version = "0.10" }
 
 [profile.release]
 codegen-units = 1
