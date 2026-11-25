@@ -139,4 +139,5 @@ mod subscription;
 
 pub use actor::{ValidationActorError, ValidationActorHandle, ValidationActorHandleError};
 pub use processing::ValidatedNotification;
+pub use state::{CachedSubscriptionSnapshot, ClearCacheReport, YangPushCacheSnapshot};
 pub use stats::ValidationStats;

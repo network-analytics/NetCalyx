@@ -26,6 +26,7 @@ use netcalyx_bmp_service::supervisor as bmp_supervisor;
 use netcalyx_flow_service::flow_supervisor;
 use netcalyx_udp_notif_service::supervisor as udp_notif_supervisor;
 use netcalyx_yang_push::cache::storage::YangLibraryReference;
+use serde::Deserialize;
 use serde_with::serde_as;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -113,6 +114,7 @@ pub struct CollectorConfig {
     pub runtime: RuntimeConfig,
     pub logging: LoggingConfig,
     pub telemetry: TelemetryConfig,
+    pub admin_api: Option<AdminApiConfig>,
     pub flow: Option<FlowConfig>,
     pub bmp: Option<BmpConfig>,
     pub udp_notif: Option<UdpNotifConfig>,
@@ -396,4 +398,29 @@ pub enum PublisherEndpoint {
 
     /// Kafka AVRO publisher endpoint (for BMP messages)
     BmpKafkaAvro(kafka_avro::KafkaConfig<BmpAvroConfig>),
+}
+
+/// HTTPS admin API configuration.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AdminApiConfig {
+    /// Socket address on which the admin API listens.
+    pub address: SocketAddr,
+    /// Path to the PEM-encoded TLS certificate chain.
+    pub tls_cert_path: String,
+    /// Path to the PEM-encoded TLS private key.
+    pub tls_key_path: String,
+    /// Non-empty access token for authenticating requests to the admin API.
+    #[serde(deserialize_with = "deserialize_access_token")]
+    pub access_token: String,
+}
+
+fn deserialize_access_token<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = String::deserialize(deserializer)?;
+    if value.trim().is_empty() {
+        return Err(serde::de::Error::custom("access_token must not be empty"));
+    }
+    Ok(value)
 }

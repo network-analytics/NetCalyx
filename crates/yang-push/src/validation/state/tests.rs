@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{BufferError, PeerCache, SchemaState, Tracking};
+use super::{BufferError, ClearCacheReport, PeerCache, PeerCacheError, SchemaState, Tracking};
 use crate::ContentId;
 use crate::cache::storage::SubscriptionInfo;
 use bytes::Bytes;
@@ -212,4 +212,124 @@ fn test_evict_if_changed_new_id_keeps_peer() {
     assert!(cache.evict_if_changed(&info(PEER_IP, 2, "c2")));
     assert_eq!(cache.tracking(PEER_IP, 1), Tracking::Tracked);
     assert_eq!(cache.peer_count(), 1);
+}
+
+#[test]
+fn test_snapshot_all() {
+    let mut cache = PeerCache::new(10, 10);
+    cache.mark_fetch_pending(&info(PEER_IP, 1, "c1"));
+    cache.mark_fetch_pending(&info(OTHER_PEER_IP, 1, "c2"));
+
+    let snapshot = cache.snapshot_all();
+    assert_eq!(snapshot.len(), 2);
+    assert!(snapshot[&PEER_IP].contains_key(&1));
+    assert!(snapshot[&OTHER_PEER_IP].contains_key(&1));
+}
+
+/// Only the requested peer is part of the snapshot.
+#[test]
+fn test_snapshot_peer() {
+    let mut cache = PeerCache::new(10, 10);
+    cache.mark_fetch_pending(&info(PEER_IP, 1, "c1"));
+    cache.mark_fetch_pending(&info(OTHER_PEER_IP, 1, "c2"));
+
+    let snapshot = cache.snapshot_peer(OTHER_PEER_IP).unwrap();
+    assert_eq!(snapshot.len(), 1);
+    assert!(snapshot[&OTHER_PEER_IP].contains_key(&1));
+}
+
+#[test]
+fn test_snapshot_buffered_and_pending() {
+    let mut cache = PeerCache::new(10, 10);
+    let sub = info(PEER_IP, 1, "c1");
+    cache.mark_fetch_pending(&sub);
+    cache.buffer(PEER_IP, 1, message(PEER_IP, 1)).unwrap();
+
+    let snapshot = cache.snapshot_peer(PEER_IP).unwrap();
+    assert_eq!(snapshot[&PEER_IP][&1].buffered_packet_count, 1);
+    assert!(snapshot[&PEER_IP][&1].schema_fetch_pending);
+
+    cache.resolve(sub, None, None).unwrap();
+    let snapshot = cache.snapshot_peer(PEER_IP).unwrap();
+    assert_eq!(snapshot[&PEER_IP][&1].buffered_packet_count, 0);
+    assert!(!snapshot[&PEER_IP][&1].schema_fetch_pending);
+}
+
+#[test]
+fn test_snapshot_peer_untracked_is_error() {
+    let mut cache = PeerCache::new(10, 10);
+    cache.mark_fetch_pending(&info(PEER_IP, 1, "c1"));
+    assert_eq!(
+        cache.snapshot_peer(OTHER_PEER_IP),
+        Err(PeerCacheError::PeerNotFound(OTHER_PEER_IP))
+    );
+}
+
+/// Clearing a peer drops only that peer.
+#[test]
+fn test_clear_peer() {
+    let mut cache = PeerCache::new(10, 10);
+    let sub = info(PEER_IP, 1, "c1");
+    cache.mark_fetch_pending(&sub);
+    cache.resolve(sub, None, None).unwrap();
+    cache.mark_fetch_pending(&info(OTHER_PEER_IP, 1, "c2"));
+
+    assert_eq!(
+        cache.clear_peer(PEER_IP),
+        Ok(ClearCacheReport {
+            cleared_peers: vec![PEER_IP],
+            skipped_peers: vec![],
+        })
+    );
+    assert_eq!(cache.tracking(PEER_IP, 1), Tracking::UnknownPeer);
+    assert_eq!(cache.tracking(OTHER_PEER_IP, 1), Tracking::Tracked);
+    assert_eq!(cache.peer_count(), 1);
+}
+
+#[test]
+fn test_clear_peer_untracked_is_error() {
+    let mut cache = PeerCache::new(10, 10);
+    assert_eq!(
+        cache.clear_peer(PEER_IP),
+        Err(PeerCacheError::PeerNotFound(PEER_IP))
+    );
+}
+
+/// A peer with a fetch in flight is kept, since removing it would drop its
+/// hold buffers.
+#[test]
+fn test_clear_peer_pending_is_error() {
+    let mut cache = PeerCache::new(10, 10);
+    cache.mark_fetch_pending(&info(PEER_IP, 1, "c1"));
+    cache.buffer(PEER_IP, 1, message(PEER_IP, 1)).unwrap();
+    assert_eq!(
+        cache.clear_peer(PEER_IP),
+        Err(PeerCacheError::SchemaFetchPending(PEER_IP))
+    );
+    assert_eq!(cache.tracking(PEER_IP, 1), Tracking::Tracked);
+    assert_eq!(cache.peer_buffered(PEER_IP), 1);
+}
+
+/// Peers are skipped as a whole: one pending subscription keeps the peer.
+#[test]
+fn test_clear_all_skips_pending_peers() {
+    let mut cache = PeerCache::new(10, 10);
+    let idle = info(PEER_IP, 1, "c1");
+    cache.mark_fetch_pending(&idle);
+    cache.resolve(idle, None, None).unwrap();
+
+    let resolved = info(OTHER_PEER_IP, 1, "c2");
+    cache.mark_fetch_pending(&resolved);
+    cache.resolve(resolved, None, None).unwrap();
+    cache.mark_fetch_pending(&info(OTHER_PEER_IP, 2, "c3"));
+
+    assert_eq!(
+        cache.clear_all(),
+        ClearCacheReport {
+            cleared_peers: vec![PEER_IP],
+            skipped_peers: vec![OTHER_PEER_IP],
+        }
+    );
+    assert_eq!(cache.tracking(PEER_IP, 1), Tracking::UnknownPeer);
+    assert_eq!(cache.peer_subscriptions(OTHER_PEER_IP), 2);
 }

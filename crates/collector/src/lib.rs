@@ -51,6 +51,7 @@ use std::time::Duration;
 use sysinfo::System;
 use tracing::{debug, info, warn};
 
+pub mod admin_api;
 pub mod bmp;
 pub mod config;
 pub mod flow;
@@ -541,6 +542,7 @@ pub async fn init_bmp_collection(
 
 pub async fn init_udp_notif_collection(
     udp_notif_config: UdpNotifConfig,
+    udp_notif_handles: admin_api::UdpNotifHandles,
     meter: opentelemetry::metrics::Meter,
 ) -> anyhow::Result<()> {
     let supervisor_config = udp_notif_config.supervisor_config();
@@ -783,6 +785,19 @@ pub async fn init_udp_notif_collection(
         // Add all enrichment handles in outer vec so shutdown works properly
         enrichment_handles.extend(publisher_enrichment_handles);
     }
+
+    if validation_handles.len() > 1 {
+        warn!(
+            count = validation_handles.len(),
+            "Multiple validation handles exist; only the first is exposed through the Admin API"
+        );
+    }
+
+    udp_notif_handles
+        .validation
+        .set(validation_handles.first().cloned())
+        .map_err(|_| anyhow::anyhow!("Admin API validation handle was already initialized"))?;
+
     let ret = tokio::select! {
         supervisor_ret = supervisor_join_handle => {
             info!("udp-notif supervisor exited, shutting down all publishers");
