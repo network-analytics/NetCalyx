@@ -28,7 +28,7 @@ strong-reference pools and explicit `gc()` behavior.
 
 Both implementations deduplicate sub-components before whole attribute sets,
 and share one interner across the store's routers and views. Generic callers
-can use `I::NEEDS_GC` to decide whether to schedule explicit sweeps.
+can use `I::NEEDS_SCHEDULED_GC` as a hint when choosing a GC policy.
 
 `WeakAttrStore` does not own attribute values. They are dropped when the last
 route or retained snapshot releases its `Arc`. On an insertion miss into a
@@ -41,6 +41,7 @@ shrink pool capacity.
 
 Without subsequent inserts or an explicit `gc()`, dead weak entries and their
 backing allocations, including inline slice storage, can remain indefinitely.
+Values retained by routes or snapshots are not removed.
 Dropping values also does not guarantee immediate return of memory to the OS.
 
 When using the default interner without an otherwise constraining type context,

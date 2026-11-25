@@ -35,8 +35,8 @@ const MAX_POST_SWEEP_LOAD: (usize, usize) = (3, 4);
 
 /// Deduplicates attributes without prescribing their retention policy.
 pub trait AttrInterner: Default {
-    /// Whether callers need to schedule explicit attribute sweeps.
-    const NEEDS_GC: bool;
+    /// Whether this interner typically needs scheduled explicit sweeps.
+    const NEEDS_SCHEDULED_GC: bool;
 
     fn intern(&mut self, attrs: RouteAttributes) -> Arc<RouteAttributes>;
 
@@ -45,7 +45,7 @@ pub trait AttrInterner: Default {
 }
 
 impl AttrInterner for StrongAttrStore {
-    const NEEDS_GC: bool = true;
+    const NEEDS_SCHEDULED_GC: bool = true;
 
     fn intern(&mut self, attrs: RouteAttributes) -> Arc<RouteAttributes> {
         StrongAttrStore::intern(self, attrs)
@@ -153,7 +153,7 @@ pub struct WeakAttrStore {
 }
 
 impl AttrInterner for WeakAttrStore {
-    const NEEDS_GC: bool = false;
+    const NEEDS_SCHEDULED_GC: bool = false;
 
     fn intern(&mut self, mut attrs: RouteAttributes) -> Arc<RouteAttributes> {
         self.sub_pools.intern(&mut attrs);
@@ -276,6 +276,43 @@ mod tests {
         store.gc();
 
         assert!(store.attrs.table.is_empty());
+        assert_eq!(store.sub_pools.pool_lens(), [0; 6]);
+    }
+
+    #[test]
+    fn explicit_gc_sweeps_all_weak_pools_and_preserves_live_values() {
+        use netcalyx_bgp_pkt::path_attribute::AsPathSegmentType;
+
+        fn attrs(id: u8) -> RouteAttributes {
+            let component: Arc<[Box<str>]> = Arc::from(vec![format!("65000:{id}").into()]);
+            RouteAttributes {
+                as_path: Some(Arc::from(vec![AsPathSegment {
+                    segment_type: AsPathSegmentType::AsSequence,
+                    as_numbers: Box::new([u32::from(id)]),
+                }])),
+                cluster_list: Some(Arc::from(vec![Ipv4Addr::new(192, 0, 2, id)])),
+                communities: Some(Arc::clone(&component)),
+                ext_communities: Some(Arc::clone(&component)),
+                ext_communities_ipv6: Some(Arc::clone(&component)),
+                large_communities: Some(component),
+                ..Default::default()
+            }
+        }
+
+        let mut store = WeakAttrStore::default();
+        let live = store.intern(attrs(1));
+        let dead = store.intern(attrs(2));
+        drop(dead);
+        assert_eq!(store.attrs.table.len(), 2);
+        store.gc();
+
+        assert_eq!(store.attrs.table.len(), 1);
+        assert_eq!(store.sub_pools.pool_lens(), [1; 6]);
+        assert!(Arc::ptr_eq(&live, &store.intern(attrs(1))));
+
+        drop(live);
+        store.gc();
+        assert_eq!(store.attrs.table.len(), 0);
         assert_eq!(store.sub_pools.pool_lens(), [0; 6]);
     }
 
