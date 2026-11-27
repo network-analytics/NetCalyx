@@ -115,12 +115,8 @@ impl YangConverter<EnrichedNotification, TelemetryYangConverterError> for Teleme
         serde_json::to_vec(&input.message).map_err(Into::into)
     }
 
-    fn subscription_info(&self, input: &EnrichedNotification) -> Option<SubscriptionInfo> {
-        if input.subscription_info.is_empty() {
-            None
-        } else {
-            Some(input.subscription_info.clone())
-        }
+    fn subscription_info(&self, input: &EnrichedNotification) -> SubscriptionInfo {
+        input.subscription_info.clone()
     }
 }
 
