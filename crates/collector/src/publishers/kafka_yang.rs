@@ -32,6 +32,7 @@
 //!   actor
 use crate::publishers::LoggingProducerContext;
 use ipnet::IpNet;
+use netcalyx_netconf_proto::yang_push::types::SubscriptionId;
 use netcalyx_netconf_proto::yanglib::{
     DependencyError, PermissiveVersionChecker, SchemaConstructionError, SchemaLoadingError,
     YangLibrary,
@@ -50,7 +51,8 @@ use rdkafka::message::{Header, OwnedHeaders};
 use rdkafka::producer::{BaseRecord, Producer, ThreadedProducer};
 use schema_registry_client::rest::schema_registry_client::{Client, SchemaRegistryClient};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::net::IpAddr;
 use std::time::{Duration, Instant};
 use strum::VariantNames;
 use tokio::sync::{mpsc, oneshot};
@@ -93,7 +95,7 @@ pub trait YangConverter<T, E: std::error::Error> {
     fn serialize_json(&self, input: T) -> Result<Vec<u8>, E>;
 
     /// Get the [SubscriptionInfo] of a given message
-    fn subscription_info(&self, input: &T) -> Option<SubscriptionInfo>;
+    fn subscription_info(&self, input: &T) -> SubscriptionInfo;
 }
 
 /// Configuration for the Kafka YANG publisher
@@ -121,16 +123,8 @@ where
 // --- telemetry ---
 
 /// Build OTel tags (peer address + subscription context) for schema
-/// lookup metrics, when subscription info is available
-fn subscription_info_tags(
-    subscription_info: Option<&SubscriptionInfo>,
-) -> Vec<opentelemetry::KeyValue> {
-    let Some(subscription_info) = subscription_info else {
-        return vec![opentelemetry::KeyValue::new(
-            "network.peer.address",
-            "unknown".to_string(),
-        )];
-    };
+/// lookup metrics
+fn subscription_info_tags(subscription_info: &SubscriptionInfo) -> Vec<opentelemetry::KeyValue> {
     vec![
         opentelemetry::KeyValue::new(
             "network.peer.address",
@@ -435,6 +429,10 @@ where
     extension_yang_library: Option<(YangLibrary, HashMap<Box<str>, Box<str>>)>,
     /// [ContentId] to schema registry ID mapping cache
     schema_id_cache: HashMap<ContentId, i32>,
+    /// Subscriptions (peer IP, subscription ID) already warned about for
+    /// missing a content ID, so the warning is logged once per subscription
+    /// rather than per message
+    warned_missing_content_id: HashSet<(IpAddr, SubscriptionId)>,
     cache_req_tx: async_channel::Sender<CacheLookupCommand>,
     _phantom: std::marker::PhantomData<(T, E)>,
 }
@@ -542,6 +540,7 @@ where
             default_schema_id,
             extension_yang_library,
             schema_id_cache,
+            warned_missing_content_id: HashSet::new(),
             cache_req_tx,
             _phantom: std::marker::PhantomData,
         })
@@ -574,10 +573,16 @@ where
     async fn register_schema(
         &mut self,
         content_id: Option<&str>,
-        subscription_info: Option<&SubscriptionInfo>,
+        subscription_info: &SubscriptionInfo,
     ) -> Result<Option<i32>, KafkaYangPublisherActorError<E>> {
         let mut tags = subscription_info_tags(subscription_info);
+        let warn_key = (subscription_info.peer_ip(), subscription_info.id());
         let id = if let Some(id) = content_id {
+            // Re-arm the warning in case the subscription loses its content ID
+            // again later
+            if !self.warned_missing_content_id.is_empty() {
+                self.warned_missing_content_id.remove(&warn_key);
+            }
             id
         } else {
             let reason = if self.default_schema_id.is_some() {
@@ -590,41 +595,33 @@ where
                 <&str>::from(reason),
             ));
             self.stats.schema_fallbacks.add(1, &tags);
+            // The outcome is the same for every message of a subscription, so
+            // only warn the first time; the `schema_fallbacks` counter tracks
+            // the volume
+            if !self.warned_missing_content_id.insert(warn_key) {
+                return Ok(self.default_schema_id);
+            }
             return if let Some(default_schema_id) = self.default_schema_id {
-                if let Some(subscription_info) = subscription_info {
-                    warn!(
-                        peer_ip=%subscription_info.peer_ip(),
-                        subscription_id=subscription_info.id(),
-                        router_content_id=subscription_info.content_id(),
-                        target=%subscription_info.target(),
-                        default_schema_id,
-                        "No content ID provided and for subscription, \
-                        using default schema ID"
-                    );
-                } else {
-                    warn!(
-                        default_schema_id,
-                        "No content ID provided and no subscription information, \
-                        using default schema ID"
-                    );
-                }
+                warn!(
+                    peer_ip=%subscription_info.peer_ip(),
+                    subscription_id=subscription_info.id(),
+                    router_content_id=subscription_info.content_id(),
+                    target=%subscription_info.target(),
+                    default_schema_id,
+                    "No content ID provided for subscription, \
+                    using default schema ID (logged once per subscription)"
+                );
                 Ok(Some(default_schema_id))
             } else {
-                if let Some(subscription_info) = subscription_info {
-                    warn!(
-                        peer_ip=%subscription_info.peer_ip(),
-                        subscription_id=subscription_info.id(),
-                        router_content_id=subscription_info.content_id(),
-                        target=%subscription_info.target(),
-                        "No content ID provided, for subscription, \
-                        and no default schema ID configured!, falling back to not using any schema"
-                    );
-                } else {
-                    warn!(
-                        "No content ID provided, no subscription information, \
-                        and no default schema ID configured!, falling back to not using any schema"
-                    );
-                }
+                warn!(
+                    peer_ip=%subscription_info.peer_ip(),
+                    subscription_id=subscription_info.id(),
+                    router_content_id=subscription_info.content_id(),
+                    target=%subscription_info.target(),
+                    "No content ID provided for subscription, \
+                    and no default schema ID configured!, falling back to not using any schema \
+                    (logged once per subscription)"
+                );
                 Ok(None)
             };
         };
@@ -632,23 +629,15 @@ where
         // Check if we already have this schema registered
         if let Some(&schema_id) = self.schema_id_cache.get(id) {
             self.stats.cache_hits.add(1, &tags);
-            if let Some(subscription_info) = subscription_info {
-                trace!(
-                    peer_ip=%subscription_info.peer_ip(),
-                    subscription_id=subscription_info.id(),
-                    router_content_id=subscription_info.content_id(),
-                    target=%subscription_info.target(),
-                    schema_id,
-                    content_id,
-                    "Found schemaID for the corresponding contentID"
-                );
-            } else {
-                trace!(
-                    schema_id,
-                    content_id,
-                    "Found schemaID for the corresponding contentID without subscription info"
-                );
-            }
+            trace!(
+                peer_ip=%subscription_info.peer_ip(),
+                subscription_id=subscription_info.id(),
+                router_content_id=subscription_info.content_id(),
+                target=%subscription_info.target(),
+                schema_id,
+                content_id,
+                "Found schemaID for the corresponding contentID"
+            );
 
             return Ok(Some(schema_id));
         }
@@ -863,7 +852,7 @@ where
         let content_id = self.config.yang_converter.content_id(&input);
         let subscription_info = self.config.yang_converter.subscription_info(&input);
         let key = self.config.yang_converter.get_key(&input);
-        let tags = subscription_info_tags(subscription_info.as_ref());
+        let tags = subscription_info_tags(&subscription_info);
 
         let encoded_value = match self.config.yang_converter.serialize_json(input) {
             Ok(bytes) => bytes,
@@ -898,7 +887,7 @@ where
 
         // Get schema ID
         let schema_id = self
-            .register_schema(content_id.as_deref(), subscription_info.as_ref())
+            .register_schema(content_id.as_deref(), &subscription_info)
             .await?;
 
         let mut headers = OwnedHeaders::new();
@@ -994,7 +983,7 @@ where
                             let subscription_info = self.config.yang_converter.subscription_info(&msg);
                             self.stats
                                 .received
-                                .add(1, &subscription_info_tags(subscription_info.as_ref()));
+                                .add(1, &subscription_info_tags(&subscription_info));
                             if let Err(err) = self.send(msg).await {
                                 error!("Error sending message to Kafka: {err}");
                             }
